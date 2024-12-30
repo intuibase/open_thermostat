@@ -1,0 +1,818 @@
+	<link rel="stylesheet" href="deps/bms.min.css" integrity="sha512-wHTuOcR1pyFeyXVkwg3fhfK46QulKXkLq1kxcEEpjnAPv63B/R49bBqkJHLvoGFq6lvAEKlln2rE1JfIPeQ+iw==" crossorigin="anonymous" />
+	<script src="deps/bms.min.js" integrity="sha512-ljeReA8Eplz6P7m1hwWa+XdPmhawNmo9I0/qyZANCCFvZ845anQE+35TuZl9+velym0TKanM2DXVLxSJLLpQWw==" crossorigin="anonymous"></script>
+
+
+	<div class="d-flex justify-content-center" id="loadingprogress">
+		<div class="spinner-border" role="status">
+			<span class="sr-only"></span>
+		</div>
+	</div>
+
+	<form id = "programeditform" class="invisible">
+	<div class="form-group">
+		<div class="form-row align-items-end">
+			<div class="col mb-2">
+				<label for="selectprogram">Select program to edit</label>
+				<select class="form-control" id="selectprogram" name="program" onchange="loadProgram()"></select>
+			</div>
+			<div class="col-md-2 mb-2">
+				<button type="button" class="btn btn-success form-control" onclick='openCreateProgramNameModal(event);' >Create new program</button>
+			</div>
+			<div class="col-md-2 mb-2">
+				<button type="button" class="btn btn-dark form-control" onclick="deleteProgram();">Delete program</button>
+			</div>
+		</div>
+	</div>
+
+	<div class="modal fade" id="selectSensorModal" tabindex="-1" role="dialog" aria-labelledby="selectSensorModalLabel" aria-hidden="true">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title" id="selectSensorModalLabel">Choose sensor</h5>
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+					<span aria-hidden="true">&times;</span>
+					</button>
+				</div>
+				<div class="modal-body">
+					<form>
+						<select class="form-control" id="selectSensorModalSelect">
+						</select>
+						<div class="form-check">
+							<input class="form-check-input" type="checkbox" value="" checked id="selectSensorModalSelectLimit">
+							<label class="form-check-label" for="selectSensorModalSelectLimit">Allow selection of current and new only</label>
+						</div>
+					</form>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+					<button type="button" class="btn btn-primary" id="selectSensorModalSave">Select</button>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="card collapse" id="roomTemperatureSettings">
+		<div class="card-header">Room temperature settings</div>
+		<div class="card-body">
+			<div class="form-group" id="roomSelector">
+				<div class="form-row align-items-end">
+					<div class="col mb-2">
+						<label for="roomSelectorSelect">Select room to edit</label>
+						<div class="input-group">
+							<div class="input-group-prepend">
+								<button class="btn btn-outline-secondary" type="button" id="roomNameEdit" onclick="openEditRoomNameModal(event);"><svg width="16px" height="16px"><use href="#img-edit" /></svg></button>
+							</div>
+							<select class="form-control" id="roomSelectorSelect" name="roomselected" aria-describedby="roomNameEdit" onchange="changeRoom()">
+							</select>
+						</div>
+					</div>
+					<div class="col-md-2 mb-2">
+						<button type="button" class="btn btn-success form-control" onclick='openAddNewRoomModal(event);'>Add new room</button>
+					</div>
+					<div class="col-md-2 mb-2">
+						<button type="button" class="btn btn-dark form-control" onclick="deleteRoom();">Delete room</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group" id="roomGroup">
+
+			</div>
+
+		</div>
+		<div class="card-footer text-muted">
+			<button type="button" class="btn btn-primary mb-2" onclick="saveProgram();" id="saveprogram">Save program</button>
+		</div>
+
+	</div>
+
+
+	</form>
+
+
+
+
+<script type='text/javascript'>
+	var loadedProgram = undefined;
+	var roomFound = undefined;
+
+	$(document).ready(function() {
+
+		$("#selectSensorModal").on('show.bs.modal', function (event) {
+			$('#selectSensorModalSelect').empty();
+
+			fetch(hostName + '/status/devices')
+				.then(res => res.json())
+				.then((devices) => {
+					var currentSensor = $('#roomSensor').val().toUpperCase();
+
+					var hideUtilised = $('#selectSensorModalSelectLimit').prop('checked');
+
+					devices.forEach(element => {
+						var sel = "";
+
+						var upElement = element.toUpperCase();
+
+						if (upElement === currentSensor) {
+							$('#selectSensorModalSelect').append( $( "<option selected>" + element + "</option>" ) );
+						} else {
+							var disableIt = false;
+							if (hideUtilised) {
+								disableIt = loadedProgram.find(function(prog) {
+									if (prog.sensor.toUpperCase() === upElement) {
+										return true;
+									} else {
+										return false;
+									}
+								});
+							}
+							if (disableIt) {
+								$('#selectSensorModalSelect').append( $( "<option disabled>" + element + "</option>" ) );
+							} else {
+								$('#selectSensorModalSelect').append( $( "<option>" + element + "</option>" ) );
+							}
+						}
+
+					});
+
+
+				}).catch(function(error) {
+					// content.value = "";
+					alert("Cannot fetch devices.\n" + error);
+				}
+				);
+
+		});
+
+		$("#selectSensorModalSave").on('click', function (event) {
+			event.preventDefault();
+
+			var selection = $('#selectSensorModalSelect option:selected').text()
+			$('#roomSensor').val(selection).trigger('input');
+			$('#selectSensorModal').modal('hide');
+		});
+
+		$('#selectSensorModalSelectLimit').change(function() {
+			var hideUtilised = $(this).prop('checked');
+			var currentSensor = $('#roomSensor').val().toUpperCase();
+			var currentIsSelected = false;
+
+			$("#selectSensorModalSelect > option").each(function() {
+				if (hideUtilised) {
+					var disableIt = false;
+					var upElement = this.text.toUpperCase();
+					if (upElement !== currentSensor) {
+						disableIt = loadedProgram.find(function(prog) {
+							if (prog.sensor.toUpperCase() === upElement) {
+								return true;
+							} else {
+								return false;
+							}
+						});
+					} else {
+						currentIsSelected = $(this).prop('selected');
+					}
+					$(this).prop('disabled', disableIt);
+				} else {
+					$(this).prop('disabled', false);
+				}
+			});
+
+			if (hideUtilised && !currentIsSelected) {
+				$("#selectSensorModalSelect option:not([disabled]):first").prop('selected', true);
+			}
+
+		});
+
+		getAvailablePrograms();
+
+	});
+
+	function saveProgram() {
+		var program = JSON.stringify(loadedProgram, undefined, null);
+		var selector = document.getElementById('selectprogram');
+
+		$("#saveprogram").prop('disabled', true);
+
+		fetch(hostName + '/config/programs/' + selector.value, {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: program
+		})
+		.then(res => {
+			if ((res.status >= 200 && res.status <=205) || res.type === "opaque") {
+				// if (confirm("Program '" + selector.value + "' saved.\nDo you want to reboot device to\nchanges take place?")) {
+				// 	reboot();
+				// 	return;
+				// }
+			} else {
+				alert("Not sure if program saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+			}
+		})
+		.catch(function(error) {
+			alert(error);
+		});
+		$("#saveprogram").prop('disabled', true);
+
+	}
+
+	function getAvailablePrograms() {
+		fetch(hostName + '/status/programs')
+		.then(res => res.json())
+		.then((programs) => {
+			fetch(hostName + '/config/program/current')
+				.then(res => res.json())
+				.then((prog) => {
+					var currentProgram = prog.program;
+
+					var selector = document.getElementById('selectprogram');
+
+					programs.forEach(element => {
+						if (element === currentProgram) {
+							$('#selectprogram').append( $( "<option selected>" + element + "</option>" ) );
+						} else {
+							$('#selectprogram').append( $( "<option>" + element + "</option>" ) );
+						}
+					});
+
+					$("#loadingprogress").addClass('invisible');
+					$('#programeditform').removeClass('invisible');
+
+					loadProgram();
+				});
+		}).catch(function(error) {
+			alert(error);
+			getAvailablePrograms();
+		}
+		);
+	}
+
+	function openCreateProgramNameModal(event) {
+		event.preventDefault();
+		$('#editModalLabel').text("Enter new program name");
+		$('#editModalBody').html(`
+		<form>
+		<input type='text' class='form-control' id='modalEditorInput'>
+		<div class="form-group form-check">
+			<input type="checkbox" class="form-check-input" id="cloneSelected">
+			<label class="form-check-label" for="cloneSelected">Clone selected program</label>
+		</div>
+		</form>`);
+
+		$("#editModalSave").off('click');
+		$("#editModalSave").on('click', function(event) {
+			event.preventDefault();
+			let name = $('#modalEditorInput').val();
+			if (name === undefined || name.length === 0) {
+				alert("Name must be specified");
+				return;
+			}
+			createProgram(name, $('#cloneSelected').prop('checked'));
+			$('#editModal').modal('hide');
+		});
+
+		$('#editModal').modal('show');
+	}
+
+	function createProgram(name, clone) {
+		if (!clone) {
+			loadedProgram = [];
+		}
+
+		$('#selectprogram').append( $( "<option selected>" + name + "</option>" ) );
+		saveProgram();
+		refreshLoadedProgram();
+	}
+
+	function deleteProgram() {
+		var selector = document.getElementById('selectprogram');
+		if (selector.value === "default") {
+			alert("Program 'default' can't be deleted");
+			return;
+		}
+
+		if (!confirm("Are you sure to delete program '" + selector.value + "'?")) {
+			return;
+		}
+
+		fetch(hostName + '/config/programs/' + selector.value, {
+			method: 'delete',
+			// mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin'
+		})
+		.then(res => {
+			if ((res.status >= 200 && res.status <=205) || res.type === "opaque") {
+				$('#selectprogram option:selected').remove()
+				$('#selectprogram').trigger('change');
+			} else {
+				alert("Not sure if program deleted\nStatus: " + res.status + "\nBody:\n" + res.body);
+			}
+		})
+		.catch(function(error) {
+			alert(error);
+		});
+	}
+
+	function HttpResponseException(message, status) {
+		this.message = message;
+		this.status = status;
+		this.name = "HTTP Response error";
+	}
+
+	HttpResponseException.prototype.toString = function() {
+		return this.name + ': ' + this.status + ' ' + this.message + '"';
+	}
+
+	function loadProgram() {
+		loadedProgram = undefined;
+		var selector = document.getElementById('selectprogram');
+
+		$('#programeditform').submit(false);
+		$('#roomSelectorSelect').empty();
+
+		fetch(hostName + '/config/programs/' + selector.value)
+		.then(function(response) {
+			if (!response.ok) {
+				throw new HttpResponseException(response.statusText, response.status);
+			}
+			return response;
+		})
+		.then(res => res.json())
+		.then((value) => {
+			$('#roomTemperatureSettings').collapse("show");
+			loadedProgram = value;
+			refreshLoadedProgram();
+		}).catch(function(error) {
+			$('#roomTemperatureSettings').collapse("hide");
+			alert("Cannot load program \"" + selector.value + "\"\n" + error + "\nTrying again.");
+			if (error instanceof HttpResponseException && error.status === 404) {
+				return;
+			}
+			loadProgram();
+		}
+		);
+	}
+
+	function refreshLoadedProgram() {
+		$('#roomSelectorSelect').find('option').remove();
+
+		loadedProgram.forEach(element => {
+				$('#roomSelectorSelect').append( $( "<option>" + element.name + "</option>" ) );
+			});
+
+			if (loadedProgram.length == 0) {
+				$('#roomTemperatureSettings *').attr('disabled', true);
+				$('#addNewRoom').attr('disabled', false);
+			} else {
+				$('#roomTemperatureSettings *').attr('disabled', false);
+				changeRoom();
+			}
+
+	}
+
+	function openEditRoomNameModal(event) {
+		event.preventDefault();
+		$('#editModalLabel').text("Enter room name");
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editRoomName" value="`+roomFound.name+`"></form>`);
+		$("#editModalSave").off('click');
+		$("#editModalSave").on('click', function(event) {
+			event.preventDefault();
+			let name = $('#editRoomName').val();
+			if (name === undefined || name.length == 0) {
+				alert("Name cannot be empty");
+				return;
+			}
+			roomFound.name = name;
+			$('#roomSelectorSelect').children("option:selected").text(roomFound.name);
+			$('#editModal').modal('hide');
+		});
+		$('#editModal').modal('show');
+	}
+
+	function openAddNewRoomModal(event) {
+		event.preventDefault();
+		$('#editModalLabel').text("Enter new room name");
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewRoomName"></form>`);
+		$("#editModalSave").off('click');
+		$("#editModalSave").on('click', function(event) {
+			event.preventDefault();
+			let name = $('#addNewRoomName').val();
+			if (name === undefined || name.length == 0) {
+				alert("Name must be set");
+				return;
+			}
+			addNewRoom(name);
+			$('#editModal').modal('hide');
+		});
+		$('#editModal').modal('show');
+	}
+
+	function addNewRoom(name) {
+		var newRoom = {};
+		newRoom.name = name;
+		newRoom.base_temp = 1900;
+		newRoom.temp_margin_up = 5;
+		newRoom.temp_margin_down = 15;
+		newRoom.enabled = false;
+		newRoom.valves = [];
+		newRoom.sensor = "";
+
+		if (loadedProgram === undefined) {
+			loadedProgram = [];
+		}
+		loadedProgram.push(newRoom);
+		refreshLoadedProgram();
+		$("#roomSelectorSelect option:last").attr("selected", "selected").trigger('change');
+	}
+
+	function deleteRoom() {
+		var selected = $("#roomSelectorSelect").prop('selectedIndex');
+
+		if (!confirm("Do you want to delete room '" + loadedProgram[selected].name + "'?")) {
+			return;
+		}
+
+		loadedProgram.splice(selected, 1);
+		refreshLoadedProgram();
+	}
+
+
+
+	function changeRoom() {
+		var roomSelectorHtml = `
+	<div class="form-check">
+			<input class="form-check-input" type="checkbox" value="" id="roomEnabledCheck">
+			<label class="form-check-label" for="roomEnabledCheck">Enabled</label>
+	</div>
+	<div class="form-row">
+		<div class="col-md-4 mb-2">
+			<label for="roomSensor">Room sensor</label>
+			<div class="input-group">
+				<input type="text" class="form-control" id="roomSensor" placeholder="Room sensor" value="" required>
+				<div class="input-group-append">
+					<button class="btn btn-outline-secondary" type="button" data-toggle="modal" data-target="#selectSensorModal" data-onopen="" data-onclose=""><svg width="16px" height="16px"><use href="#img-edit" /></svg></button>
+				</div>
+			</div>
+		</div>
+		<div class="col-md-4 mb-2">
+			<label for="roomValvesSelect">Room valves</label><br/>
+			<select id="roomValvesSelect" multiple="multiple">
+				<option value=0>1</option>
+				<option value=1>2</option>
+				<option value=2>3</option>
+				<option value=3>4</option>
+				<option value=4>5</option>
+				<option value=5>6</option>
+				<option value=6>7</option>
+				<option value=7>8</option>
+			</select>
+		</div>
+	</div>
+
+	<div class="form-row mb-3">
+		<div class="col-md-4 mb-2">
+			<label for="roomBaseTemp">Base room temperature</label>
+			<div class="input-group">
+				<input type="number" class="form-control" id="roomBaseTemp" placeholder="20.00" value="" step="0.05" min=10 max=30 required>
+				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+			</div>
+		</div>
+		<div class="col-md-4 mb-2">
+			<label for="roomUpperMaging">Turn off the heating if the temperature rises by</label>
+			<div class="input-group">
+				<input type="number" class="form-control" id="roomUpperMaging" placeholder="0.10" value="" step="0.05" min=0.01 max=5  required>
+				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+			</div>
+		</div>
+		<div class="col-md-4 mb-2">
+			<label for="roomLowerMargin">Turn on the heating if the temperature drops by</label>
+			<div class="input-group">
+				<input type="number" class="form-control" id="roomLowerMargin" placeholder="0.10" value="" step="0.05" min=0.01 max=5 required>
+				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+			</div>
+		</div>
+	</div>
+
+	<div class="card">
+		<div class="card-header">Temperature overrides</div>
+		<div class="card-body" id="tempOverridesSelectGroupBody">
+			<div class="form-group" id="tempOverridesSelectGroup">
+				<div class="form-row">
+					<div class="col mb-2">
+						<div class="input-group">
+							<div class="input-group-prepend">
+								<button class="btn btn-outline-secondary" type="button" id="tempOverridesSelectEdit" onclick="openEditTempOverrideNameModal(event);"><svg width="16px" height="16px"><use href="#img-edit" /></svg></button>
+							</div>
+							<select class="form-control" id="tempOverridesSelect" name="tempselected" aria-describedby="tempOverridesSelectEdit" onchange="selectTempOverride()">
+							</select>
+						</div>
+					</div>
+					<div class="col-md-2 mb-2">
+						<button type="button" class="btn btn-success form-control" onclick='openAddNewOverrideModal(event);'>Add new override</button>
+						</div>
+					<div class="col-md-2 mb-2">
+						<button type="button" class="btn btn-dark form-control" onclick="deleteTempOverride();">Delete override</button>
+					</div>
+				</div>
+			</div>
+
+			<div class="form-group" id="tempOverridesDetailsGroup">
+				<div class="form-row">
+					<div class="col-md-3 mb-2">
+						<div class="form-check">
+							<input class="form-check-input" type="checkbox" value="" id="tempOverridesEnabled">
+							<label class="form-check-label" for="tempOverridesEnabled">Enabled</label>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="col-md-3 mb-2">
+						<label for="tempOverridesTemp">Room temperature</label>
+						<div class="input-group">
+							<input type="number" class="form-control" id="tempOverridesTemp" placeholder="20.0" value="" step="0.05" min=0 max=30 required>
+							<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+						</div>
+					</div>
+					<div class="col-md-3 mb-2">
+						<label for="tempOverridesTimeFrom">Time from</label>
+						<div class="input-group">
+							<input type="time" class="form-control" id="tempOverridesTimeFrom" placeholder="22:00" value="22:00" required>
+							<div class="input-group-append"><div class="input-group-text">HH:MM</div></div>
+						</div>
+					</div>
+					<div class="col-md-3 mb-2">
+						<label for="tempOverridesTimeTo">Time to</label>
+						<div class="input-group">
+							<input type="time" class="form-control" id="tempOverridesTimeTo" placeholder="22:10" value="" required>
+							<div class="input-group-append"><div class="input-group-text">HH:MM</div></div>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-row mb-3">
+					<div class="col-md-6 mb-2">
+						<label for="roomBaseTemp">Boiler heating temperature override (EMS only). Leave blank if you don't want to override.</label>
+						<div class="input-group">
+							<input type="number" class="form-control" id="tempOverridesBoiler" placeholder="" value="" step="1" min=30 max=75>
+							<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+						</div>
+					</div>
+				</div>
+
+				<div class="form-row">
+					<div class="col-md-auto mb-2">
+						<label for="tempOverridesWeekdays">Applies to the days of the week</label><br/>
+						<select id="tempOverridesWeekdays" multiple="multiple">
+							<option value=0>Sunday</option>
+							<option value=1>Monday</option>
+							<option value=2>Tuesday</option>
+							<option value=3>Wednesday</option>
+							<option value=4>Thursday</option>
+							<option value=5>Friday</option>
+							<option value=6>Saturday</option>
+						</select>
+					</div>
+					<div class="col mb-2">
+						<label for="tempOverridesValvesSelect">Override valves</label><br/>
+						<select id="tempOverridesValvesSelect" multiple="multiple">
+							<option value=0>1</option>
+							<option value=1>2</option>
+							<option value=2>3</option>
+							<option value=3>4</option>
+							<option value=4>5</option>
+							<option value=5>6</option>
+							<option value=6>7</option>
+							<option value=7>8</option>
+						</select>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+`;
+
+
+
+		var selected = $("#roomSelectorSelect").prop('selectedIndex');
+		roomFound = loadedProgram[selected];
+		if (roomFound === undefined) {
+			alert("Room not found");
+			$('#roomGroup').html("");
+			return;
+		}
+
+		$('#roomGroup').html(roomSelectorHtml);
+
+		$('#roomValvesSelect').multiselect({
+			numberDisplayed: 0,
+			allSelectedText: false,
+			onChange: function(){
+				const toNumbers = arr => arr.map(Number);
+				var selectedOptions = toNumbers($('#roomValvesSelect').val());
+				roomFound.valves = selectedOptions;
+			}});
+
+		$('#roomValvesSelect').multiselect('select', roomFound.valves);
+
+		$('#roomEnabledCheck').prop('checked', roomFound.enabled === undefined ? true : roomFound.enabled);
+		$('#roomEnabledCheck').change(function() {
+			roomFound.enabled = $(this).prop('checked');
+		});
+
+		$('#roomSensor').val(roomFound.sensor).on('input', function() {
+			roomFound.sensor = $( this ).val();
+		});
+
+		$('#roomBaseTemp').val(roomFound.base_temp/100).on('input', function() {
+			roomFound.base_temp = $( this ).val() * 100;
+		});
+		$('#roomUpperMaging').val(roomFound.temp_margin_up/100).on('input', function() {
+			roomFound.temp_margin_up = $( this ).val() * 100;
+		});
+		$('#roomLowerMargin').val(roomFound.temp_margin_down/100).on('input', function() {
+			roomFound.temp_margin_down = $( this ).val() * 100;
+		});
+
+		showTempOverrides();
+	}
+
+	function showTempOverrides() {
+		if (roomFound.temperatures !== undefined) {
+			roomFound.temperatures.forEach(element => {
+						$('#tempOverridesSelect').append( $( "<option>" + element.name + "</option>" ) );
+				});
+		}
+
+		$('#tempOverridesWeekdays').multiselect({
+			includeSelectAllOption: false,
+			allSelectedText: 'A whole week',
+			nonSelectedText: 'Choose weekdays',
+			numberDisplayed: 0,
+			selectAllNumber: false,
+			onChange: function(){
+				const toNumbers = arr => arr.map(Number);
+				var selectedOptions = toNumbers($('#tempOverridesWeekdays').val());
+
+				if(selectedOptions.length == 0) {
+					alert("You must select at least one day");
+					$('#tempOverridesWeekdays').multiselect('select', getSelectedTemp().days);
+					return false;
+				}
+
+				getSelectedTemp().days = selectedOptions;
+			}
+		});
+
+		$('#tempOverridesValvesSelect').multiselect({
+			includeSelectAllOption: false,
+			allSelectedText: 'Heat on all valves',
+			nonSelectedText: 'Do not override',
+			numberDisplayed: 0,
+			selectAllNumber: false,
+			onChange: function(){
+				const toNumbers = arr => arr.map(Number);
+				var selectedOptions = toNumbers($('#tempOverridesValvesSelect').val());
+				if (selectedOptions.length !== 0) {
+					getSelectedTemp().valves = selectedOptions;
+				} else {
+					delete getSelectedTemp().valves;
+				}
+			}
+		});
+
+		if (roomFound.temperatures === undefined || roomFound.temperatures.length == 0) {
+			$('#tempOverridesSelectGroupBody *').attr('disabled', true);
+			$('#tempOverridesAdd').attr('disabled', false);
+			$('#tempOverridesWeekdays').multiselect();
+			$('#tempOverridesValvesSelect').multiselect();
+		} else {
+			$('#tempOverridesSelectGroupBody *').attr('disabled', false);
+			selectTempOverride();
+		}
+	}
+
+	function getSelectedTemp() {
+			var selected = $("#tempOverridesSelect").prop('selectedIndex');
+			return roomFound.temperatures[selected];
+	}
+
+
+
+
+	function openAddNewOverrideModal(event) {
+		event.preventDefault();
+		$('#editModalLabel').text("Enter name for temperature override");
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewOverrideName"></form>`);
+		$("#editModalSave").off('click');
+		$("#editModalSave").on('click', function(event) {
+			event.preventDefault();
+			let name = $('#addNewOverrideName').val();
+			if (name === undefined || name.length == 0) {
+				alert("Name must be set");
+				return;
+			}
+			createNewTempOverride(name);
+			$('#editModal').modal('hide');
+		});
+		$('#editModal').modal('show');
+	}
+
+	function createNewTempOverride(name) {
+
+		var newTemp = {};
+		newTemp.name = name;
+		newTemp.time_from = "00:00";
+		newTemp.time_to = "00:01";
+		newTemp.temp = 1800;
+		newTemp.boiler_temp = "";
+		newTemp.enabled = false;
+		newTemp.days = [0,1,2,3,4,5,6];
+		if (roomFound.temperatures === undefined) {
+			roomFound.temperatures = [];
+		}
+		roomFound.temperatures.push(newTemp);
+
+		$('#tempOverridesSelect').find('option').remove();
+		showTempOverrides();
+		$("#tempOverridesSelect option:last").attr("selected", "selected").trigger('change');
+	}
+
+
+	function openEditTempOverrideNameModal(event) {
+		event.preventDefault();
+		$('#editModalLabel').text("Enter temperature override name");
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editOverrideName" value="`+getSelectedTemp().name+`"></form>`);
+		$("#editModalSave").off('click');
+		$("#editModalSave").on('click', function(event) {
+			event.preventDefault();
+			let name = $('#editOverrideName').val();
+			if (name === undefined || name.length == 0) {
+				alert("Name cannot be empty");
+				return;
+			}
+			getSelectedTemp().name = name;
+			$('#tempOverridesSelect').children("option:selected").text(getSelectedTemp().name);
+			$('#editModal').modal('hide');
+		});
+		$('#editModal').modal('show');
+	}
+
+	function deleteTempOverride() {
+		var selected = $("#tempOverridesSelect").prop('selectedIndex');
+		if (!confirm("Do you want to delete temperature override\n'" + roomFound.temperatures[selected].name + "'?")) {
+			return;
+		}
+
+		roomFound.temperatures.splice(selected, 1);
+
+		$('#tempOverridesSelect').find('option').remove();
+		showTempOverrides();
+	}
+
+	function selectTempOverride() {
+		$('#tempOverridesWeekdays').multiselect('deselectAll', false);
+
+		if (getSelectedTemp().days === undefined || getSelectedTemp().days.length == 0) {
+			$('#tempOverridesWeekdays').multiselect('selectAll', false);
+		} else {
+			$('#tempOverridesWeekdays').multiselect('select', getSelectedTemp().days);
+		}
+
+		if (getSelectedTemp().valves === undefined || getSelectedTemp().valves.length == 0) {
+			$('#tempOverridesValvesSelect').multiselect('deselectAll', false).multiselect('refresh');
+		} else {
+			$('#tempOverridesValvesSelect').multiselect('select', getSelectedTemp().valves).multiselect('refresh');
+		}
+
+		$('#tempOverridesEnabled').prop('checked', getSelectedTemp().enabled === undefined ? true : getSelectedTemp().enabled);
+		$('#tempOverridesEnabled').change(function() {
+			getSelectedTemp().enabled = $(this).prop('checked');
+		});
+
+		$('#tempOverridesTemp').val(getSelectedTemp().temp/100).on('input', function() {
+			getSelectedTemp().temp = $( this ).val() * 100;
+		});
+
+		$('#tempOverridesBoiler').val(getSelectedTemp().boiler_temp).on('input', function() {
+			if ($( this ).val().length > 0) {
+				getSelectedTemp().boiler_temp = parseInt($( this ).val());
+			} else {
+				getSelectedTemp().boiler_temp = null;
+			}
+		});
+
+		$('#tempOverridesTimeFrom').val(getSelectedTemp().time_from).on('input', function() {
+			getSelectedTemp().time_from = $( this ).val();
+		});
+
+		$('#tempOverridesTimeTo').val(getSelectedTemp().time_to).on('input', function() {
+			getSelectedTemp().time_to = $( this ).val();
+		});
+	}
+
+</script>

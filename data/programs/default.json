@@ -1,0 +1,226 @@
+[
+	{
+		"name": "Pokoj Janka",
+		"sensor": "58:2d:34:31:12:64",
+		"valves": [
+			0
+		],
+		"base_temp": 2070,
+		"temp_margin_up": 10,
+		"temp_margin_down": 15,
+		"enabled": true,
+		"temperatures": [
+			{
+				"name": "Noc",
+				"time_from": "00:01",
+				"time_to": "08:00",
+				"temp": 2050,
+				"enabled": true,
+				"days": [
+					0,
+					1,
+					2,
+					3,
+					4,
+					5,
+					6
+				]
+			}
+		]
+	},
+	{
+		"name": "Sypialnia",
+		"sensor": "a4:c1:38:61:34:a3",
+		"valves": [
+			1
+		],
+		"base_temp": 2070,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": true,
+		"temperatures": [
+			{
+				"name": "Dzien",
+				"time_from": "08:00",
+				"time_to": "15:00",
+				"temp": 1850,
+				"enabled": true,
+				"days": [
+					1,
+					2,
+					3,
+					4,
+					5
+				]
+			},
+			{
+				"name": "Noc",
+				"time_from": "00:01",
+				"time_to": "08:00",
+				"temp": 2020,
+				"enabled": true
+			}
+		]
+	},
+	{
+		"name": "Salon",
+		"sensor": "58:2d:34:31:11:bd",
+		"valves": [
+			2
+		],
+		"base_temp": 2070,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": true,
+		"temperatures": [
+			{
+				"name": "Noc",
+				"time_from": "00:01",
+				"time_to": "07:00",
+				"temp": 2000,
+				"enabled": true,
+				"days": [
+					0,
+					1,
+					2,
+					3,
+					4,
+					5,
+					6
+				]
+			}
+
+		]
+	},
+	{
+		"name": "Przedpokoj",
+		"sensor": "",
+		"valves": [
+			3
+		],
+		"base_temp": 1900,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": false,
+		"temperatures": []
+	},
+	{
+		"name": "Kuchnia",
+		"sensor": "a4:c1:38:70:3a:7a",
+		"valves": [
+			4
+		],
+		"base_temp": 1900,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": false,
+		"temperatures": []
+	},
+	{
+		"name": "Lazienka",
+		"sensor": "58:2d:34:3a:71:56",
+		"valves": [
+			5,
+			7
+		],
+		"base_temp": 2070,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": true,
+		"temperatures": [
+			{
+				"name": "Noc",
+				"time_from": "00:31",
+				"time_to": "05:30",
+				"temp": 2000,
+				"enabled": true
+			},
+			{
+				"name": "Wieczorny komfort",
+				"time_from": "19:00",
+				"time_to": "23:00",
+				"temp": 2300
+			},
+			{
+				"name": "Poranny komfort",
+				"time_from": "05:30",
+				"time_to": "08:00",
+				"temp": 2300,
+				"days": [
+					1,
+					2,
+					3,
+					4,
+					5
+				]
+			},
+			{
+				"name": "Poranny komfort weekend",
+				"time_from": "06:30",
+				"time_to": "10:00",
+				"temp": 2300,
+				"days": [
+					0,
+					6
+				]
+			},
+			{
+				"name": "towel drying",
+				"time_from": "23:30",
+				"time_to": "23:40",
+				"temp": 2500,
+				"valves": [
+					7
+				]
+			},
+			{
+				"name": "towel drying",
+				"time_from": "00:10",
+				"time_to": "00:17",
+				"temp": 2500,
+				"valves": [
+					7
+				]
+			},
+			{
+				"name": "towel drying",
+				"time_from": "00:50",
+				"time_to": "01:00",
+				"temp": 2500,
+				"valves": [
+					7
+				]
+			}
+
+		]
+	},
+	{
+		"name": "Biuro",
+		"sensor": "a4:c1:38:91:aa:7b",
+		"valves": [
+			6
+		],
+		"base_temp": 2090,
+		"temp_margin_up": 5,
+		"temp_margin_down": 15,
+		"enabled": true,
+		"temperatures": [
+			{
+				"name": "Noc",
+				"time_from": "00:00",
+				"time_to": "08:00",
+				"temp": 1800,
+				"enabled": true,
+				"days": [
+					0,
+					1,
+					2,
+					3,
+					4,
+					5,
+					6
+				]
+			}
+		]
+	}
+]

@@ -1,0 +1,13 @@
+58:2d:34:3a:71:56 temp: T=22.3 H=66.0 battery: 83%
+58:2d:34:31:11:bd temp: T=21.1 H=68.4 battery: 88%
+58:2d:34:31:12:64 temp: T=21.9 H=63.3 battery: 91%
+58:2d:34:3a:71:bb temp: T=22.3 H=64.2 battery: 82%
+
+0 janek
+1 sypialnia
+2 salon
+3 przedpokoj - zalozony dynks
+4 kuchnia
+5 łazienka
+6 służbówka
+7 drabinka

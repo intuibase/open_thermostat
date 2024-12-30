@@ -1,0 +1,91 @@
+
+	<div class="d-flex justify-content-center" id="loadingprogress">
+		<div class="spinner-border" role="status">
+			<span class="sr-only"></span>
+		</div>
+	</div>
+
+	<form id = "programselectform" class="invisible">
+		<div class="form-group">
+			<label for="selectprogram">Select program</label>
+			<select class="form-control" id="selectprogram" name="program">
+			</select>
+		</div>
+		<div class="form-group">
+			<button type="button" class="btn btn-primary mb-2" onclick="saveSelectedProgram();">Submit</button>
+		</div>
+	</form>
+
+
+<script type='text/javascript'>
+	selectProgram();
+
+	function selectProgram() {
+
+
+		fetch(hostName + '/status/programs')
+		.then(res => res.json())
+		.then((programs) => {
+			fetch(hostName + '/config/program/current')
+				.then(res => res.json())
+				.then((prog) => {
+					var currentProgram = prog.program;
+
+					var selector = document.getElementById('selectprogram');
+					
+					programs.forEach(element => {
+						var opt = document.createElement('option'); 
+						opt.innerHTML = element;
+						selector.appendChild(opt);
+					});
+
+					selector.value = currentProgram;
+					$("#loadingprogress").addClass('invisible');
+					$('#programselectform').removeClass('invisible')
+				});
+		}).catch(function(error) {
+			alert(error);
+			mainScreen();
+		}
+		);
+	}
+
+	function saveSelectedProgram() {
+		var selector = document.getElementById('selectprogram');
+
+		if (selector.value.length === 0) {
+			alert("Program must be selected");
+			return;
+		}
+
+		var cfg = {program: selector.value};
+
+		$("#loadingprogress").removeClass('invisible');
+		$('#programselectform').addClass('invisible')
+
+
+		fetch(hostName + '/config/program/current', {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+		    headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(cfg)
+		})
+		.then(res => {
+			if ((res.status >= 200 && res.status <=205) || res.type === "opaque") {
+				// alert("Saved");
+			} else {
+				console.log(res);
+				alert(res.status + " " + res.body);
+			}
+			mainScreen();
+		})
+		.catch(function(error) {
+//			alert(error);
+			mainScreen();
+		});
+
+	}
+
+</script>
