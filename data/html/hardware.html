@@ -1,0 +1,258 @@
+	<!-- <link rel="stylesheet" href="deps/bms.min.css" integrity="sha512-wHTuOcR1pyFeyXVkwg3fhfK46QulKXkLq1kxcEEpjnAPv63B/R49bBqkJHLvoGFq6lvAEKlln2rE1JfIPeQ+iw==" crossorigin="anonymous" /> -->
+	<!-- <script src="deps/bms.min.js" integrity="sha512-ljeReA8Eplz6P7m1hwWa+XdPmhawNmo9I0/qyZANCCFvZ845anQE+35TuZl9+velym0TKanM2DXVLxSJLLpQWw==" crossorigin="anonymous"></script> -->
+
+
+
+	<div class="d-flex justify-content-center" id="loadingprogress">
+		<div class="spinner-border" role="status">
+			<span class="sr-only"></span>
+		</div>
+	</div>
+
+	<form id = "hardwareeditform" class="invisible">
+
+	<div class="col-md-auto">
+
+	<div class="row mb-3">
+	<div class="card w-100" id="BoilerSettings">
+		<div class="card-header d-flex justify-content-between align-items-center">
+			<span class="align-middle">Hardware configuration</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadHardwareSettings();">&#x2b6f;</button>
+		</div>
+		<div class="card-body">
+
+			<ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+				<li class="nav-item"><a class="nav-link active" id="pills-pins-tab" data-toggle="pill" href="#pills-pins" role="tab" aria-controls="pills-pins" aria-selected="true">Hardware I/O pins configuration</a></li>
+				<!-- <li class="nav-item"><a class="nav-link" id="pills-curve-tab" data-toggle="pill" href="#pills-curve" role="tab" aria-controls="pills-curve" aria-selected="false">Heating curve</a></li> -->
+			</ul>
+			<div class="tab-content" id="pills-tabContent">
+				<div class="tab-pane fade show active" id="pills-pins" role="tabpanel" aria-labelledby="pills-pins-tab">
+					<div class="form-group">
+
+						<div class="card mb-2">
+							<div class="card-header">Real Time Clock pins</div>
+							<div class="card-body" id="RTCPinsCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsRTC_SDA">SDA</label>
+										<input type="number" class="form-control" id="PinsRTC_SDA" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsRTC_SCL">SCL</label>
+										<input type="number" class="form-control" id="PinsRTC_SCL" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">EMS Bus hardware interface pins</div>
+							<div class="card-body" id="EMSPinsCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsEMS_RX">RX</label>
+										<input type="number" class="form-control" id="PinsEMS_RX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsEMS_TX">TX</label>
+										<input type="number" class="form-control" id="PinsEMS_TX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">EMS Bus forwarder pins</div>
+							<div class="card-body" id="EMSForwarderPinsCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsEMSForwarder_RX">RX</label>
+										<input type="number" class="form-control" id="PinsEMSForwarder_RX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsEMSForwarder_TX">TX</label>
+										<input type="number" class="form-control" id="PinsEMSForwarder_TX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">Relay on/off pins</div>
+							<div class="card-body" id="RelaysPinsCard">
+								<div class="form-row">
+									<div class="col-md-6 mb-2">
+										<label for="PinsRelays_Boiler">Boiler On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_Boiler" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC1">Heating circuit 1 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC1" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC2">Heating circuit 2 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC2" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC3">Heating circuit 3 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC3" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC4">Heating circuit 4 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC4" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC5">Heating circuit 5 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC5" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC6">Heating circuit 6 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC6" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC7">Heating circuit 7 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC7" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+									<div class="col-md mb-2">
+										<label for="PinsRelays_HC8">Heating circuit 8 On/Off</label>
+										<input type="number" class="form-control" id="PinsRelays_HC8" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+
+
+
+
+			<div class="card-footer text-muted">
+				<button type="button" class="btn btn-primary mb-2" onclick="saveHardwareSettings();" id="SaveHardwareSettings">Save settings</button>
+			</div>
+	
+		</div>
+	</div>
+	</div>
+
+
+</div>
+
+	</form>
+
+<script type='text/javascript'>
+
+
+	$(document).ready(function() {
+		loadHardwareSettings();
+	});
+
+	//TODO shared
+	function HttpResponseException(message, status) {
+		this.message = message;
+		this.status = status;
+		this.name = "HTTP Response error";
+	}
+
+	HttpResponseException.prototype.toString = function() {
+		return this.name + ': ' + this.status + ' "' + this.message + '"';
+	}
+
+	function validateResponse(response) {
+		if (!response.ok) {
+				throw new HttpResponseException(response.statusText, response.status);
+			}
+			return response;		
+	}
+
+	function loadHardwareSettings() {
+		fetch(hostName + '/config/hardware')
+		.then(validateResponse)
+		.then(res => res.json())
+		.then((settings) => {
+			$('#PinsRTC_SDA').val(settings.rtci2c[0]);
+			$('#PinsRTC_SCL').val(settings.rtci2c[1]);
+			$('#PinsEMS_RX').val(settings.ems[0]);
+			$('#PinsEMS_TX').val(settings.ems[1]);
+			if (settings.ems_forwarder) {
+				$('#PinsEMSForwarder_RX').val(settings.ems_forwarder[0]);
+				$('#PinsEMSForwarder_TX').val(settings.ems_forwarder[1]);
+			}
+			$('#PinsRelays_Boiler').val(settings.boiler_pin);
+
+			for (let i = 0; i < 8; ++i) {
+				var id = '#PinsRelays_HC' + (i + 1).toString();
+				$(id).val(settings.valve_pins[i]);
+			}
+
+			$("#loadingprogress").addClass('invisible');
+			$('#hardwareeditform').removeClass('invisible');
+		}).catch(function(error) {
+			if (error instanceof HttpResponseException && error.status === 404) {
+				alert("Cannot load hardware settings\n" + error);
+			}
+			if (confirm("Cannot load hardware settings\n" + error + "\nTry again?")) {
+				loadHardwareSettings();
+			}
+		});
+	}
+
+	function saveHardwareSettings() {
+		$("#SaveHardwareSettings").prop('disabled', true);
+
+		let settings = {
+			"rtci2c": [parseInt($('#PinsRTC_SDA').val(), 10), parseInt($('#PinsRTC_SCL').val(), 10)],
+			"ems": [parseInt($('#PinsEMS_RX').val(), 10), parseInt($('#PinsEMS_TX').val(), 10)],
+			"ems_forwarder": [parseInt($('#PinsEMSForwarder_RX').val(), 10), parseInt($('#PinsEMSForwarder_TX').val(), 10)],
+			"boiler_pin": parseInt($('#PinsRelays_Boiler').val(), 10),
+			"valve_pins": []
+		};
+		for (let i = 0; i < 8; ++i) {
+			var id = '#PinsRelays_HC' + (i + 1).toString();
+			settings.valve_pins[i] = parseInt($(id).val(), 10);
+		}
+
+		fetch(hostName + '/config/hardware', {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(settings, undefined, '\t')
+		})
+		.then(res => {
+			if (res.status === 200 || res.status === 201 || res.type === "opaque") {
+				if (confirm("Hardware settings saved.\nDo you want to reboot device to\nchanges take place?")) {
+					reboot();
+					return;
+				}
+			} else {
+				alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+			}
+		})
+		.catch(function(error) {
+			alert(error);
+		});
+		$("#SaveHardwareSettings").prop('disabled', false);
+	}
+
+	function reboot() {
+		fetch(hostName + '/config/reboot')
+		.then((programs) => {
+		}).catch(function(error) {
+			alert(error);
+		}
+		);
+		mainScreen();
+	}
+
+
+
+</script>

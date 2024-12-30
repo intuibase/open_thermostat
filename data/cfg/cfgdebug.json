@@ -1,0 +1,1 @@
+{"debugRoomTemperatures": false,"debugAutoLock": false,"debugHeatingController": false,"debugTemperatureReader": false,"debugREST": true,"debugOpenWeather": false,"debugBoilerController": true,"debugEmsBusUart": false,"debugEmsBusUartForwarder": false,"debugEmsController": true,"debugEmsVerbose": false,"debugMQTT": false,"debugFatal": true}

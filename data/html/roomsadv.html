@@ -1,0 +1,120 @@
+
+	<div class="d-flex justify-content-center" id="loadingprogress">
+		<div class="spinner-border" role="status">
+			<span class="sr-only"></span>
+		</div>
+	</div>
+
+	<form id = "programeditform" class="invisible">
+		<div class="form-group">
+			<label for="selectprogram">Select program to edit</label>
+			<select class="form-control" id="selectprogram" name="program" onchange="loadProgram()">
+			</select>
+		</div>
+		<div class="form-group">
+			<textarea class="form-control" id="configContent" rows="30"></textarea>
+		</div>
+
+
+
+		<div class="form-group">
+			<button type="button" class="btn btn-primary mb-2" onclick="saveProgram();">Save program</button>
+			<button type="button" class="btn btn-primary mb-2" onclick="reboot();">Reboot device</button>
+		</div>
+	</form>
+
+
+
+
+<script type='text/javascript'>
+	getAvailablePrograms();
+
+	function reboot() {
+		fetch(hostName + '/config/reboot')
+		.then((programs) => {
+		}).catch(function(error) {
+			alert(error);
+		}
+		);
+		mainScreen();
+	}
+
+	function getAvailablePrograms() {
+		fetch(hostName + '/status/programs')
+		.then(res => res.json())
+		.then((programs) => {
+			fetch(hostName + '/config/program/current')
+				.then(res => res.json())
+				.then((prog) => {
+					var currentProgram = prog.program;
+
+					var selector = document.getElementById('selectprogram');
+					
+					programs.forEach(element => {
+						var opt = document.createElement('option'); 
+						opt.innerHTML = element;
+						selector.appendChild(opt);
+					});
+
+					selector.value = currentProgram;
+					$("#loadingprogress").addClass('invisible');
+					$('#programeditform').removeClass('invisible');
+					loadProgram();
+				});
+		}).catch(function(error) {
+			alert(error);
+			getAvailablePrograms();
+		}
+		);
+	}
+
+	function loadProgram() {
+		var selector = document.getElementById('selectprogram');
+		var content = document.getElementById('configContent');
+
+		$('programeditform').submit(false);
+
+
+		fetch(hostName + '/config/programs/' + selector.value)
+		.then(res => res.text())
+		.then((value) => {
+			content.value = value;
+			$('programeditform').submit(true);
+
+		}).catch(function(error) {
+			content.value = "";
+			alert(error);
+		}
+		);
+	}
+
+	function saveProgram() {
+		var selector = document.getElementById('selectprogram');
+		var content = document.getElementById('configContent');
+
+		$("#loadingprogress").removeClass('invisible');
+		$('#programeditform').addClass('invisible')
+
+		fetch(hostName + '/config/programs/' + selector.value, {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: content.value
+		})
+		.then(res => {
+			if (res.status == 200 || res.status == 201) {
+				alert("Saved");
+			} else {
+				alert(res.status + " " + res.body);
+			}
+			getAvailablePrograms();
+		})
+		.catch(function(error) {
+			alert(error);
+		});
+
+	}
+
+</script>

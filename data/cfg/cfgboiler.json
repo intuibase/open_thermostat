@@ -1,0 +1,21 @@
+{
+	"minHeatingCurveTemp": 30,
+	"maxHeatingCurveTemp": 75,
+	"heatingCurve": [
+		30,
+		30,
+		37,
+		46,
+		55,
+		63,
+		72,
+		75,
+		75
+	],
+	"boiler": {
+		"minHeatingTemp": 20,
+		"maxHeatingTemp": 75,
+		"controlMode": "ems",
+		"outdoorSensor": "ems"
+	}
+}
