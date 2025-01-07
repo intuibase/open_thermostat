@@ -168,9 +168,12 @@ private:
 			publishRoomSensor(room, "humidity"sv, "Humidity"sv, "currentHumidity"sv, "/ 100"sv, "%"sv, "measurement"sv, "humidity"sv);
 		}
 
-		publishSensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, "b", "measurement"sv, "data_size"sv);
-		publishSensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, "b", "measurement"sv, "data_size"sv);
-		publishSensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, "b", "measurement"sv, "data_size"sv);
+		constexpr std::string_view unit_byte = "B"sv;
+		constexpr std::string_view device_class_volume_flow_rate = "volume_flow_rate"sv;
+
+		publishSensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
+		publishSensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
+		publishSensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
 		publishSensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
 		publishSensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv);
 
@@ -178,7 +181,7 @@ private:
 		publishSensor("ems_metrics"sv, "opth_energy_warm_water"sv, "Energy used for warm water heating"sv, "warmWaterEnergyUsedKwh"sv, ""sv, "kWh"sv, "measurement"sv, "energy"sv);
 		publishSensor("ems_metrics"sv, "opth_energy_heating"sv, "Energy used for space heating"sv, "heatingEnergyUsedKwh"sv, ""sv, "kWh"sv, "measurement"sv, "energy"sv);
 		publishSensor("ems_metrics"sv, "opth_warm_water_usage"sv, "Warm water usage"sv, "warmWaterUsage"sv, ""sv, "l"sv, "measurement"sv, "water"sv);
-		publishSensor("ems_metrics"sv, "opth_warm_water_avg_flow"sv, "Average flow of warm water"sv, "warmWaterAvgFlow"sv, ""sv, "l/min"sv, "measurement"sv, "water"sv);
+		publishSensor("ems_metrics"sv, "opth_warm_water_avg_flow"sv, "Average flow of warm water"sv, "warmWaterAvgFlow"sv, ""sv, "l/min"sv, "measurement"sv, device_class_volume_flow_rate);
 	}
 
 
