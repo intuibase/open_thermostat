@@ -1,15 +1,14 @@
 #pragma once
 
-#include"config.h"
+#include "config.h"
 #include "Logger.h"
 #include "BeaconBleAddress.h"
 #include "TimeHelpers.h"
 
-#include <esp_bt.h>
-#include <esp_bt_main.h>
+#include <NimBLEDevice.h>
+#include <NimBLEAdvertisedDevice.h>
 #include <esp_gap_ble_api.h>
-#include <esp_bt_device.h>
-#include <esp32-hal-bt.h>
+
 #include <atomic>
 #include <memory>
 #include <set>
@@ -19,23 +18,12 @@
 
 namespace heating {
 
-class BeaconTemperatureReader {
+class BeaconTemperatureReader : public NimBLEScanCallbacks {
 private:
 	struct ServiceDataView {
 		uint8_t *data = nullptr;
 		uint8_t length = 0;
 	};
-
-	 esp_ble_scan_params_t ble_scan_params {
-		.scan_type              = BLE_SCAN_TYPE_ACTIVE,
-		.own_addr_type          = BLE_ADDR_TYPE_PUBLIC,
-		.scan_filter_policy     = BLE_SCAN_FILTER_ALLOW_ALL,
-		// .scan_interval          = 0x50,
-		// .scan_window            = 0x30,
-		.scan_interval          = (uint16_t)(100/0.625),  //100ms
-		.scan_window            = (uint16_t)(80/0.625), //80ms
-		.scan_duplicate         = BLE_SCAN_DUPLICATE_ENABLE
-	} ;
 
 public:
 	using BleDevices_t = std::set<BleAddress_t>;
@@ -43,143 +31,84 @@ public:
 	using ReportTemperature_t = std::function<void(BleAddress_t, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery)>;
 
 	BeaconTemperatureReader(ReportTemperature_t pushTemperature) : pushTemperature_(pushTemperature) {
-		stReader_ = this; // needed to correlate c-style bt callback with out class
+		stReader_ = this;
 
-#ifndef CONFIG_BT_CLASSIC_ENABLED
 		esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-#else
-		esp_bt_mem_release(ESP_BT_MODE_BTDM);
-#endif
 
-		if (!btStart()) {
-			DBGLOGTR("BeaconTemperatureReader bluetooth init failed\n");
-			return;
+		if (NimBLEDevice::init("HeatingController")) {
+			DBGLOGTR("NimBLEDevice initialized successfully.\n");
 		}
+		NimBLEScan *pBLEScan = NimBLEDevice::getScan();
 
-		if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_UNINITIALIZED) {
-			if (auto res = esp_bluedroid_init(); res != ESP_OK) {
-				DBGLOGTR("bluedroid init error %s (%d)\n", esp_err_to_name(res), res);
-				return;
-			}
-		}
+		pBLEScan->setScanCallbacks(this, true);
+		pBLEScan->setActiveScan(true);
+		pBLEScan->setInterval(100); // 100ms
+		pBLEScan->setWindow(80);    // 80ms
 
-		if (esp_bluedroid_get_status() != ESP_BLUEDROID_STATUS_ENABLED) {
-			DBGLOGTR("bluedroid enable\n");
-			if (auto res = esp_bluedroid_enable(); res != ESP_OK) {
-				DBGLOGTR("bluedroid enable error %s (%d)\n", esp_err_to_name(res), res);
-				return;
-			}
-		}
-
-		DBGLOGTR("esp_bluedroid_get_status %d\n", esp_bluedroid_get_status());
-		DBGLOGTR("esp_bt_controller_get_status %d\n", esp_bt_controller_get_status());
-
-		if (const uint8_t *addr = esp_bt_dev_get_address(); addr != nullptr) {
-			DBGLOGTR("Device address " PRiBleAddress "\n", PRaBleAddress(addr));
-		}
-
-		if(auto res = esp_ble_gap_register_callback(BeaconTemperatureReader::esp_gap_cb); res != ESP_OK) {
-			DBGLOGTR("esp_ble_gap_register_callback error %s (%d)\n", esp_err_to_name(res), res);
-			return;
-		}
-
-		if(auto res = esp_ble_gap_set_device_name("HeatingController"); res != ESP_OK) {
-			DBGLOGTR("esp_ble_gap_set_device_name error %s (%d)\n", esp_err_to_name(res), res);
-		}
-
-		#ifdef CONFIG_BLE_SMP_ENABLE
-			esp_ble_io_cap_t iocap = ESP_IO_CAP_NONE;
-			if (esp_ble_gap_set_security_param(ESP_BLE_SM_IOCAP_MODE, &iocap, sizeof(esp_ble_io_cap_t)) != ESP_OK) {
-				DBGLOGTR("Unable to set BLE security param\n");
-			}
-		#endif
-
-		vTaskDelay(200 / portTICK_PERIOD_MS); // Delay for 200 msecs as a workaround to an apparent Arduino environment issue.
+		DBGLOGTR("BLE initialized successfully.\n");
 	}
 
+	void shutDownBLE() { NimBLEDevice::deinit(true); }
 
-	void shutDownBLE() {
-		esp_bluedroid_disable();
-		esp_bluedroid_deinit();
-		esp_bt_controller_disable();
-		esp_bt_controller_deinit();
-	}
-
-	bool isScanPending() {
-		return bluetoothScanPending_;
-	}
+	bool isScanPending() { return bluetoothScanPending_; }
 
 	void triggerScan() {
 		if (bluetoothScanPending_) {
-			DBGLOGTR("scan pending\n");
+			DBGLOGTR("Scan pending\n");
 			return;
 		}
 
 		auto now = millis();
 		if (lastScanFinishedMillis_ != 0 && !millisDurationPassed(now, lastScanFinishedMillis_, 1000ul * config_.scanInterval)) {
-			DBGLOGTR("scan interval %ds didn't passed yet\n", config_.scanInterval);
+			DBGLOGTR("Scan interval %ds didn't pass yet\n", config_.scanInterval);
 			return;
 		}
 
 		bluetoothScanPending_ = true;
-		DBGLOGTR("scan start %ds\n", config_.scanTime);
+		DBGLOGTR("Scan start %ds\n", config_.scanTime);
 
+		NimBLEScan *pBLEScan = NimBLEDevice::getScan();
+		auto res = pBLEScan->start(config_.scanTime * 1000, false, true);
 
-		if(auto res = esp_ble_gap_set_scan_params(&ble_scan_params); res != ESP_OK) {
-			DBGLOGTR("esp_ble_gap_set_scan_params error %s (%d)\n", esp_err_to_name(res), res);
-			return;
-		} else {
-			DBGLOGTR("esp_ble_gap_set_scan_params set successfully\n");
-		}
-
-		if(auto res = esp_ble_gap_start_scanning(config_.scanTime); res != ESP_OK) {
-			DBGLOGTR("esp_ble_gap_start_scanning(60) error %s (%d)\n", esp_err_to_name(res), res);
-			return;
-		}
-
-		vTaskDelay(20 / portTICK_PERIOD_MS); // Delay for 200 msecs as a workaround to an apparent Arduino environment issue.
+		DBGLOGTR("Scan start  result: %d\n", res);
 	}
 
 	void scanFinished() {
 		bluetoothScanPending_ = false;
 		lastScanFinishedMillis_ = millis();
-		esp_ble_gap_stop_scanning();
-		DBGLOGTR("scan finished\n");
+		NimBLEDevice::getScan()->clearResults();
+		DBGLOGTR("Scan finished\n");
 	}
 
-	static void esp_gap_cb(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t* param) {
-		switch (event) {
-			case ESP_GAP_BLE_SCAN_RESULT_EVT:
-				switch(param->scan_rst.search_evt) {
-					case ESP_GAP_SEARCH_INQ_CMPL_EVT:
-						stReader_->scanFinished();
-					break;
-					case ESP_GAP_SEARCH_INQ_RES_EVT:
-						// DBGLOGTR("ESP_GAP_SEARCH_INQ_RES_EVT rssi: %d result number: %d\n", param->scan_rst.rssi, param->scan_rst.num_resps);
-						stReader_->parseAdvertisment(param->scan_rst.bda, param->scan_rst.rssi, param->scan_rst.ble_adv, param->scan_rst.adv_data_len + param->scan_rst.scan_rsp_len);
-					break;
-					default:
-						// DBGLOGTR("ESP_GAP_BLE_SCAN_RESULT_EVT type: %d\n", param->scan_rst.search_evt);
-					break;
-				}
-				break;
-		}
+	void onResult(NimBLEAdvertisedDevice const *advertisedDevice) final {
+		auto payload = advertisedDevice->getPayload();
+		auto addr = advertisedDevice->getAddress();
+
+		// DBGLOGTR("ON RESULT SERVICE DATA COUNT %zu / %s, payload size: %zu address: %s\n", advertisedDevice->getServiceDataCount(), advertisedDevice->getName().c_str(), payload.size(), advertisedDevice->getAddress().toString().c_str());
+
+		parseAdvertisment(addr.getBase()->val, advertisedDevice->getRSSI(), payload.data(), payload.size());
+	}
+
+	void onDiscovered(const NimBLEAdvertisedDevice *advertisedDevice) final {
+		// DBGLOGTR("ON DISCOVERED  SERVICE DATA COUNT %zu / %s, payload size: %zu\n", advertisedDevice->getServiceDataCount(), advertisedDevice->getName().c_str(), payload.size());
+	}
+	void onScanEnd(const NimBLEScanResults &scanResults, int reason) {
+		DBGLOGTR("onScanEnd %d / %d\n", scanResults.getCount(), reason);
+		scanFinished();
 	}
 
 	void parseAdvertisment(uint8_t const *bda, int rssi, uint8_t *payload, size_t payloadSize) {
 		if (payloadSize < 2) {
 			return;
 		}
-		// DBGLOGTR("Payload size: %d\n", payloadSize);
 
 		std::string_view deviceName;
 		std::vector<ServiceDataView> serviceData;
-
 		uint8_t *frame = payload;
 
 		while (frame < payload + payloadSize) {
 			uint8_t frameLen = frame[0];
-			if (frameLen == 0)  {
+			if (frameLen == 0) {
 				break;
 			}
 			uint8_t frameType = frame[1];
@@ -205,10 +134,11 @@ public:
 			}
 			frame += frameLen;
 		}
+
 		if (deviceName == "MJ_HT_V1") {
-			parseMJ_HT_V1(BleAddress_t{bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]}, rssi, serviceData);
+			parseMJ_HT_V1(BleAddress_t{bda[5], bda[4], bda[3], bda[2], bda[1], bda[0]}, rssi, serviceData);
 		} else if (deviceName.substr(0, 4) == "ATC_") {
-			parseATC(BleAddress_t{bda[0], bda[1], bda[2], bda[3], bda[4], bda[5]}, rssi, serviceData);
+			parseATC(BleAddress_t{bda[5], bda[4], bda[3], bda[2], bda[1], bda[0]}, rssi, serviceData);
 		}
 	}
 
@@ -289,9 +219,7 @@ private:
 	std::atomic_bool bluetoothScanPending_ = false;
 	config::BluetoothConfig config_ = config::getBluetoothConfig();
 	unsigned long lastScanFinishedMillis_ = 0;
-
 };
-
 }
 
 heating::BeaconTemperatureReader *heating::BeaconTemperatureReader::stReader_ = nullptr;
