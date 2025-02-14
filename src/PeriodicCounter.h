@@ -1,3 +1,5 @@
+#pragma once
+
 #include <algorithm>
 #include <cstdint>
 #include <esp_timer.h>
@@ -36,6 +38,8 @@ public:
 	}
 
 	uint64_t getIntervalMs() { return intervalMs_; }
+
+	void notifyNow() { lastPassed_ = esp_timer_get_time(); }
 
 private:
 	int64_t lastPassed_ = 0;
