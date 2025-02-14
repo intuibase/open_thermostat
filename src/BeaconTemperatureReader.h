@@ -45,27 +45,16 @@ public:
 	BeaconTemperatureReader(ReportTemperature_t pushTemperature) : pushTemperature_(pushTemperature) {
 		stReader_ = this; // needed to correlate c-style bt callback with out class
 
+#ifndef CONFIG_BT_CLASSIC_ENABLED
+		esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
+#else
+		esp_bt_mem_release(ESP_BT_MODE_BTDM);
+#endif
+
 		if (!btStart()) {
 			DBGLOGTR("BeaconTemperatureReader bluetooth init failed\n");
 			return;
 		}
-
-		//  *
-		//  * If the app calls esp_bt_controller_enable(ESP_BT_MODE_BLE) to use BLE only then it is safe to call
-		//  * esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT) at initialization time to free unused BT Classic memory.
-		//  *
-		//  * If the mode is ESP_BT_MODE_BTDM, then it may be useful to call API esp_bt_mem_release(ESP_BT_MODE_BTDM) instead,
-		//  * which internally calls esp_bt_controller_mem_release(ESP_BT_MODE_BTDM) and additionally releases the BSS and data
-		//  * consumed by the BT/BLE host stack to heap. For more details about usage please refer to the documentation of
-		//  * esp_bt_mem_release() function
-
-		#ifndef CONFIG_BT_CLASSIC_ENABLED
-			esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT);
-		#else
-			esp_bt_mem_release(ESP_BT_MODE_BTDM);
-		#endif
-
-
 
 		if (esp_bluedroid_get_status() == ESP_BLUEDROID_STATUS_UNINITIALIZED) {
 			if (auto res = esp_bluedroid_init(); res != ESP_OK) {
@@ -84,7 +73,6 @@ public:
 
 		DBGLOGTR("esp_bluedroid_get_status %d\n", esp_bluedroid_get_status());
 		DBGLOGTR("esp_bt_controller_get_status %d\n", esp_bt_controller_get_status());
-
 
 		if (const uint8_t *addr = esp_bt_dev_get_address(); addr != nullptr) {
 			DBGLOGTR("Device address " PRiBleAddress "\n", PRaBleAddress(addr));
@@ -115,7 +103,6 @@ public:
 		esp_bluedroid_deinit();
 		esp_bt_controller_disable();
 		esp_bt_controller_deinit();
-		// esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
 	}
 
 	bool isScanPending() {
@@ -141,6 +128,8 @@ public:
 		if(auto res = esp_ble_gap_set_scan_params(&ble_scan_params); res != ESP_OK) {
 			DBGLOGTR("esp_ble_gap_set_scan_params error %s (%d)\n", esp_err_to_name(res), res);
 			return;
+		} else {
+			DBGLOGTR("esp_ble_gap_set_scan_params set successfully\n");
 		}
 
 		if(auto res = esp_ble_gap_start_scanning(config_.scanTime); res != ESP_OK) {
