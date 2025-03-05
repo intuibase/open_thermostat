@@ -6,7 +6,7 @@
 #include <uri/UriBraces.h>
 #include <cJSON.h>
 
-#include "ViewableStringBuf.h"
+#include "viewable_stringbuf.h"
 #include "HeatingController.h"
 #include "Logger.h"
 
@@ -14,6 +14,8 @@
 #include <string_view>
 
 namespace heating {
+
+using namespace std::string_view_literals;
 
 class WebServerStringView : public WebServer {
 public:
@@ -46,7 +48,7 @@ public:
 		server_.on("/status/wifi", [this]() {
 			DBGLOGREST("REST:wifiNetworks\n");
 
-			ViewableStringBuf payloadBuf;
+			ib::viewable_stringbuf payloadBuf;
 			std::ostream payload(&payloadBuf);
 
 			getWiFiNetworks(payload);
@@ -102,7 +104,7 @@ private:
 	void showPrograms() {
 		DBGLOGREST("showPrograms\n");
 
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 
 		ss << "[";
@@ -213,7 +215,7 @@ private:
 	void boilerStatus() {
 		DBGLOGREST("boilerStatus\n");
 
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 
 		controller_.getBoilerStatus(payload);
@@ -224,7 +226,7 @@ private:
 	void emsStatus() {
 		DBGLOGREST("emsStatus\n");
 
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 		controller_.getEMSStatus(ss);
 
@@ -233,7 +235,7 @@ private:
 
 	void emsParams() {
 		DBGLOGREST("emsParams\n");
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getEMSBoilerParams(payload);
 
@@ -243,7 +245,7 @@ private:
 	void status() {
 		DBGLOGREST("status\n");
 		server_.enableCORS(true);
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getFullStatus(payload);
 
@@ -254,7 +256,7 @@ private:
 		DBGLOGREST("roomsStatus\n");
 		server_.enableCORS(true);
 
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getRoomsStatus(payload);
 
@@ -263,7 +265,7 @@ private:
 
 	void devicesFound() {
 		DBGLOGREST("devicesFound\n");
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getDevicesFound(payload);
 		server_.sendView(200, "application/json"sv, payloadBuf.view());
@@ -275,7 +277,7 @@ private:
 		switch (server_.method()) {
 			default:
 			case HTTP_GET: {
-				ViewableStringBuf payloadBuf;
+				ib::viewable_stringbuf payloadBuf;
 				std::ostream payload(&payloadBuf);
 				getWiFiSSID(payload);
 				server_.sendView(200, "application/json"sv, payloadBuf.view());
@@ -394,7 +396,7 @@ private:
 		switch (server_.method()) {
 			default:
 			case HTTP_GET: {
-				ViewableStringBuf payloadBuf;
+				ib::viewable_stringbuf payloadBuf;
 				std::ostream ss(&payloadBuf);
 				ss << "{";
 				ss << DEBUG_OPTION_TO_STREAM(debugRoomTemperatures) << ",";

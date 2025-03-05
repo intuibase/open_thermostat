@@ -4,6 +4,7 @@
 #include "BoilerController.h"
 #include "BeaconTemperatureReader.h"
 #include "OpenWeather.h"
+#include "PeriodicCounter.h"
 #include "EmsController.h"
 #include "EmsMetrics.h"
 #include "MQTT.h"
@@ -25,6 +26,7 @@ public:
 
 	HeatingController() : openWeather_(config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(config::getRoomsConfig(currentProgram_)) {
 		bluetoothScan_ = true;
+		lastReadTemperatureCounter_.notifyNow();
 	}
 
 	~HeatingController() {
@@ -247,7 +249,7 @@ private:
 
 		if (temperature.has_value()) {
 			room->storeTemperature(temperature.value());
-			lastReadTemperature_ = millis();
+			lastReadTemperatureCounter_.notifyNow();
 		}
 
 		if (humidity.has_value()) {
@@ -261,7 +263,7 @@ private:
 	}
 
 	void resetIfNoDataForLongTime() {
-		if (lastReadTemperature_ + 300000 < millis()) { // 5min
+		if (lastReadTemperatureCounter_.durationPassed()) {
 			logger.println("RESTARTING DUE TO NO DATA FOR OVER 5m");
 			ESP.restart();
 		}
@@ -317,7 +319,7 @@ private:
 	};
 	std::string currentProgram_;
 	std::vector<heating::Room> rooms_;
-	unsigned long lastReadTemperature_ = 0;
+	ib::PeriodicCounter lastReadTemperatureCounter_{5 * 60 * 1000}; // 5 mins in ms
 	BeaconTemperatureReader::BleDevices_t devicesFound_;
 	mutable std::mutex roomsAccessMutex_;
 
