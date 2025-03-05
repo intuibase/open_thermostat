@@ -7,9 +7,10 @@
 
 #include <PubSubClient.h>
 #include <ESPPubSubClientWrapper.h>
-#include <ViewableStringBuf.h>
+#include <viewable_stringbuf.h>
 #include <ostream>
 #include <string_view>
+#include "PeriodicCounter.h"
 
 namespace heating {
 
@@ -186,17 +187,12 @@ private:
 
 
 	void publishDeviceStatus() {
-		auto now = millis();
-		if (lastPublishDeviceStatus_ != 0 && !millisDurationPassed(lastPublishDeviceStatus_, 1000ul * config_.interval)) {
-			decltype(now) timeToWait = static_cast<decltype(lastPublishDeviceStatus_)>(config_.interval) * 1000ul;
-			timeToWait = timeToWait - (now - lastPublishDeviceStatus_);
-			DBGLOGMQTT("publishDeviceStatus: waiting for publish interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.interval, lastPublishDeviceStatus_, now, timeToWait);
+		if (!publishDeviceStatusCounter_.durationPassed()) {
+			DBGLOGMQTT("publishDeviceStatus: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishDeviceStatusCounter_.getIntervalMs() / 1000, publishDeviceStatusCounter_.getTimeToWaitMs());
 			return;
 		}
 
-		lastPublishDeviceStatus_ = now;
-
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 
 		ss << "{\"mem_free\":" << ESP.getFreeHeap() << ",";
@@ -212,17 +208,12 @@ private:
 	}
 
 	void publishEmsMetrics() {
-		auto now = millis();
-		if (lastPublishEmsMetrics_ != 0 && !millisDurationPassed(lastPublishEmsMetrics_, 1000ul * config_.interval)) {
-			decltype(now) timeToWait = static_cast<decltype(lastPublishEmsMetrics_)>(config_.interval) * 1000ul;
-			timeToWait = timeToWait - (now - lastPublishEmsMetrics_);
-			DBGLOGMQTT("publishEmsMetrics: waiting for publish interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.interval, lastPublishEmsMetrics_, now, timeToWait);
+		if (!publishEmsMetricsCounter_.durationPassed()) {
+			DBGLOGMQTT("publishEmsMetrics: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishEmsMetricsCounter_.getIntervalMs() / 1000, publishEmsMetricsCounter_.getTimeToWaitMs());
 			return;
 		}
 
-		lastPublishEmsMetrics_ = now;
-
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 
 		getEmsMetrics_(ss);
@@ -233,31 +224,22 @@ private:
 	}
 
 	void publishStatus() {
-		if (lastPublishStatus_ != 0 && !millisDurationPassed(lastPublishStatus_, 1000ul * config_.keepAlive)) {
-			auto now = millis();
-			unsigned long timeToWait = static_cast<decltype(lastPublishStatus_)>(config_.keepAlive) * 1000ul;
-			timeToWait = timeToWait - (now - lastPublishStatus_);
-			DBGLOGMQTT("publishStatus: waiting for keepalive interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.keepAlive, lastPublishStatus_, now, timeToWait);
+		if (!publishStatusCounter_.durationPassed()) {
+			DBGLOGMQTT("publishStatus: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishStatusCounter_.getIntervalMs() / 1000, publishStatusCounter_.getTimeToWaitMs());
 			return;
 		}
 
-		lastPublishStatus_ = millis();
 		DBGLOGMQTT("publishStatus\n");
 		client_.publish("open_thermostat/status"sv, "on"sv, true);
 	}
 
 	void publishRoomData() {
-		auto now = millis();
-		if (lastPublishRoomData_ != 0 && !millisDurationPassed(lastPublishRoomData_, 1000ul * config_.interval)) {
-			decltype(now) timeToWait = static_cast<decltype(lastPublishRoomData_)>(config_.interval) * 1000ul;
-			timeToWait = timeToWait - (now - lastPublishRoomData_);
-			DBGLOGMQTT("publishRoomData: waiting for publish interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.interval, lastPublishRoomData_, now, timeToWait);
+		if (!publishRoomDataCounter_.durationPassed()) {
+			DBGLOGMQTT("publishRoomData: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishRoomDataCounter_.getIntervalMs() / 1000, publishRoomDataCounter_.getTimeToWaitMs());
 			return;
 		}
 
-		lastPublishRoomData_ = now;
-
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 
 		ss << "{\"rooms\": ";
@@ -270,7 +252,7 @@ private:
 	}
 
 	void publishRoomBinarySensor(uint16_t roomNo, std::string_view sensorName, std::string_view sensorFriendlyName) {
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 		ss << "{";
 		ss << "\"name\": \"" << sensorFriendlyName << "\",";
@@ -292,7 +274,7 @@ private:
 		ss << "], \"avty_mode\": \"all\"";
 		ss << "}";
 
-		ViewableStringBuf topicBuf;
+		ib::viewable_stringbuf topicBuf;
 		std::ostream topic(&topicBuf);
 		topic << "homeassistant/binary_sensor/open_thermostat/opth_room_"<< roomNo <<"_" << sensorName << "/config";
 
@@ -301,7 +283,7 @@ private:
 
 
 	void publishRoomSensor(uint16_t roomNo, std::string_view sensorName, std::string_view sensorFriendlyName, std::string_view jsonValueName, std::string_view valueOperation, std::string_view unit, std::string_view stateClass, std::string_view devClass = {}) {
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 		ss << "{";
 		ss << "\"name\": \"" << sensorFriendlyName << "\",";
@@ -325,7 +307,7 @@ private:
 		ss << "], \"avty_mode\": \"all\"";
 		ss << "}";
 
-		ViewableStringBuf topicBuf;
+		ib::viewable_stringbuf topicBuf;
 		std::ostream topic(&topicBuf);
 		topic << "homeassistant/sensor/open_thermostat/opth_room_"<< roomNo <<"_" << sensorName << "/config";
 
@@ -333,7 +315,7 @@ private:
 	}
 
 	void publishSensor(std::string_view stateTopic, std::string_view sensorUniqueId, std::string_view sensorFriendlyName, std::string_view jsonValueName, std::string_view valueOperation, std::string_view unit, std::string_view stateClass, std::string_view devClass = {}) {
-		ViewableStringBuf payloadBuf;
+		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 		ss << "{";
 		ss << "\"name\": \"" << sensorFriendlyName << "\",";
@@ -357,7 +339,7 @@ private:
 		ss << "], \"avty_mode\": \"all\"";
 		ss << "}";
 
-		ViewableStringBuf topicBuf;
+		ib::viewable_stringbuf topicBuf;
 		std::ostream topic(&topicBuf);
 		topic << "homeassistant/sensor/open_thermostat/" << sensorUniqueId << "/config";
 
@@ -367,10 +349,11 @@ private:
 private:
 	config::MqttConfig config_;
 	MyPubSub client_;
-	unsigned long lastPublishRoomData_ = 0;
-	unsigned long lastPublishDeviceStatus_ = 0;
-	unsigned long lastPublishStatus_ = 0;
-	unsigned long lastPublishEmsMetrics_ = 0;
+
+	ib::PeriodicCounter publishRoomDataCounter_{config_.interval * 1000u};
+	ib::PeriodicCounter publishDeviceStatusCounter_{config_.interval * 1000u};
+	ib::PeriodicCounter publishStatusCounter_{config_.interval * 1000u};
+	ib::PeriodicCounter publishEmsMetricsCounter_{config_.interval * 1000u};
 
 	getRoomStatus_t getRoomsStatus_;
 	getEmsMetrics_t getEmsMetrics_;
