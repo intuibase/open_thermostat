@@ -1,0 +1,93 @@
+
+<form id = "updateform" class="invisible">
+	<div class="col-md-auto mt-3">
+	<div class="row mb-3">
+		<div class="card w-100">
+			<div class="card-header d-flex justify-content-between align-items-center">
+				<span class="align-middle">Firmware update</span>
+			</div>
+			<div class="card-body">
+				<div class="form-group">
+					<div class="form-row mb-2">
+						<div class="col"><label for="FirmwareType">Select firmware file type</label></div>
+						<div class="col"><select class="custom-select" id="FirmwareType" aria-label="Firmware file type selection"><option value="firmware">Firmware</option><option value="fs">SPIFFS</option></select></div>
+					</div>
+					<div class="form-row">
+						<div class="col">
+							<input type="file" name="file" class="custom-file-input" id="FirmwarePath" required>
+							<label class="custom-file-label" for="FirmwarePath">Choose firmware file...</label>
+						</div>
+					</div>
+				</div>
+			</div>
+			<div class="card-footer text-muted">
+				<div class="row">
+					<div class="col-4 col-md-4">
+						<button class="btn btn-primary mb-2" type="submit" id="FirmwareSubmit">Perform firmware update</button>
+					</div>
+					<div class="col-8 col-md-8">
+						<div class="progress mb-2 align-middle" style="height: 100%;"><div class="progress-bar progress-bar-striped active" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" id="progressbar" style="height: 100%"></div></div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	</div>
+	</div>
+</form>
+
+<script type='text/javascript'>
+$(document).ready(function() {
+	$('#updateform').on("submit", function(event) {
+	event.preventDefault();
+	$("#FirmwareSubmit").prop('disabled', true);
+
+	let fileInput = document.getElementById("FirmwarePath");
+	if (!fileInput.files.length) {
+		alert("Please select firmware.bin file!");
+		return;
+	}
+
+	let formData = new FormData();
+	formData.append("type", $("#FirmwareType").val());
+	formData.append("size", fileInput.files[0].size);
+	formData.append("file", fileInput.files[0]);
+
+	let xhr = new XMLHttpRequest();
+	let path = $("#FirmwareType").val() == 'firmware' ? '/ota' : '/otafs';
+	xhr.open("POST", path, true);
+
+	xhr.upload.onprogress = function(event) {
+		if (event.lengthComputable) {
+			let percentComplete = Math.round((event.loaded / event.total) * 100);
+			$('#progressbar').attr('aria-valuenow', percentComplete).css('width', percentComplete+'%');
+			$('#progressbar').html(percentComplete+'%');
+		}
+	};
+
+	xhr.onload = function() {
+		if (xhr.status === 200) {
+			if (confirm("Update successful.\nMessage: " + xhr.responseText + "\nDo you want to reboot device to\nchanges take place?")) {
+				reboot();
+			}
+		} else {
+			alert("Firmware udpate error: " + xhr.responseText);
+		}
+		$("#FirmwareSubmit").prop('disabled', false);
+	};
+
+	xhr.send(formData);
+	});
+	$('#updateform').removeClass('invisible');
+});
+
+function reboot() {
+	fetch(hostName + '/config/reboot')
+	.then((programs) => {
+	}).catch(function(error) {
+		alert(error);
+	}
+	);
+	mainScreen();
+}
+</script>

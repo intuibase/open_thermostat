@@ -168,6 +168,15 @@ void setup() {
 	delay(500);
 	Serial.begin(115200);
 
+	const esp_app_desc_t *app = esp_ota_get_app_description();
+	const esp_partition_t *partition = esp_ota_get_running_partition();
+
+	heating::logger.printf("Project: %s, version: %s\n", app->project_name, app->version);
+	heating::logger.printf("Build: %s %s\n", app->date, app->time);
+	heating::logger.printf("IDF: %s\n", app->idf_ver);
+	heating::logger.printf("Firmware sha256: %s\n", app->app_elf_sha256);
+	heating::logger.printf("Partition: %s, size: %d, encrypted: %d\n", partition->label, partition->size, partition->encrypted);
+	heating::logger.printf("-----------------------");
 	heating::logger.println("Starting up");
 
 #ifdef CONFIG_BT_CLASSIC_ENABLED
@@ -224,7 +233,7 @@ void loop() {
 		lastMillis = now;
 
 		heating::controller->operate();
-		heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), millis()/1000);
+		heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %lds SPIFFS: %zu/%zu\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), esp_timer_get_time()/1000000, SPIFFS.usedBytes(), SPIFFS.totalBytes());
 
 		if (!WiFi.isConnected()) {
 			heating::logger.printf("WiFi not connected. Reconnecting.\n");

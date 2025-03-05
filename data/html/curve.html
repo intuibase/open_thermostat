@@ -1,562 +1,532 @@
-	<!-- <link rel="stylesheet" href="deps/bms.min.css" integrity="sha512-wHTuOcR1pyFeyXVkwg3fhfK46QulKXkLq1kxcEEpjnAPv63B/R49bBqkJHLvoGFq6lvAEKlln2rE1JfIPeQ+iw==" crossorigin="anonymous" /> -->
-	<!-- <script src="deps/bms.min.js" integrity="sha512-ljeReA8Eplz6P7m1hwWa+XdPmhawNmo9I0/qyZANCCFvZ845anQE+35TuZl9+velym0TKanM2DXVLxSJLLpQWw==" crossorigin="anonymous"></script> -->
-
-
-
-	<div class="d-flex justify-content-center" id="loadingprogress">
-		<div class="spinner-border" role="status">
-			<span class="sr-only"></span>
-		</div>
+<div class="d-flex justify-content-center" id="loadingprogress">
+	<div class="spinner-border" role="status">
+		<span class="sr-only"></span>
 	</div>
+</div>
 
-	<form id = "boilereditform" class="invisible">
+<form id = "boilereditform" class="invisible">
 
-	<div class="col-md-auto">
+<div class="col-md-auto">
 
-	<div class="row mb-3">
-	<div class="card w-100" id="BoilerSettings">
-		<div class="card-header d-flex justify-content-between align-items-center">
-			<span class="align-middle">Boiler and heating curve settings</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadBoilerSettings();">&#x2b6f;</button>
-		</div>
-		<div class="card-body">
-
-			<ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
-				<li class="nav-item"><a class="nav-link active" id="pills-boiler-tab" data-toggle="pill" href="#pills-boiler" role="tab" aria-controls="pills-boiler" aria-selected="true">Boiler</a></li>
-				<li class="nav-item"><a class="nav-link" id="pills-curve-tab" data-toggle="pill" href="#pills-curve" role="tab" aria-controls="pills-curve" aria-selected="false">Heating curve</a></li>
-			</ul>
-			<div class="tab-content" id="pills-tabContent">
-				<div class="tab-pane fade show active" id="pills-boiler" role="tabpanel" aria-labelledby="pills-boiler-tab">
-					<div class="form-group">
-						<div class="form-row">
-							<div class="col-md mb-2">
-								<label for="minHeatingTemp">Minimum heating temperature</label>
-								<div class="input-group">
-									<input type="number" class="form-control" id="minHeatingTemp" placeholder="20" value="20" step="1" min=20 max=90 required>
-									<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
-								</div>
-							</div>
-							<div class="col-md mb-2">
-								<label for="maxHeatingTemp">Maximum heating temperature</label>
-								<div class="input-group">
-									<input type="number" class="form-control" id="maxHeatingTemp" placeholder="90" value="90" step="1" min=20 max=90 required>
-									<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
-								</div>
+<div class="row mb-3">
+<div class="card w-100" id="BoilerSettings">
+	<div class="card-header d-flex justify-content-between align-items-center">
+		<span class="align-middle">Boiler and heating curve settings</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadBoilerSettings();">&#x2b6f;</button>
+	</div>
+	<div class="card-body">
+		<ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
+			<li class="nav-item"><a class="nav-link active" id="pills-boiler-tab" data-toggle="pill" href="#pills-boiler" role="tab" aria-controls="pills-boiler" aria-selected="true">Boiler</a></li>
+			<li class="nav-item"><a class="nav-link" id="pills-curve-tab" data-toggle="pill" href="#pills-curve" role="tab" aria-controls="pills-curve" aria-selected="false">Heating curve</a></li>
+		</ul>
+		<div class="tab-content" id="pills-tabContent">
+			<div class="tab-pane fade show active" id="pills-boiler" role="tabpanel" aria-labelledby="pills-boiler-tab">
+				<div class="form-group">
+					<div class="form-row">
+						<div class="col-md mb-2">
+							<label for="minHeatingTemp">Minimum heating temperature</label>
+							<div class="input-group">
+								<input type="number" class="form-control" id="minHeatingTemp" placeholder="20" value="20" step="1" min=20 max=90 required>
+								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
 							</div>
 						</div>
-
-						<div class="form-row">
-							<div class="col-md mb-2">
-								<label for="BoilerControlMode">Select boiler control mode</label>
-								<select class="form-control" id="BoilerControlMode">
-									<option value="onoff">ON/OFF (don't use heating curve)</option>
-									<option value="onoff_outdoor">ON/OFF + flow temperature based on outdoor temperature</option>
-									<option value="ems">EMS + flow temperature based on outdoor temperature</option>
-								</select>
-							</div>
-							<div class="col-md mb-2">
-								<label for="OutdoorTemperatureSource">Outdoor temperature source</label>
-								<select class="form-control" id="OutdoorTemperatureSource">
-									<option value="owm">Internet - OpenWeatherMap</option>
-									<option value="ems">Boiler outdoor temperature sensor (EMS)</option>
-								</select>
+						<div class="col-md mb-2">
+							<label for="maxHeatingTemp">Maximum heating temperature</label>
+							<div class="input-group">
+								<input type="number" class="form-control" id="maxHeatingTemp" placeholder="90" value="90" step="1" min=20 max=90 required>
+								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
 							</div>
 						</div>
-
-
-
 					</div>
-				</div>
-				<div class="tab-pane fade" id="pills-curve" role="tabpanel" aria-labelledby="pills-curve-tab">
-					<div class="form-group">
 
-						<div class="form-row">
-							<div class="col-md mb-2">
-								<label for="minHCTemp">Starting heating curve temperature</label>
-								<div class="input-group">
-									<input type="number" class="form-control" id="minHCTemp" placeholder="20" value="20" step="1" min=0 max=90 required>
-									<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
-								</div>
-							</div>
-							<div class="col-md mb-2">
-								<label for="maxHCTemp">Ending heating curve temperature</label>
-								<div class="input-group">
-									<input type="number" class="form-control" id="maxHCTemp" placeholder="90" value="90" step="1" min=0 max=90 required>
-									<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
-								</div>
-							</div>
+					<div class="form-row">
+						<div class="col-md mb-2">
+							<label for="BoilerControlMode">Select boiler control mode</label>
+							<select class="form-control" id="BoilerControlMode">
+								<option value="onoff">ON/OFF (don't use heating curve)</option>
+								<option value="onoff_outdoor">ON/OFF + flow temperature based on outdoor temperature</option>
+								<option value="ems">EMS + flow temperature based on outdoor temperature</option>
+							</select>
 						</div>
-
-						<div class="form-row">
-							<div class="col mb-2">
-								<label for="selectPredefinedHc">Select predefined curve formula</label>
-								<select class="form-control" id="selectPredefinedHc" name="hcselected" aria-describedby="selectPredefinedHc" onchange="predefinedFormula()">
-									<option>x</option>
-									<option>1.2 * x</option>
-									<option>1.2 * x + 5</option>
-									<option>1.4 * x</option>
-									<option>1.6 * x</option>
-									<option>1.8 * x</option>
-									<option>2.0 * x</option>
-									<option>2.2 * x</option>
-									<option>2.4 * x</option>
-									<option>x + 5</option>
-									<option>x + 0.5 * x</option>
-								</select>
-							</div>
-							<div class="col mb-2">
-								<label for="hcformula">Edit formula</label>
-								<input type="string" class="form-control" id="hcformula" value="x" required>
-							</div>
-							<div class="col mb-2">
-								<label for="generatehc">&nbsp;</label>
-
-								<button type="button" class="btn btn-success form-control" id="generatehc">Generate</button>
-							</div>
+						<div class="col-md mb-2">
+							<label for="OutdoorTemperatureSource">Outdoor temperature source</label>
+							<select class="form-control" id="OutdoorTemperatureSource">
+								<option value="owm">Internet - OpenWeatherMap</option>
+								<option value="ems">Boiler outdoor temperature sensor (EMS)</option>
+							</select>
 						</div>
-
-						<div class="form-row">
-							<div class="col-md mb-2" style="min-height: 30rem;" >
-								<canvas id="myChart"></canvas>
-							</div>
-						</div>
-
-						<div class="form-row mb-5" style="min-height: 120px; font-size: 0.65rem;">
-							<div class="col mb-2 text-center">
-								20&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_1" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_1_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								15&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_2" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_2_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								10&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_3" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_3_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								5&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_4" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_4_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								0&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_5" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_5_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								-5&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_6" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_6_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								-10&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_7" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_7_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								-15&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_8" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_8_val">20&deg;C</div>
-							</div>
-							<div class="col mb-2 text-center">
-								-20&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_9" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_9_val">20&deg;C</div>
-							</div>
-						</div>
-
 					</div>
 				</div>
 			</div>
+			<div class="tab-pane fade" id="pills-curve" role="tabpanel" aria-labelledby="pills-curve-tab">
+				<div class="form-group">
+					<div class="form-row">
+						<div class="col-md mb-2">
+							<label for="minHCTemp">Starting heating curve temperature</label>
+							<div class="input-group">
+								<input type="number" class="form-control" id="minHCTemp" placeholder="20" value="20" step="1" min=0 max=90 required>
+								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+							</div>
+						</div>
+						<div class="col-md mb-2">
+							<label for="maxHCTemp">Ending heating curve temperature</label>
+							<div class="input-group">
+								<input type="number" class="form-control" id="maxHCTemp" placeholder="90" value="90" step="1" min=0 max=90 required>
+								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+							</div>
+						</div>
+					</div>
 
+					<div class="form-row">
+						<div class="col mb-2">
+							<label for="selectPredefinedHc">Select predefined curve formula</label>
+							<select class="form-control" id="selectPredefinedHc" name="hcselected" aria-describedby="selectPredefinedHc" onchange="predefinedFormula()">
+								<option>x</option>
+								<option>1.2 * x</option>
+								<option>1.2 * x + 5</option>
+								<option>1.4 * x</option>
+								<option>1.6 * x</option>
+								<option>1.8 * x</option>
+								<option>2.0 * x</option>
+								<option>2.2 * x</option>
+								<option>2.4 * x</option>
+								<option>x + 5</option>
+								<option>x + 0.5 * x</option>
+							</select>
+						</div>
+						<div class="col mb-2">
+							<label for="hcformula">Edit formula</label>
+							<input type="string" class="form-control" id="hcformula" value="x" required>
+						</div>
+						<div class="col mb-2">
+							<label for="generatehc">&nbsp;</label>
 
+							<button type="button" class="btn btn-success form-control" id="generatehc">Generate</button>
+						</div>
+					</div>
 
+					<div class="form-row">
+						<div class="col-md mb-2" style="min-height: 30rem;" >
+							<canvas id="myChart"></canvas>
+						</div>
+					</div>
 
-			<div class="card-footer text-muted">
-				<button type="button" class="btn btn-primary mb-2" onclick="saveBoilerSettings();" id="SaveBoilerSettings">Save settings</button>
+					<div class="form-row mb-5" style="min-height: 120px; font-size: 0.65rem;">
+						<div class="col mb-2 text-center">20&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_1" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_1_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">15&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_2" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_2_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">10&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_3" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_3_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">5&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_4" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_4_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">0&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_5" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_5_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">-5&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_6" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_6_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">-10&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_7" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_7_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">-15&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_8" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_8_val">20&deg;C</div></div>
+						<div class="col mb-2 text-center">-20&deg;C<input type="range" style="appearance: slider-vertical;" orient="vertical" class="form-control h-100" id="hc_9" placeholder="90" value="" step="1" min=20 max=90 required><div id="hc_9_val">20&deg;C</div></div>
+					</div>
+
+				</div>
 			</div>
-
 		</div>
+
+
+
+
+		<div class="card-footer text-muted">
+			<button type="button" class="btn btn-primary mb-2" onclick="saveBoilerSettings();" id="SaveBoilerSettings">Save settings</button>
+		</div>
+
 	</div>
-	</div>
+</div>
+</div>
 
 
 </div>
 
-	</form>
+</form>
 
 <script type='text/javascript'>
 
-	var heatingCurvePoints = undefined;
-	var heatingCurveChart = undefined;
-	var heatingCurveTemperatureRange = [20, 25, 30, 35, 40, 45, 50, 55, 60];
+var heatingCurvePoints = undefined;
+var heatingCurveChart = undefined;
+var heatingCurveTemperatureRange = [20, 25, 30, 35, 40, 45, 50, 55, 60];
 
 
-	function predefinedFormula(e) {
-		var selector = document.getElementById('selectPredefinedHc');
-		var formula = document.getElementById('hcformula');
-		formula.value = selector.value;
+function predefinedFormula(e) {
+	var selector = document.getElementById('selectPredefinedHc');
+	var formula = document.getElementById('hcformula');
+	formula.value = selector.value;
+}
+
+function setInitialSliders(values) {
+	for (let i = 0; i < 9; ++i) {
+		var slider = "#hc_" + (i+1).toString();
+		$(slider).prop('min', 20);
+		$(slider).prop('max', 90);
+		$(slider).val(values[i]);
+
+		var valueBox = '#hc_' + (i+1).toString() + "_val";
+		$(valueBox).html(values[i].toString() + "&deg;C");
 	}
+}
 
-	function setInitialSliders(values) {
-		for (let i = 0; i < 9; ++i) {
-			var slider = "#hc_" + (i+1).toString();
-			$(slider).prop('min', 20);
-			$(slider).prop('max', 90);
-			$(slider).val(values[i]);
+function updateChartScale() {
+	var minTemp = parseInt($('#minHCTemp').val());
+	var maxTemp = parseInt($('#maxHCTemp').val());
 
-			var valueBox = '#hc_' + (i+1).toString() + "_val";
-			$(valueBox).html(values[i].toString() + "&deg;C");
+	heatingCurveChart.options.scales.hcTemp.min = minTemp;
+	heatingCurveChart.options.scales.hcTemp.max = maxTemp;
+	heatingCurveChart.update();
+}
+
+function calculateInitialX() {
+	var minTemp = parseInt($('#minHCTemp').val());
+	var maxTemp = parseInt($('#maxHCTemp').val());
+	var step = (maxTemp - minTemp) / 8;
+
+	var temps = [];
+	for (let i = 0; i < 9; ++i) {
+		temps.push(parseInt(minTemp + step * i));
+	}
+	return temps;
+}
+
+function changeHeatingCurveRange(event) { // on sliding
+	var id = event.target.id;
+
+	var idx = parseInt(id.substring(3,4)) - 1;
+
+	var valueBox = '#' + id + "_val";
+	$(valueBox).html(event.target.value + "&deg;C");
+
+	heatingCurvePoints[idx] = parseInt(event.target.value);
+	// heatingCurveChart.data.datasets[1].data = heatingCurvePoints.map(transformCurve);
+
+	heatingCurveChart.update();
+}
+
+function getGradient(ctx, chartArea) {
+		let width, height, gradient;
+		const chartWidth = chartArea.right - chartArea.left;
+		const chartHeight = chartArea.bottom - chartArea.top;
+		if (!gradient || width !== chartWidth || height !== chartHeight) {
+			// Create the gradient because this is either the first render
+			// or the size of the chart has changed
+			width = chartWidth;
+			height = chartHeight;
+			gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+			gradient.addColorStop(0, "blue");
+			gradient.addColorStop(0.5, "yellow");
+			gradient.addColorStop(1, "red");
 		}
+		return gradient;
+}
+
+function getLineGradientColor(context) {
+	const chart = context.chart;
+	const {ctx, chartArea} = chart;
+	if (!chartArea) {
+		return; // This case happens on initial chart load
 	}
+	return getGradient(ctx, chartArea);
+}
 
-	function updateChartScale() {
-		var minTemp = parseInt($('#minHCTemp').val());
-		var maxTemp = parseInt($('#maxHCTemp').val());
+function updateChart(heatingCurvePoints) {
+	heatingCurveChart.data.datasets[0].data = heatingCurvePoints;
+	updateChartScale();
+	setInitialSliders(heatingCurvePoints);
+	heatingCurveChart.update();
+}
 
-		heatingCurveChart.options.scales.hcTemp.min = minTemp;
-		heatingCurveChart.options.scales.hcTemp.max = maxTemp;
-		heatingCurveChart.update();
-	}
+function verifyBoilerControlMode() {
+	let disable = ($('#BoilerControlMode').val() == "simple" || $('#BoilerControlMode').val() == "simple_outdoor");
+	$("#OutdoorTemperatureSource option:contains('EMS')").prop("disabled", disable );
 
-	function calculateInitialX() {
-		var minTemp = parseInt($('#minHCTemp').val());
-		var maxTemp = parseInt($('#maxHCTemp').val());
-		var step = (maxTemp - minTemp) / 8;
-
-		var temps = [];
-		for (let i = 0; i < 9; ++i) {
-			temps.push(parseInt(minTemp + step * i));
-		}
-		return temps;
-	}
-
-	function changeHeatingCurveRange(event) { // on sliding
-		var id = event.target.id;
-
-		var idx = parseInt(id.substring(3,4)) - 1;
-
-		var valueBox = '#' + id + "_val";
-		$(valueBox).html(event.target.value + "&deg;C");
-
-		heatingCurvePoints[idx] = parseInt(event.target.value);
-		// heatingCurveChart.data.datasets[1].data = heatingCurvePoints.map(transformCurve);
-
-		heatingCurveChart.update();
-	}
-
-	function getGradient(ctx, chartArea) {
-			let width, height, gradient;
-			const chartWidth = chartArea.right - chartArea.left;
-			const chartHeight = chartArea.bottom - chartArea.top;
-			if (!gradient || width !== chartWidth || height !== chartHeight) {
-				// Create the gradient because this is either the first render
-				// or the size of the chart has changed
-				width = chartWidth;
-				height = chartHeight;
-				gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-				gradient.addColorStop(0, "blue");
-				gradient.addColorStop(0.5, "yellow");
-				gradient.addColorStop(1, "red");
+	// if disabled option is selected - change to active one
+	if ($("#OutdoorTemperatureSource option:contains('EMS')").prop("selected")) {
+		$("#OutdoorTemperatureSource > option").each(function() {
+			if (!this.disabled) {
+				$(this).prop("selected", true);
 			}
-			return gradient;
+		});
+	}
+}
+
+function updateHeatingCurveMinMax() {
+	$('#minHCTemp').prop('min', $('#minHeatingTemp').val());
+	$('#minHCTemp').prop('max', $('#maxHCTemp').val());
+	$('#maxHCTemp').prop('min', $('#minHCTemp').val());
+	$('#maxHCTemp').prop('max', $('#maxHeatingTemp').val());
+}
+
+function updateMinHeatingTemp() {
+	let minHeatingTemp = $('#minHeatingTemp').val();
+	$('#maxHeatingTemp').prop('min', $('#minHeatingTemp').val());
+
+	if ($('#minHCTemp').val() < minHeatingTemp) {
+		$('#minHCTemp').val(minHeatingTemp);
+		$('#minHCTemp').trigger('change');
 	}
 
-	function getLineGradientColor(context) {
-		const chart = context.chart;
-		const {ctx, chartArea} = chart;
-		if (!chartArea) {
-			return; // This case happens on initial chart load
-		}
-		return getGradient(ctx, chartArea);
+	updateHeatingCurveMinMax();
+}
+
+function updateMaxHeatingTemp() {
+	let maxHeatingTemp = $('#maxHeatingTemp').val();
+	$('#minHeatingTemp').prop('max', $('#maxHeatingTemp').val());
+
+	if ($('#maxHCTemp').val() > maxHeatingTemp) {
+		$('#maxHCTemp').val(maxHeatingTemp);
+		$('#maxHCTemp').trigger('change');
 	}
 
-	function updateChart(heatingCurvePoints) {
-		heatingCurveChart.data.datasets[0].data = heatingCurvePoints;
-		updateChartScale();
-		setInitialSliders(heatingCurvePoints);
-		heatingCurveChart.update();
-	}
+	updateHeatingCurveMinMax();
+}
 
-	function verifyBoilerControlMode() {
-		let disable = ($('#BoilerControlMode').val() == "simple" || $('#BoilerControlMode').val() == "simple_outdoor");
-		$("#OutdoorTemperatureSource option:contains('EMS')").prop("disabled", disable );
+function updateHeatingCurveTemp() {
+	updateHeatingCurveMinMax();
+	updateChartScale();
+}
 
-		// if disabled option is selected - change to active one
-		if ($("#OutdoorTemperatureSource option:contains('EMS')").prop("selected")) {
-			$("#OutdoorTemperatureSource > option").each(function() {
-				if (!this.disabled) {
-					$(this).prop("selected", true);
+$(document).ready(function() {
+	heatingCurveTemperatureRange = calculateInitialX();
+
+	// if (typeof heatingCurvePoints === 'undefined') {
+	// 	heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
+	// 		return x;
+	// 	});
+	// }
+
+	// setInitialSliders(heatingCurvePoints);
+
+	const ctx = document.getElementById('myChart');
+	heatingCurveChart = new Chart(ctx, {
+		type: 'line',
+		data: {
+			labels: ['20', '15', '10', '5', '0', '-5', '-10', '-15', '-20'],
+			datasets: [{
+					label: 'heating temperature',
+					// data: heatingCurvePoints,
+					borderWidth: 3,
+					// cubicInterpolationMode: 'monotone',
+					// tension: 0.6,
+					borderColor: getLineGradientColor,
 				}
-			});
-		}
-	}
-
-	function updateHeatingCurveMinMax() {
-		$('#minHCTemp').prop('min', $('#minHeatingTemp').val());
-		$('#minHCTemp').prop('max', $('#maxHCTemp').val());
-		$('#maxHCTemp').prop('min', $('#minHCTemp').val());
-		$('#maxHCTemp').prop('max', $('#maxHeatingTemp').val());
-	}
-
-	function updateMinHeatingTemp() {
-		let minHeatingTemp = $('#minHeatingTemp').val();
-		$('#maxHeatingTemp').prop('min', $('#minHeatingTemp').val());
-
-		if ($('#minHCTemp').val() < minHeatingTemp) {
-			$('#minHCTemp').val(minHeatingTemp);
-			$('#minHCTemp').trigger('change');
-		}
-
-		updateHeatingCurveMinMax();
-	}
-
-	function updateMaxHeatingTemp() {
-		let maxHeatingTemp = $('#maxHeatingTemp').val();
-		$('#minHeatingTemp').prop('max', $('#maxHeatingTemp').val());
-
-		if ($('#maxHCTemp').val() > maxHeatingTemp) {
-			$('#maxHCTemp').val(maxHeatingTemp);
-			$('#maxHCTemp').trigger('change');
-		}
-
-		updateHeatingCurveMinMax();
-	}
-
-	function updateHeatingCurveTemp() {
-		updateHeatingCurveMinMax();
-		updateChartScale();
-	}
-
-	$(document).ready(function() {
-
-		heatingCurveTemperatureRange = calculateInitialX();
-
-		// if (typeof heatingCurvePoints === 'undefined') {
-		// 	heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
-		// 		return x;
-		// 	});
-		// }
-
-		// setInitialSliders(heatingCurvePoints);
-
-		const ctx = document.getElementById('myChart');
-		heatingCurveChart = new Chart(ctx, {
-			type: 'line',
-			data: {
-				labels: ['20', '15', '10', '5', '0', '-5', '-10', '-15', '-20'],
-				datasets: [{
-						label: 'heating temperature',
-						// data: heatingCurvePoints,
-						borderWidth: 3,
-						// cubicInterpolationMode: 'monotone',
-						// tension: 0.6,
-						borderColor: getLineGradientColor,
-					}
-				]
-			},
-			options: {
-				responsive: true,
-				maintainAspectRatio: false,
-				scales: {
-					x: {
-						min: -20,
-						max: 20,
-						title: {
-							display: true,
-							text: 'outdoor temperature °C'
-						}
-					},
-					y: {
-						min: 20,
-						max: 90,
-						title: {
-							display: true,
-							text: 'heating temperature °C'
-						}
-					},
-					hcTemp: {
-						min: heatingCurveTemperatureRange[0],
-						max: heatingCurveTemperatureRange[8],
-						grid: {
-							display: false
-						},
-						type: 'linear',
-						position: 'top',
-						title: {
-							display: true,
-							text: 'heating curve temperature (x) °C'
-						}
-					}
-				},
-				plugins: {
+			]
+		},
+		options: {
+			responsive: true,
+			maintainAspectRatio: false,
+			scales: {
+				x: {
+					min: -20,
+					max: 20,
 					title: {
 						display: true,
-						text: 'Heating curve'
-					},
-					legend: {
-						display: false
+						text: 'outdoor temperature °C'
 					}
 				},
-			}
-		});
-
-		$('#hc_1').on("input", changeHeatingCurveRange);
-		$('#hc_2').on("input", changeHeatingCurveRange);
-		$('#hc_3').on("input", changeHeatingCurveRange);
-		$('#hc_4').on("input", changeHeatingCurveRange);
-		$('#hc_5').on("input", changeHeatingCurveRange);
-		$('#hc_6').on("input", changeHeatingCurveRange);
-		$('#hc_7').on("input", changeHeatingCurveRange);
-		$('#hc_8').on("input", changeHeatingCurveRange);
-		$('#hc_9').on("input", changeHeatingCurveRange);
-
-		$('#minHeatingTemp').change(updateMinHeatingTemp);
-		$('#maxHeatingTemp').change(updateMaxHeatingTemp);
-
-		$('#minHCTemp').change(updateHeatingCurveTemp);
-		$('#maxHCTemp').change(updateHeatingCurveTemp);
-
-		$('#generatehc').click(function() {
-			var formula = $('#hcformula').val();
-			var minTemp = parseInt($('#minHCTemp').val());
-			var maxTemp = parseInt($('#maxHCTemp').val());
-			try {
-				heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
-					var temp = parseInt(eval(formula));
-					temp = temp > maxTemp ? maxTemp : temp;
-					temp = temp < minTemp ? minTemp : temp;
-					return temp;
-				});
-
-				updateChart(heatingCurvePoints);
-			} catch (error) {
-				alert(error);
-			}
-		});
-
-		$('#BoilerControlMode').change(verifyBoilerControlMode)
-
-		loadBoilerParams();
-		loadBoilerSettings();
+				y: {
+					min: 20,
+					max: 90,
+					title: {
+						display: true,
+						text: 'heating temperature °C'
+					}
+				},
+				hcTemp: {
+					min: heatingCurveTemperatureRange[0],
+					max: heatingCurveTemperatureRange[8],
+					grid: {
+						display: false
+					},
+					type: 'linear',
+					position: 'top',
+					title: {
+						display: true,
+						text: 'heating curve temperature (x) °C'
+					}
+				}
+			},
+			plugins: {
+				title: {
+					display: true,
+					text: 'Heating curve'
+				},
+				legend: {
+					display: false
+				}
+			},
+		}
 	});
 
-	//TODO shared
-	function HttpResponseException(message, status) {
-		this.message = message;
-		this.status = status;
-		this.name = "HTTP Response error";
-	}
+	$('#hc_1').on("input", changeHeatingCurveRange);
+	$('#hc_2').on("input", changeHeatingCurveRange);
+	$('#hc_3').on("input", changeHeatingCurveRange);
+	$('#hc_4').on("input", changeHeatingCurveRange);
+	$('#hc_5').on("input", changeHeatingCurveRange);
+	$('#hc_6').on("input", changeHeatingCurveRange);
+	$('#hc_7').on("input", changeHeatingCurveRange);
+	$('#hc_8').on("input", changeHeatingCurveRange);
+	$('#hc_9').on("input", changeHeatingCurveRange);
 
-	HttpResponseException.prototype.toString = function() {
-		return this.name + ': ' + this.status + ' "' + this.message + '"';
-	}
+	$('#minHeatingTemp').change(updateMinHeatingTemp);
+	$('#maxHeatingTemp').change(updateMaxHeatingTemp);
 
-	function validateResponse(response) {
-		if (!response.ok) {
-				throw new HttpResponseException(response.statusText, response.status);
-			}
-			return response;
-	}
+	$('#minHCTemp').change(updateHeatingCurveTemp);
+	$('#maxHCTemp').change(updateHeatingCurveTemp);
 
-	function loadDefaultBoilerSettings() {
-		$('#minHeatingTemp').val(20);
-		$('#maxHeatingTemp').val(90);
-		$('#minHCTemp').val(20);
-		$('#maxHCTemp').val(90);
-		heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
-			return x;
-		});;
-		updateChart(heatingCurvePoints);
-	}
-
-
-	function loadBoilerParams() {
-		fetch(hostName + '/params/boiler')
-		.then(validateResponse)
-		.then(res => res.json())
-		.then((params) => {
-			$('#maxHeatingTemp').prop('max', params.maximumHeatingTemperature);
-			updateMinHeatingTemp();
-			updateMaxHeatingTemp();
-		}).catch(function(error) {
-			if (error instanceof HttpResponseException && error.status === 404) {
-				alert("Cannot load boiler params\n" + error);
-			}
-			if (confirm("Cannot load boiler params\n" + error + "\nTry again?")) {
-				loadBoilerParams();
-			}
-		});
-	}
-
-	function loadBoilerSettings() {
-		fetch(hostName + '/config/boiler')
-		.then(validateResponse)
-		.then(res => res.json())
-		.then((settings) => {
-			$('#minHCTemp').val(settings.minHeatingCurveTemp);
-			$('#maxHCTemp').val(settings.maxHeatingCurveTemp);
-			heatingCurvePoints = settings.heatingCurve;
-
-			$('#minHeatingTemp').val(settings.boiler.minHeatingTemp);
-			$('#maxHeatingTemp').val(settings.boiler.maxHeatingTemp);
-
-			$('#BoilerControlMode option[value="' + settings.boiler.controlMode + '"]').prop("selected", true);
-			$('#OutdoorTemperatureSource option[value="' + settings.boiler.outdoorSensor + '"]').prop("selected", true);
+	$('#generatehc').click(function() {
+		var formula = $('#hcformula').val();
+		var minTemp = parseInt($('#minHCTemp').val());
+		var maxTemp = parseInt($('#maxHCTemp').val());
+		try {
+			heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
+				var temp = parseInt(eval(formula));
+				temp = temp > maxTemp ? maxTemp : temp;
+				temp = temp < minTemp ? minTemp : temp;
+				return temp;
+			});
 
 			updateChart(heatingCurvePoints);
-			verifyBoilerControlMode();
-			updateMinHeatingTemp();
-			updateMaxHeatingTemp();
-
-			$("#loadingprogress").addClass('invisible');
-			$('#boilereditform').removeClass('invisible');
-		}).catch(function(error) {
-			if (error instanceof HttpResponseException && error.status === 404) {
-				alert("Cannot load boiler settings\n" + error);
-			}
-			if (confirm("Cannot load boiler settings\n" + error + "\nTry again?")) {
-				loadBoilerSettings();
-			} else {
-				loadDefaultBoilerSettings();
-			}
-		});
-	}
-
-	function saveBoilerSettings() {
-		$("#SaveBoilerSettings").prop('disabled', true);
-
-		let settings = {
-			"minHeatingCurveTemp": parseInt($('#minHCTemp').val(), 10),
-			"maxHeatingCurveTemp": parseInt($('#maxHCTemp').val(), 10),
-			"heatingCurve": heatingCurvePoints,
-			"boiler": {
-				"minHeatingTemp": parseInt($('#minHeatingTemp').val(), 10),
-				"maxHeatingTemp": parseInt($('#maxHeatingTemp').val(), 10),
-				"controlMode": $('#BoilerControlMode').val(),
-				"outdoorSensor": $('#OutdoorTemperatureSource').val(),
-			}
-
-		};
-
-		fetch(hostName + '/config/boiler', {
-			method: 'post',
-			mode: 'no-cors',
-			cache: 'no-cache',
-			credentials: 'same-origin',
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(settings, undefined, '\t')
-		})
-		.then(res => {
-			if (res.status === 200 || res.status === 201 || res.type === "opaque") {
-				if (confirm("Heating settings saved.\nDo you want to reboot device to\nchanges take place?")) {
-					reboot();
-					return;
-				}
-			} else {
-				alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
-			}
-		})
-		.catch(function(error) {
-			alert(error);
-		});
-		$("#SaveBoilerSettings").prop('disabled', false);
-	}
-
-	function reboot() {
-		fetch(hostName + '/config/reboot')
-		.then((programs) => {
-		}).catch(function(error) {
+		} catch (error) {
 			alert(error);
 		}
-		);
-		mainScreen();
-	}
+	});
 
+	$('#BoilerControlMode').change(verifyBoilerControlMode)
+
+	loadBoilerParams();
+	loadBoilerSettings();
+});
+
+//TODO shared
+function HttpResponseException(message, status) {
+	this.message = message;
+	this.status = status;
+	this.name = "HTTP Response error";
+}
+
+HttpResponseException.prototype.toString = function() {
+	return this.name + ': ' + this.status + ' "' + this.message + '"';
+}
+
+function validateResponse(response) {
+	if (!response.ok) {
+			throw new HttpResponseException(response.statusText, response.status);
+		}
+		return response;
+}
+
+function loadDefaultBoilerSettings() {
+	$('#minHeatingTemp').val(20);
+	$('#maxHeatingTemp').val(90);
+	$('#minHCTemp').val(20);
+	$('#maxHCTemp').val(90);
+	heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
+		return x;
+	});;
+	updateChart(heatingCurvePoints);
+}
+
+
+function loadBoilerParams() {
+	fetch(hostName + '/params/boiler')
+	.then(validateResponse)
+	.then(res => res.json())
+	.then((params) => {
+		$('#maxHeatingTemp').prop('max', params.maximumHeatingTemperature);
+		updateMinHeatingTemp();
+		updateMaxHeatingTemp();
+	}).catch(function(error) {
+		if (error instanceof HttpResponseException && error.status === 404) {
+			alert("Cannot load boiler params\n" + error);
+		}
+		if (confirm("Cannot load boiler params\n" + error + "\nTry again?")) {
+			loadBoilerParams();
+		}
+	});
+}
+
+function loadBoilerSettings() {
+	fetch(hostName + '/config/boiler')
+	.then(validateResponse)
+	.then(res => res.json())
+	.then((settings) => {
+		$('#minHCTemp').val(settings.minHeatingCurveTemp);
+		$('#maxHCTemp').val(settings.maxHeatingCurveTemp);
+		heatingCurvePoints = settings.heatingCurve;
+
+		$('#minHeatingTemp').val(settings.boiler.minHeatingTemp);
+		$('#maxHeatingTemp').val(settings.boiler.maxHeatingTemp);
+
+		$('#BoilerControlMode option[value="' + settings.boiler.controlMode + '"]').prop("selected", true);
+		$('#OutdoorTemperatureSource option[value="' + settings.boiler.outdoorSensor + '"]').prop("selected", true);
+
+		updateChart(heatingCurvePoints);
+		verifyBoilerControlMode();
+		updateMinHeatingTemp();
+		updateMaxHeatingTemp();
+
+		$("#loadingprogress").addClass('invisible');
+		$('#boilereditform').removeClass('invisible');
+	}).catch(function(error) {
+		if (error instanceof HttpResponseException && error.status === 404) {
+			alert("Cannot load boiler settings\n" + error);
+		}
+		if (confirm("Cannot load boiler settings\n" + error + "\nTry again?")) {
+			loadBoilerSettings();
+		} else {
+			loadDefaultBoilerSettings();
+		}
+	});
+}
+
+function saveBoilerSettings() {
+	$("#SaveBoilerSettings").prop('disabled', true);
+
+	let settings = {
+		"minHeatingCurveTemp": parseInt($('#minHCTemp').val(), 10),
+		"maxHeatingCurveTemp": parseInt($('#maxHCTemp').val(), 10),
+		"heatingCurve": heatingCurvePoints,
+		"boiler": {
+			"minHeatingTemp": parseInt($('#minHeatingTemp').val(), 10),
+			"maxHeatingTemp": parseInt($('#maxHeatingTemp').val(), 10),
+			"controlMode": $('#BoilerControlMode').val(),
+			"outdoorSensor": $('#OutdoorTemperatureSource').val(),
+		}
+
+	};
+
+	fetch(hostName + '/config/boiler', {
+		method: 'post',
+		mode: 'no-cors',
+		cache: 'no-cache',
+		credentials: 'same-origin',
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(settings, undefined, '\t')
+	})
+	.then(res => {
+		if (res.status === 200 || res.status === 201 || res.type === "opaque") {
+			if (confirm("Heating settings saved.\nDo you want to reboot device to\nchanges take place?")) {
+				reboot();
+				return;
+			}
+		} else {
+			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+		}
+	})
+	.catch(function(error) {
+		alert(error);
+	});
+	$("#SaveBoilerSettings").prop('disabled', false);
+}
+
+function reboot() {
+	fetch(hostName + '/config/reboot')
+	.then((programs) => {
+	}).catch(function(error) {
+		alert(error);
+	}
+	);
+	mainScreen();
+}
 
 </script>
