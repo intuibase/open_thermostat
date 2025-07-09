@@ -1,6 +1,5 @@
-<link rel="stylesheet" href="deps/bms.min.css" integrity="sha512-wHTuOcR1pyFeyXVkwg3fhfK46QulKXkLq1kxcEEpjnAPv63B/R49bBqkJHLvoGFq6lvAEKlln2rE1JfIPeQ+iw==" crossorigin="anonymous" />
-<script src="deps/bms.min.js" integrity="sha512-ljeReA8Eplz6P7m1hwWa+XdPmhawNmo9I0/qyZANCCFvZ845anQE+35TuZl9+velym0TKanM2DXVLxSJLLpQWw==" crossorigin="anonymous"></script>
-
+<link rel="stylesheet" href="deps/bms.min.css.gz" crossorigin="anonymous" />
+<script src="deps/bms.min.js.gz" crossorigin="anonymous"></script>
 
 <div class="d-flex justify-content-center" id="loadingprogress">
 	<div class="spinner-border" role="status">
@@ -8,190 +7,304 @@
 	</div>
 </div>
 
-<form id = "networkeditform" class="invisible">
+<form id="networkeditform" class="invisible">
 
-<div class="modal fade" id="selectWiFiSSID" tabindex="-1" role="dialog" aria-labelledby="selectWiFiSSIDLabel" aria-hidden="true">
-	<div class="modal-dialog" role="document">
-		<div class="modal-content">
-			<div class="modal-header">
-				<h5 class="modal-title" id="selectWiFiSSIDLabel">Choose WiFi Network</h5>
-				<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-				<span aria-hidden="true">&times;</span>
-				</button>
-			</div>
-			<div class="modal-body">
-				<div class="d-flex justify-content-center">
-					<div class="spinner-border text-danger" id="scanningWiFi" role="status"><span class="sr-only">Scanning for WiFi networks</span></div>
+	<div class="modal fade" id="selectWiFiSSID" tabindex="-1" role="dialog" aria-labelledby="selectWiFiSSIDLabel"
+		aria-hidden="true">
+		<div class="modal-dialog" role="document">
+			<div class="modal-content">
+				<div class="modal-header">
+					<h5 class="modal-title" id="selectWiFiSSIDLabel">Choose WiFi Network</h5>
+					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+						<span aria-hidden="true">&times;</span>
+					</button>
 				</div>
-				<form>
-					<select class="form-control" id="selectWiFiSSIDSelect">
-					</select>
-				</form>
-			</div>
-			<div class="modal-footer">
-				<button type="button" class="btn btn-primary" id="selectWiFiSSIDSave">Select network</button>
+				<div class="modal-body">
+					<div class="d-flex justify-content-center">
+						<div class="spinner-border text-danger" id="scanningWiFi" role="status"><span
+								class="sr-only">Scanning for WiFi networks</span></div>
+					</div>
+					<form>
+						<select class="form-control" id="selectWiFiSSIDSelect">
+						</select>
+					</form>
+				</div>
+				<div class="modal-footer">
+					<button type="button" class="btn btn-primary" id="selectWiFiSSIDSave">Select network</button>
+				</div>
 			</div>
 		</div>
 	</div>
-</div>
 
-<div class="col-md-auto">
+	<div class="col-md-auto">
 
-<div class="row mb-3">
-<div class="card w-100" id="WiFiSettings">
-	<div class="card-header d-flex justify-content-between align-items-center">
-		<span class="align-middle">WiFi settings</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadWiFiSettings();">&#x2b6f;</button>
+		<div class="row mb-3">
+			<div class="card w-100" id="WiFiSettings">
+				<div class="card-header d-flex justify-content-between align-items-center">
+					<span class="align-middle">WiFi settings</span><button type="button"
+						class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadWiFiSettings();">&#x2b6f;</button>
+				</div>
+				<div class="card-body">
+					<div class="form-group">
+						<div class="form-row">
+							<div class="col-md mb-2">
+								<label for="WiFiSSID">SSID</label>
+								<div class="input-group">
+									<input type="text" class="form-control" id="WiFiSSID" required>
+									<div class="input-group-append">
+										<button class="btn btn-outline-secondary" type="button" data-toggle="modal"
+											data-target="#selectWiFiSSID" data-onopen="" data-onclose=""><svg
+												width="16px" height="16px">
+												<use href="#img-edit" />
+											</svg></button>
+									</div>
+								</div>
+							</div>
+							<div class="col-md mb-2">
+								<label for="WiFiPassword">Password</label>
+								<div class="input-group">
+									<input type="password" class="form-control" id="WiFiPassword" required>
+									<div class="input-group-append">
+										<span class="input-group-text" onmousedown="showWiFiPassword(event, true);"
+											onmouseup="showWiFiPassword(event, false);">&#128065;</span>
+									</div>
+								</div>
+							</div>
+						</div>
+
+					</div>
+				</div>
+				<div class="card-footer text-muted">
+					<button type="button" class="btn btn-primary mb-2" onclick="saveWiFiSettings();"
+						id="SaveWiFiSettings">Save WiFi settings</button>
+				</div>
+			</div>
+		</div>
+
+		<div class="row mb-3">
+			<div class="card w-100" id="NetworkSettings">
+				<div class="card-header d-flex justify-content-between align-items-center">
+					<span class="align-middle">Device settings</span><button type="button"
+						class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadDeviceSettings();">&#x2b6f;</button>
+				</div>
+				<div class="card-body">
+					<div class="form-group">
+
+
+						<div class="card mb-2">
+							<div class="card-header">Web Interface</div>
+							<div class="card-body" id="WebInterfaceCard">
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceHostname">Hostname</label><input
+											type="text" class="form-control" id="DeviceHostname" placeholder="heating"
+											required></div>
+									<div class="col-md mb-2"><label for="DeviceListenPort">Listen port</label><input
+											type="number" class="form-control" id="DeviceListenPort" min="1" max="65535"
+											step="1" placeholder="80" required></div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">Hardware services</div>
+							<div class="card-body" id="RTCCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceRTCEnabled"><label class="form-check-label"
+												for="DeviceRTCEnabled">Real Time Battery powered clock enabled</label>
+										</div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceEMSEnabled"><label class="form-check-label"
+												for="DeviceEMSEnabled">EMS bus enabled</label></div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceEMSForwarderEnabled"><label class="form-check-label"
+												for="DeviceEMSForwarderEnabled">EMS bus forwarder enabled</label></div>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">Network Time Protocol (NTP) Server configuration</div>
+							<div class="card-body" id="NTPCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceNTPEnabled"><label class="form-check-label"
+												for="DeviceNTPEnabled">Enabled</label></div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceNTPServer">Network Time Protocol (NTP)
+											Server</label><input type="text" class="form-control" id="DeviceNTPServer"
+											placeholder="pool.ntp.org" required></div>
+									<div class="col-md mb-2"><label for="DeviceNTPUTCOffset">NTP to UTC offset
+											(s)</label><input type="number" class="form-control" id="DeviceNTPUTCOffset"
+											step="1" placeholder="0" required></div>
+									<div class="col-md mb-2"><label for="DeviceNTPUTCDLOffset">NTP to UTC Daylight
+											offset (s)</label><input type="number" class="form-control"
+											id="DeviceNTPUTCDLOffset" step="1" placeholder="0" required></div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceNTPTimezone">NTP Time zone
+											string</label><input type="text" class="form-control" id="DeviceNTPTimezone"
+											aria-describedby="DeviceNTPTimezoneHelp" required>
+										<div id="DeviceNTPTimezoneHelp" class="form-text">If specified, UTC offsets
+											won't be used to set up local time</div>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">Bluetooth configuration</div>
+							<div class="card-body" id="BTCard">
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="BTScanTime">Bluetooth scan time
+											(s)</label><input type="number" class="form-control" id="BTScanTime" min="1"
+											step="1" placeholder=30 required></div>
+									<div class="col-md mb-2"><label for="BTScanInterval">Interval between bluetooth
+											scans (s)</label><input type="number" class="form-control"
+											id="BTScanInterval" min="0" step="1" placeholder=120 required></div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">OpenWeatherMap outdoor temperature API</div>
+							<div class="card-body" id="OpenWeatherMapCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceOWMEnabled"><label class="form-check-label"
+												for="DeviceOWMEnabled">Enabled</label></div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceOWMAPIKey">OpenWeatherMap API Key
+											(appid)</label><input type="text" class="form-control" id="DeviceOWMAPIKey">
+									</div>
+									<div class="col-md mb-2"><label for="DeviceOWMLat">Latitude</label><input
+											type="number" class="form-control" id="DeviceOWMLat" placeholder="54.3673">
+									</div>
+									<div class="col-md mb-2"><label for="DeviceOWMLon">Longitude</label><input
+											type="number" class="form-control" id="DeviceOWMLon" placeholder="18.6282">
+									</div>
+									<div class="col-md mb-2"><label for="DeviceOWMInterval">Interval (s)</label><input
+											type="number" class="form-control" id="DeviceOWMInterval" placeholder="120"
+											value="120" min="60" max="600"></div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">MQTT</div>
+							<div class="card-body" id="MQTTCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceMQTTEnabled"><label class="form-check-label"
+												for="DeviceMQTTEnabled">Enabled</label></div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceMQTTBrokerAddress">Broker
+											address</label><input type="text" class="form-control"
+											id="DeviceMQTTBrokerAddress"></div>
+									<div class="col-md-2 mb-2"><label for="DeviceMQTTBrokerPort">Broker
+											port</label><input type="number" class="form-control"
+											id="DeviceMQTTBrokerPort" value="1883" step="1" min="1" max="65535"></div>
+									<div class="col-md mb-2"><label for="DeviceMQTTBrokerUser">User name</label><input
+											type="text" class="form-control" id="DeviceMQTTBrokerUser"
+											placeholder="optional"></div>
+									<div class="col-md mb-2"><label
+											for="DeviceMQTTBrokerPassword">Password</label><input type="text"
+											class="form-control" id="DeviceMQTTBrokerPassword" placeholder="optional">
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceMQTTClientID">Client ID</label><input
+											type="text" class="form-control" id="DeviceMQTTClientID" value="ib-therm">
+									</div>
+									<div class="col-md mb-2"><label for="DeviceMQTTBase">Base</label><input type="text"
+											class="form-control" id="DeviceMQTTBase" value="ib-therm"></div>
+									<div class="col-md-2 mb-2"><label for="DeviceMQTTKeepAlive">Keep alive time
+											(s)</label><input type="number" class="form-control"
+											id="DeviceMQTTKeepAlive" step="1" min="1" max="360" value="60"></div>
+									<div class="col-md-2 mb-2"><label for="DeviceMQTTInterval">Publish interval
+											(s)</label><input type="number" class="form-control" id="DeviceMQTTInterval"
+											step="1" min="1" max="360" value="10"></div>
+								</div>
+							</div>
+						</div>
+
+						<div class="card mb-2">
+							<div class="card-header">Debugging over socket</div>
+							<div class="card-body" id="DebugCard">
+								<div class="form-row">
+									<div class="col-md mb-2">
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceDebugEnabled"><label class="form-check-label"
+												for="DeviceDebugEnabled">Enabled</label></div>
+									</div>
+								</div>
+								<div class="form-row">
+									<div class="col-md mb-2"><label for="DeviceDebugHost">Debug log stream
+											host</label><input type="text" class="form-control" id="DeviceDebugHost">
+									</div>
+									<div class="col-md mb-2"><label for="DeviceDebugPort">Debug log stream
+											port</label><input type="number" class="form-control" id="DeviceDebugPort"
+											step="1" min="1" max="65535"></div>
+									<div class="col-md mb-2"><label for="DeviceDebugTimeout">Debug log stream connection
+											timeout (ms)</label><input type="number" class="form-control"
+											id="DeviceDebugTimeout" step="1" placeholder="10000"></div>
+								</div>
+							</div>
+						</div>
+
+					</div>
+				</div>
+				<div class="card-footer text-muted">
+					<button type="button" class="btn btn-primary mb-2" onclick="saveDeviceSettings();"
+						id="SaveDeviceSettings">Save settings</button>
+				</div>
+			</div>
+		</div>
 	</div>
-	<div class="card-body">
-		<div class="form-group">
-			<div class="form-row">
-				<div class="col-md mb-2">
-					<label for="WiFiSSID">SSID</label>
-					<div class="input-group">
-						<input type="text" class="form-control" id="WiFiSSID" required>
-						<div class="input-group-append">
-							<button class="btn btn-outline-secondary" type="button" data-toggle="modal" data-target="#selectWiFiSSID" data-onopen="" data-onclose=""><svg width="16px" height="16px"><use href="#img-edit" /></svg></button>
+
+	<div class="row-mt-3">
+		<div class="card w-100" id="DebugSettings">
+			<div class="card-header d-flex justify-content-between align-items-center">
+				<span class="align-middle">Debug settings</span><button type="button"
+					class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadDebugSettings();">&#x2b6f;</button>
+			</div>
+			<div class="card-body">
+				<div class="form-group">
+					<div class="card mb-2">
+						<div class="card-header">Debug log options</div>
+						<div class="card-body" id="DebugOptionsCard">
 						</div>
 					</div>
-				</div>
-				<div class="col-md mb-2">
-					<label for="WiFiPassword">Password</label>
-					<div class="input-group">
-						<input type="password" class="form-control" id="WiFiPassword" required>
-						<div class="input-group-append">
-							<span class="input-group-text" onmousedown="showWiFiPassword(event, true);" onmouseup="showWiFiPassword(event, false);">&#128065;</span>
-						</div>
-					</div>
+
+
 				</div>
 			</div>
-
+			<div class="card-footer text-muted">
+				<button type="button" class="btn btn-primary mb-2" onclick="saveDebugSettings();"
+					id="SaveDebugSettings">Save debug settings</button>
+			</div>
 		</div>
 	</div>
-	<div class="card-footer text-muted">
-		<button type="button" class="btn btn-primary mb-2" onclick="saveWiFiSettings();" id="SaveWiFiSettings">Save WiFi settings</button>
-	</div>
-</div>
-</div>
 
-<div class="row">
-<div class="card w-100" id="NetworkSettings">
-	<div class="card-header d-flex justify-content-between align-items-center">
-		<span class="align-middle">Device settings</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadDeviceSettings();">&#x2b6f;</button>
-	</div>
-	<div class="card-body">
-		<div class="form-group">
-
-
-			<div class="card mb-2">
-				<div class="card-header">Web Interface</div>
-				<div class="card-body" id="WebInterfaceCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceHostname">Hostname</label><input type="text" class="form-control" id="DeviceHostname" placeholder="heating" required></div>
-						<div class="col-md mb-2"><label for="DeviceListenPort">Listen port</label><input type="number" class="form-control" id="DeviceListenPort" min="1" max="65535" step="1" placeholder="80" required></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">Hardware services</div>
-				<div class="card-body" id="RTCCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceRTCEnabled"><label class="form-check-label" for="DeviceRTCEnabled">Real Time Battery powered clock enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceEMSEnabled"><label class="form-check-label" for="DeviceEMSEnabled">EMS bus enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceEMSForwarderEnabled"><label class="form-check-label" for="DeviceEMSForwarderEnabled">EMS bus forwarder enabled</label></div></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">Network Time Protocol (NTP) Server configuration</div>
-				<div class="card-body" id="NTPCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceNTPEnabled"><label class="form-check-label" for="DeviceNTPEnabled">Enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceNTPServer">Network Time Protocol (NTP) Server</label><input type="text" class="form-control" id="DeviceNTPServer" placeholder="pool.ntp.org" required></div>
-						<div class="col-md mb-2"><label for="DeviceNTPUTCOffset">NTP to UTC offset (s)</label><input type="number" class="form-control" id="DeviceNTPUTCOffset" step="1" placeholder="0" required></div>
-						<div class="col-md mb-2"><label for="DeviceNTPUTCDLOffset">NTP to UTC Daylight offset (s)</label><input type="number" class="form-control" id="DeviceNTPUTCDLOffset" step="1" placeholder="0" required></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceNTPTimezone">NTP Time zone string</label><input type="text" class="form-control" id="DeviceNTPTimezone" aria-describedby="DeviceNTPTimezoneHelp" required><div id="DeviceNTPTimezoneHelp" class="form-text">If specified, UTC offsets won't be used to set up local time</div></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">Bluetooth configuration</div>
-				<div class="card-body" id="BTCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="BTScanTime">Bluetooth scan time (s)</label><input type="number" class="form-control" id="BTScanTime" min="1" step="1" placeholder=30 required></div>
-						<div class="col-md mb-2"><label for="BTScanInterval">Interval between bluetooth scans (s)</label><input type="number" class="form-control" id="BTScanInterval" min="0" step="1" placeholder=120 required></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">OpenWeatherMap outdoor temperature API</div>
-				<div class="card-body" id="OpenWeatherMapCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceOWMEnabled"><label class="form-check-label" for="DeviceOWMEnabled">Enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceOWMAPIKey">OpenWeatherMap API Key (appid)</label><input type="text" class="form-control" id="DeviceOWMAPIKey"></div>
-						<div class="col-md mb-2"><label for="DeviceOWMLat">Latitude</label><input type="number" class="form-control" id="DeviceOWMLat" placeholder="54.3673"></div>
-						<div class="col-md mb-2"><label for="DeviceOWMLon">Longitude</label><input type="number" class="form-control" id="DeviceOWMLon" placeholder="18.6282"></div>
-						<div class="col-md mb-2"><label for="DeviceOWMInterval">Interval (s)</label><input type="number" class="form-control" id="DeviceOWMInterval" placeholder="120" value="120" min="60" max="600"></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">MQTT</div>
-				<div class="card-body" id="MQTTCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceMQTTEnabled"><label class="form-check-label" for="DeviceMQTTEnabled">Enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceMQTTBrokerAddress">Broker address</label><input type="text" class="form-control" id="DeviceMQTTBrokerAddress"></div>
-						<div class="col-md-2 mb-2"><label for="DeviceMQTTBrokerPort">Broker port</label><input type="number" class="form-control" id="DeviceMQTTBrokerPort" value="1883" step="1" min="1" max="65535"></div>
-						<div class="col-md mb-2"><label for="DeviceMQTTBrokerUser">User name</label><input type="text" class="form-control" id="DeviceMQTTBrokerUser" placeholder="optional"></div>
-						<div class="col-md mb-2"><label for="DeviceMQTTBrokerPassword">Password</label><input type="text" class="form-control" id="DeviceMQTTBrokerPassword" placeholder="optional"></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceMQTTClientID">Client ID</label><input type="text" class="form-control" id="DeviceMQTTClientID" value="ib-therm"></div>
-						<div class="col-md mb-2"><label for="DeviceMQTTBase">Base</label><input type="text" class="form-control" id="DeviceMQTTBase" value="ib-therm"></div>
-						<div class="col-md-2 mb-2"><label for="DeviceMQTTKeepAlive">Keep alive time (s)</label><input type="number" class="form-control" id="DeviceMQTTKeepAlive" step="1" min="1" max="360" value="60"></div>
-						<div class="col-md-2 mb-2"><label for="DeviceMQTTInterval">Publish interval (s)</label><input type="number" class="form-control" id="DeviceMQTTInterval" step="1" min="1" max="360" value="10"></div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card mb-2">
-				<div class="card-header">Debugging</div>
-				<div class="card-body" id="DebugCard">
-					<div class="form-row">
-						<div class="col-md mb-2"><div class="form-check"><input class="form-check-input" type="checkbox" value="" id="DeviceDebugEnabled"><label class="form-check-label" for="DeviceDebugEnabled">Enabled</label></div></div>
-					</div>
-					<div class="form-row">
-						<div class="col-md mb-2"><label for="DeviceDebugHost">Debug log stream host</label><input type="text" class="form-control" id="DeviceDebugHost"></div>
-						<div class="col-md mb-2"><label for="DeviceDebugPort">Debug log stream port</label><input type="number" class="form-control" id="DeviceDebugPort" step="1" min="1" max="65535"></div>
-						<div class="col-md mb-2"><label for="DeviceDebugTimeout">Debug log stream connection timeout (ms)</label><input type="number" class="form-control" id="DeviceDebugTimeout" step="1" placeholder="10000"></div>
-					</div>
-				</div>
-			</div>
-
-		</div>
-	</div>
-	<div class="card-footer text-muted">
-		<button type="button" class="btn btn-primary mb-2" onclick="saveDeviceSettings();" id="SaveDeviceSettings">Save settings</button>
-	</div>
-</div>
-</div>
-</div>
 
 </form>
 
@@ -199,300 +312,412 @@
 
 
 <script type='text/javascript'>
-var loadedProgram = undefined;
-var roomFound = undefined;
+	var loadedProgram = undefined;
+	var roomFound = undefined;
 
-$(document).ready(function() {
-	$("#selectWiFiSSID").on('show.bs.modal', function (event) {
-		$('#selectWiFiSSIDSelect').empty();
+	$(document).ready(function () {
+		$("#selectWiFiSSID").on('show.bs.modal', function (event) {
+			$('#selectWiFiSSIDSelect').empty();
 
-		$("#scanningWiFi").show();
-		$('#selectWiFiSSIDSelect').hide();
+			$("#scanningWiFi").show();
+			$('#selectWiFiSSIDSelect').hide();
 
-		fetch(hostName + '/status/wifi')
-			.then(res => res.json())
-			.then((networks) => {
-				var currentWiFi = $('#WiFiSSID').val();
+			fetch(hostName + '/status/wifi')
+				.then(res => res.json())
+				.then((networks) => {
+					var currentWiFi = $('#WiFiSSID').val();
 
-				networks.forEach(element => {
-					let ssid = element.ssid;
-					if (ssid === currentWiFi) {
-						$('#selectWiFiSSIDSelect').append( $( "<option selected>" + ssid + "</option>" ) );
-					} else {
-						$('#selectWiFiSSIDSelect').append( $( "<option>" + ssid + "</option>" ) );
-					}
-
-				});
-
-				$('#selectWiFiSSIDSelect').prop('disabled', false);
-				$("#scanningWiFi").hide();
-				$('#selectWiFiSSIDSelect').show();
-			}).catch(function(error) {
-				alert("Cannot fetch wifi networks.\n" + error);
-			}
-			);
-
-	});
-
-	$("#selectWiFiSSIDSave").on('click', function(event) {
-		event.preventDefault();
-		var selection = $('#selectWiFiSSIDSelect option:selected').text()
-		$('#WiFiSSID').val(selection).trigger('input');
-		$('#selectWiFiSSID').modal('hide');
-	});
-
-	$('#selectWiFiSSIDSelectLimit').change(function() {
-		var hideUtilised = $(this).prop('checked');
-		var currentSensor = $('#roomSensor').val().toUpperCase();
-		var currentIsSelected = false;
-
-		$("#selectWiFiSSIDSelect > option").each(function() {
-			if (hideUtilised) {
-				var disableIt = false;
-				var upElement = this.text.toUpperCase();
-				if (upElement !== currentSensor) {
-					disableIt = loadedProgram.find(function(prog) {
-						if (prog.sensor.toUpperCase() === upElement) {
-							return true;
+					networks.forEach(element => {
+						let ssid = element.ssid;
+						if (ssid === currentWiFi) {
+							$('#selectWiFiSSIDSelect').append($("<option selected>" + ssid + "</option>"));
 						} else {
-							return false;
+							$('#selectWiFiSSIDSelect').append($("<option>" + ssid + "</option>"));
 						}
+
 					});
-				} else {
-					currentIsSelected = $(this).prop('selected');
+
+					$('#selectWiFiSSIDSelect').prop('disabled', false);
+					$("#scanningWiFi").hide();
+					$('#selectWiFiSSIDSelect').show();
+				}).catch(function (error) {
+					alert("Cannot fetch wifi networks.\n" + error);
 				}
-				$(this).prop('disabled', disableIt);
-			} else {
-				$(this).prop('disabled', false);
-			}
+				);
+
 		});
 
-		if (hideUtilised && !currentIsSelected) {
-			$("#selectWiFiSSIDSelect option:not([disabled]):first").prop('selected', true);
-		}
+		$("#selectWiFiSSIDSave").on('click', function (event) {
+			event.preventDefault();
+			var selection = $('#selectWiFiSSIDSelect option:selected').text()
+			$('#WiFiSSID').val(selection).trigger('input');
+			$('#selectWiFiSSID').modal('hide');
+		});
+
+		$('#selectWiFiSSIDSelectLimit').change(function () {
+			var hideUtilised = $(this).prop('checked');
+			var currentSensor = $('#roomSensor').val().toUpperCase();
+			var currentIsSelected = false;
+
+			$("#selectWiFiSSIDSelect > option").each(function () {
+				if (hideUtilised) {
+					var disableIt = false;
+					var upElement = this.text.toUpperCase();
+					if (upElement !== currentSensor) {
+						disableIt = loadedProgram.find(function (prog) {
+							if (prog.sensor.toUpperCase() === upElement) {
+								return true;
+							} else {
+								return false;
+							}
+						});
+					} else {
+						currentIsSelected = $(this).prop('selected');
+					}
+					$(this).prop('disabled', disableIt);
+				} else {
+					$(this).prop('disabled', false);
+				}
+			});
+
+			if (hideUtilised && !currentIsSelected) {
+				$("#selectWiFiSSIDSelect option:not([disabled]):first").prop('selected', true);
+			}
+
+		});
+
+		loadWiFiSettings();
+		loadDeviceSettings();
+		loadDebugSettings();
+
+		$("#loadingprogress").addClass('invisible');
+		$('#networkeditform').removeClass('invisible');
 
 	});
 
-	loadWiFiSettings();
-	loadDeviceSettings();
+	//TODO shared
+	function HttpResponseException(message, status) {
+		this.message = message;
+		this.status = status;
+		this.name = "HTTP Response error";
+	}
 
-	$("#loadingprogress").addClass('invisible');
-	$('#networkeditform').removeClass('invisible');
+	HttpResponseException.prototype.toString = function () {
+		return this.name + ': ' + this.status + ' "' + this.message + '"';
+	}
 
-});
-
-//TODO shared
-function HttpResponseException(message, status) {
-	this.message = message;
-	this.status = status;
-	this.name = "HTTP Response error";
-}
-
-HttpResponseException.prototype.toString = function() {
-	return this.name + ': ' + this.status + ' "' + this.message + '"';
-}
-
-function validateResponse(response) {
-	if (!response.ok) {
+	function validateResponse(response) {
+		if (!response.ok) {
 			throw new HttpResponseException(response.statusText, response.status);
 		}
 		return response;
-}
-
-function showWiFiPassword(event, show) {
-	event.preventDefault();
-	if (show) {
-		$("#WiFiPassword").attr("type", "text");
-	} else {
-		$("#WiFiPassword").attr("type", "password");
 	}
-	return event;
-}
 
-function loadWiFiSettings() {
-	$("#WiFiSettings *").attr('disabled', true)
-	fetch(hostName + '/config/wifi')
-	.then(validateResponse)
-	.then(res => res.json())
-	.then((settings) => {
-		$('#WiFiSSID').val(settings.ssid);
-	}).catch(function(error) {
-		if (error instanceof HttpResponseException && error.status === 404) {
-			alert("Cannot load WiFi settings\n" + error);
-			$("#WiFiSettings *").attr('disabled', false)
-			return;
-		}
-		if (confirm("Cannot load WiFi settings\n" + error + "\nTry again?")) {
-			loadWiFiSettings();
-		}
-	});
-	$("#WiFiSettings *").attr('disabled', false)
-}
-
-function saveWiFiSettings() {
-	$("#SaveWiFiSettings").prop('disabled', true);
-
-	let settings = {
-		"ssid": $('#WiFiSSID').val(),
-		"password": $('#WiFiPassword').val()
-	};
-
-	fetch(hostName + '/config/wifi', {
-		method: 'post',
-		mode: 'no-cors',
-		cache: 'no-cache',
-		credentials: 'same-origin',
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(settings, undefined, '\t')
-	})
-	.then(res => {
-		if (res.status === 200 || res.status === 201 || res.type === "opaque") {
-			if (confirm("WiFi settings saved.\nDo you want to reboot device to\nchanges take place?")) {
-				reboot();
-				return;
-			}
+	function showWiFiPassword(event, show) {
+		event.preventDefault();
+		if (show) {
+			$("#WiFiPassword").attr("type", "text");
 		} else {
-			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+			$("#WiFiPassword").attr("type", "password");
 		}
-	})
-	.catch(function(error) {
-		alert(error);
-	});
-	$("#SaveWiFiSettings").prop('disabled', false);
-}
-
-function loadDeviceSettings() {
-	$("#NetworkSettings *").attr('disabled', true)
-
-	fetch(hostName + '/config/device')
-	.then(validateResponse)
-	.then(res => res.json())
-	.then((settings) => {
-		$('#DeviceHostname').val(settings.hostname);
-		$('#DeviceListenPort').val(settings.listenPort);
-
-		$('#DeviceEMSEnabled').prop('checked', settings.emsEnabled);
-		$('#DeviceEMSForwarderEnabled').prop('checked', settings.emsForwarderEnabled);
-		$('#DeviceRTCEnabled').prop('checked', settings.rtcEnabled);
-		$('#DeviceNTPEnabled').prop('checked', settings.ntpEnabled);
-		$('#DeviceNTPServer').val(settings.ntpHost);
-		$('#DeviceNTPUTCOffset').val(settings.ntpUtcOffset);
-		$('#DeviceNTPUTCDLOffset').val(settings.ntpDaylightUtcOffset);
-		$('#DeviceNTPTimezone').val(settings.timeZone);
-		$('#DeviceDebugEnabled').prop('checked', settings.loggerEnabled),
-		$('#DeviceDebugHost').val(settings.loggerHost);
-		$('#DeviceDebugPort').val(settings.loggerPort);
-		$('#DeviceDebugTimeout').val(settings.loggerTimeoutMs);
-		if (settings.bt != undefined) {
-			$('#BTScanTime').val(settings.bt.scanTime);
-			$('#BTScanInterval').val(settings.bt.scanInterval);
-		}
-		if (settings.mqtt != undefined) {
-			$('#DeviceMQTTEnabled').prop('checked', settings.mqtt.enabled),
-			$('#DeviceMQTTBrokerAddress').val(settings.mqtt.brokerAddress),
-			$('#DeviceMQTTBrokerPort').val(settings.mqtt.brokerPort),
-			$('#DeviceMQTTBrokerUser').val(settings.mqtt.username);
-			$('#DeviceMQTTBrokerPassword').val(settings.mqtt.password);
-			$('#DeviceMQTTClientID').val(settings.mqtt.clientId);
-			$('#DeviceMQTTBase').val(settings.mqtt.base);
-			$('#DeviceMQTTKeepAlive').val(settings.mqtt.keepAlive);
-			$('#DeviceMQTTInterval').val(settings.mqtt.interval);
-		}
-		if (settings.openweather != undefined) {
-			$('#DeviceOWMEnabled').prop('checked', settings.openweather.enabled),
-			$('#DeviceOWMAPIKey').val(settings.openweather.appid);
-			$('#DeviceOWMLat').val(settings.openweather.latitude);
-			$('#DeviceOWMLon').val(settings.openweather.longitude);
-			$('#DeviceOWMInterval').val(settings.openweather.interval);
-		}
-
-	}).catch(function(error) {
-		if (error instanceof HttpResponseException && error.status === 404) {
-			alert("Cannot load device settings\n" + error);
-			$("#NetworkSettings *").attr('disabled', false)
-			return;
-		}
-		if (confirm("Cannot load device settings\n" + error + "\nTry again?")) {
-			loadDeviceSettings();
-		}
-	});
-	$("#NetworkSettings *").attr('disabled', false)
-}
-
-function saveDeviceSettings() {
-	$("#SaveDeviceSettings").prop('disabled', true);
-
-	let settings = {
-		"hostname": $('#DeviceHostname').val(),
-		"listenPort": parseInt($('#DeviceListenPort').val(), 10),
-		"emsEnabled": $('#DeviceEMSEnabled').prop('checked'),
-		"emsForwarderEnabled": $('#DeviceEMSForwarderEnabled').prop('checked'),
-		"rtcEnabled": $('#DeviceRTCEnabled').prop('checked'),
-		"ntpEnabled": $('#DeviceNTPEnabled').prop('checked'),
-		"ntpHost": $('#DeviceNTPServer').val(),
-		"ntpUtcOffset": parseInt($('#DeviceNTPUTCOffset').val(), 10),
-		"ntpDaylightUtcOffset": parseInt($('#DeviceNTPUTCDLOffset').val(), 10),
-		"timeZone": $('#DeviceNTPTimezone').val(),
-		"loggerEnabled": $('#DeviceDebugEnabled').prop('checked'),
-		"loggerHost": $('#DeviceDebugHost').val(),
-		"loggerPort": parseInt($('#DeviceDebugPort').val(), 10),
-		"loggerTimeoutMs": parseInt($('#DeviceDebugTimeout').val(), 10),
-		"mqtt": {
-			"enabled": $('#DeviceMQTTEnabled').prop('checked'),
-			"brokerAddress":  $('#DeviceMQTTBrokerAddress').val(),
-			"brokerPort": parseInt($('#DeviceMQTTBrokerPort').val(), 10),
-			"username":  $('#DeviceMQTTBrokerUser').val(),
-			"password":  $('#DeviceMQTTBrokerPassword').val(),
-			"clientId":  $('#DeviceMQTTClientID').val(),
-			"base":  $('#DeviceMQTTBase').val(),
-			"keepAlive": parseInt($('#DeviceMQTTKeepAlive').val(), 10),
-			"interval":  parseInt($('#DeviceMQTTInterval').val(), 10),
-		},
-		"openweather": {
-			"enabled": $('#DeviceOWMEnabled').prop('checked'),
-			"appid": $('#DeviceOWMAPIKey').val(),
-			"latitude": $('#DeviceOWMLat').val(),
-			"longitude": $('#DeviceOWMLon').val(),
-			"interval":  parseInt($('#DeviceOWMInterval').val(), 10),
-		},
-		"bt": {
-			"scanTime": parseInt($('#BTScanTime').val(), 10),
-			"scanInterval": parseInt($('#BTScanInterval').val(), 10),
-		}
-	};
-
-	fetch(hostName + '/config/device', {
-		method: 'post',
-		mode: 'no-cors',
-		cache: 'no-cache',
-		credentials: 'same-origin',
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(settings, undefined, '\t')
-	})
-	.then(res => {
-		if (res.status === 200 || res.status === 201 || res.type === "opaque") {
-			if (confirm("Device settings saved.\nDo you want to reboot device to\nchanges take place?")) {
-				reboot();
-				return;
-			}
-		} else {
-			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
-		}
-	})
-	.catch(function(error) {
-		alert(error);
-	});
-	$("#SaveDeviceSettings").prop('disabled', false);
-}
-
-function reboot() {
-	fetch(hostName + '/config/reboot')
-	.then((programs) => {
-	}).catch(function(error) {
-		alert(error);
+		return event;
 	}
-	);
-	mainScreen();
-}
+
+
+	function updateForm(jsonData, formName) {
+		const form = document.getElementById(formName);
+		form.innerHTML = '';
+
+		for (const [key, value] of Object.entries(jsonData)) {
+			const formGroup = document.createElement('div');
+			formGroup.className = 'mb-3';
+
+			const label = document.createElement('label');
+			label.className = 'form-label';
+			label.innerText = key.replace('_', ' ').toUpperCase();
+			formGroup.appendChild(label);
+
+			const input = document.createElement('input');
+			input.className = 'form-control';
+			input.id = key;
+			input.name = key;
+			input.value = value;
+			formGroup.appendChild(input);
+
+			form.appendChild(formGroup);
+		}
+	}
+
+
+
+
+	function updateDebugCard(debugOptions) {
+		$('#DebugOptionsCard').empty();
+		$.each(debugOptions, function (key, value) {
+			const checkboxId = key;
+
+			const $row = $('<div class="form-row">').append(
+				$('<div class="col-md mb-2">').append(
+					$('<div class="form-check">').append(
+						$('<input>', {
+							type: 'checkbox',
+							class: 'form-check-input',
+							id: checkboxId,
+							checked: value
+						}),
+						$('<label>', {
+							class: 'form-check-label',
+							for: checkboxId,
+							text: key
+						})
+					)
+				)
+			);
+
+			$('#DebugOptionsCard').append($row);
+		});
+	}
+
+	function loadDebugSettings() {
+		$("#DebugSettings *").attr('disabled', true)
+		fetch(hostName + '/config/debug')
+			.then(validateResponse)
+			.then(res => res.json())
+			.then((settings) => {
+				console.log(settings);
+				updateDebugCard(settings);
+				// $('#WiFiSSID').val(settings.ssid);
+			}).catch(function (error) {
+				if (error instanceof HttpResponseException && error.status === 404) {
+					alert("Cannot load debug settings\n" + error);
+					$("#DebugSettings *").attr('disabled', false)
+					return;
+				}
+				if (confirm("Cannot load debug settings\n" + error + "\nTry again?")) {
+					loadDebugSettings();
+				}
+			});
+		$("#DebugSettings *").attr('disabled', false)
+	}
+
+	function saveDebugSettings() {
+		$("#DebugSettings").prop('disabled', true);
+
+		let settings = {};
+		$('#DebugOptionsCard input[type="checkbox"]').each(function () {
+			const id = $(this).attr('id');
+			const checked = $(this).is(':checked');
+			settings[id] = checked;
+		});
+
+		fetch(hostName + '/config/debug', {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(settings, undefined, '\t')
+		})
+			.then(res => {
+				if (res.status === 200 || res.status === 201 || res.type === "opaque") {
+					if (confirm("Debug settings saved.\nDo you want to reboot device to\nchanges take place?")) {
+						reboot();
+						return;
+					}
+				} else {
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+				}
+			})
+			.catch(function (error) {
+				alert(error);
+			});
+		$("#DebugSettings").prop('disabled', false);
+	}
+
+	function loadWiFiSettings() {
+		$("#WiFiSettings *").attr('disabled', true)
+		fetch(hostName + '/config/wifi')
+			.then(validateResponse)
+			.then(res => res.json())
+			.then((settings) => {
+				$('#WiFiSSID').val(settings.ssid);
+			}).catch(function (error) {
+				if (error instanceof HttpResponseException && error.status === 404) {
+					alert("Cannot load WiFi settings\n" + error);
+					$("#WiFiSettings *").attr('disabled', false)
+					return;
+				}
+				if (confirm("Cannot load WiFi settings\n" + error + "\nTry again?")) {
+					loadWiFiSettings();
+				}
+			});
+		$("#WiFiSettings *").attr('disabled', false)
+	}
+
+	function saveWiFiSettings() {
+		$("#SaveWiFiSettings").prop('disabled', true);
+
+		let settings = {
+			"ssid": $('#WiFiSSID').val(),
+			"password": $('#WiFiPassword').val()
+		};
+
+		fetch(hostName + '/config/wifi', {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(settings, undefined, '\t')
+		})
+			.then(res => {
+				if (res.status === 200 || res.status === 201 || res.type === "opaque") {
+					if (confirm("WiFi settings saved.\nDo you want to reboot device to\nchanges take place?")) {
+						reboot();
+						return;
+					}
+				} else {
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+				}
+			})
+			.catch(function (error) {
+				alert(error);
+			});
+		$("#SaveWiFiSettings").prop('disabled', false);
+	}
+
+	function loadDeviceSettings() {
+		$("#NetworkSettings *").attr('disabled', true)
+
+		fetch(hostName + '/config/device')
+			.then(validateResponse)
+			.then(res => res.json())
+			.then((settings) => {
+				$('#DeviceHostname').val(settings.hostname);
+				$('#DeviceListenPort').val(settings.listenPort);
+
+				$('#DeviceEMSEnabled').prop('checked', settings.emsEnabled);
+				$('#DeviceEMSForwarderEnabled').prop('checked', settings.emsForwarderEnabled);
+				$('#DeviceRTCEnabled').prop('checked', settings.rtcEnabled);
+				$('#DeviceNTPEnabled').prop('checked', settings.ntpEnabled);
+				$('#DeviceNTPServer').val(settings.ntpHost);
+				$('#DeviceNTPUTCOffset').val(settings.ntpUtcOffset);
+				$('#DeviceNTPUTCDLOffset').val(settings.ntpDaylightUtcOffset);
+				$('#DeviceNTPTimezone').val(settings.timeZone);
+				$('#DeviceDebugEnabled').prop('checked', settings.loggerEnabled),
+					$('#DeviceDebugHost').val(settings.loggerHost);
+				$('#DeviceDebugPort').val(settings.loggerPort);
+				$('#DeviceDebugTimeout').val(settings.loggerTimeoutMs);
+				if (settings.bt != undefined) {
+					$('#BTScanTime').val(settings.bt.scanTime);
+					$('#BTScanInterval').val(settings.bt.scanInterval);
+				}
+				if (settings.mqtt != undefined) {
+					$('#DeviceMQTTEnabled').prop('checked', settings.mqtt.enabled),
+						$('#DeviceMQTTBrokerAddress').val(settings.mqtt.brokerAddress),
+						$('#DeviceMQTTBrokerPort').val(settings.mqtt.brokerPort),
+						$('#DeviceMQTTBrokerUser').val(settings.mqtt.username);
+					$('#DeviceMQTTBrokerPassword').val(settings.mqtt.password);
+					$('#DeviceMQTTClientID').val(settings.mqtt.clientId);
+					$('#DeviceMQTTBase').val(settings.mqtt.base);
+					$('#DeviceMQTTKeepAlive').val(settings.mqtt.keepAlive);
+					$('#DeviceMQTTInterval').val(settings.mqtt.interval);
+				}
+				if (settings.openweather != undefined) {
+					$('#DeviceOWMEnabled').prop('checked', settings.openweather.enabled),
+						$('#DeviceOWMAPIKey').val(settings.openweather.appid);
+					$('#DeviceOWMLat').val(settings.openweather.latitude);
+					$('#DeviceOWMLon').val(settings.openweather.longitude);
+					$('#DeviceOWMInterval').val(settings.openweather.interval);
+				}
+
+			}).catch(function (error) {
+				if (error instanceof HttpResponseException && error.status === 404) {
+					alert("Cannot load device settings\n" + error);
+					$("#NetworkSettings *").attr('disabled', false)
+					return;
+				}
+				if (confirm("Cannot load device settings\n" + error + "\nTry again?")) {
+					loadDeviceSettings();
+				}
+			});
+		$("#NetworkSettings *").attr('disabled', false)
+	}
+
+	function saveDeviceSettings() {
+		$("#SaveDeviceSettings").prop('disabled', true);
+
+		let settings = {
+			"hostname": $('#DeviceHostname').val(),
+			"listenPort": parseInt($('#DeviceListenPort').val(), 10),
+			"emsEnabled": $('#DeviceEMSEnabled').prop('checked'),
+			"emsForwarderEnabled": $('#DeviceEMSForwarderEnabled').prop('checked'),
+			"rtcEnabled": $('#DeviceRTCEnabled').prop('checked'),
+			"ntpEnabled": $('#DeviceNTPEnabled').prop('checked'),
+			"ntpHost": $('#DeviceNTPServer').val(),
+			"ntpUtcOffset": parseInt($('#DeviceNTPUTCOffset').val(), 10),
+			"ntpDaylightUtcOffset": parseInt($('#DeviceNTPUTCDLOffset').val(), 10),
+			"timeZone": $('#DeviceNTPTimezone').val(),
+			"loggerEnabled": $('#DeviceDebugEnabled').prop('checked'),
+			"loggerHost": $('#DeviceDebugHost').val(),
+			"loggerPort": parseInt($('#DeviceDebugPort').val(), 10),
+			"loggerTimeoutMs": parseInt($('#DeviceDebugTimeout').val(), 10),
+			"mqtt": {
+				"enabled": $('#DeviceMQTTEnabled').prop('checked'),
+				"brokerAddress": $('#DeviceMQTTBrokerAddress').val(),
+				"brokerPort": parseInt($('#DeviceMQTTBrokerPort').val(), 10),
+				"username": $('#DeviceMQTTBrokerUser').val(),
+				"password": $('#DeviceMQTTBrokerPassword').val(),
+				"clientId": $('#DeviceMQTTClientID').val(),
+				"base": $('#DeviceMQTTBase').val(),
+				"keepAlive": parseInt($('#DeviceMQTTKeepAlive').val(), 10),
+				"interval": parseInt($('#DeviceMQTTInterval').val(), 10),
+			},
+			"openweather": {
+				"enabled": $('#DeviceOWMEnabled').prop('checked'),
+				"appid": $('#DeviceOWMAPIKey').val(),
+				"latitude": $('#DeviceOWMLat').val(),
+				"longitude": $('#DeviceOWMLon').val(),
+				"interval": parseInt($('#DeviceOWMInterval').val(), 10),
+			},
+			"bt": {
+				"scanTime": parseInt($('#BTScanTime').val(), 10),
+				"scanInterval": parseInt($('#BTScanInterval').val(), 10),
+			}
+		};
+
+		fetch(hostName + '/config/device', {
+			method: 'post',
+			mode: 'no-cors',
+			cache: 'no-cache',
+			credentials: 'same-origin',
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(settings, undefined, '\t')
+		})
+			.then(res => {
+				if (res.status === 200 || res.status === 201 || res.type === "opaque") {
+					if (confirm("Device settings saved.\nDo you want to reboot device to\nchanges take place?")) {
+						reboot();
+						return;
+					}
+				} else {
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+				}
+			})
+			.catch(function (error) {
+				alert(error);
+			});
+		$("#SaveDeviceSettings").prop('disabled', false);
+	}
+
+	function reboot() {
+		fetch(hostName + '/config/reboot')
+			.then((programs) => {
+			}).catch(function (error) {
+				alert(error);
+			}
+			);
+		mainScreen();
+	}
 
 </script>
