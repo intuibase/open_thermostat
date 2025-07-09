@@ -1,14 +1,14 @@
-	<link rel="stylesheet" href="deps/bms.min.css" integrity="sha512-wHTuOcR1pyFeyXVkwg3fhfK46QulKXkLq1kxcEEpjnAPv63B/R49bBqkJHLvoGFq6lvAEKlln2rE1JfIPeQ+iw==" crossorigin="anonymous" />
-	<script src="deps/bms.min.js" integrity="sha512-ljeReA8Eplz6P7m1hwWa+XdPmhawNmo9I0/qyZANCCFvZ845anQE+35TuZl9+velym0TKanM2DXVLxSJLLpQWw==" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="deps/bms.min.css.gz" crossorigin="anonymous" />
+<script src="deps/bms.min.js.gz" crossorigin="anonymous"></script>
 
 
-	<div class="d-flex justify-content-center" id="loadingprogress">
-		<div class="spinner-border" role="status">
-			<span class="sr-only"></span>
-		</div>
+<div class="d-flex justify-content-center" id="loadingprogress">
+	<div class="spinner-border" role="status">
+		<span class="sr-only"></span>
 	</div>
+</div>
 
-	<form id = "programeditform" class="invisible">
+<form id="programeditform" class="invisible">
 	<div class="form-group">
 		<div class="form-row align-items-end">
 			<div class="col mb-2">
@@ -16,21 +16,24 @@
 				<select class="form-control" id="selectprogram" name="program" onchange="loadProgram()"></select>
 			</div>
 			<div class="col-md-2 mb-2">
-				<button type="button" class="btn btn-success form-control" onclick='openCreateProgramNameModal(event);' >Create new program</button>
+				<button type="button" class="btn btn-success form-control"
+					onclick='openCreateProgramNameModal(event);'>Create new program</button>
 			</div>
 			<div class="col-md-2 mb-2">
-				<button type="button" class="btn btn-dark form-control" onclick="deleteProgram();">Delete program</button>
+				<button type="button" class="btn btn-dark form-control" onclick="deleteProgram();">Delete
+					program</button>
 			</div>
 		</div>
 	</div>
 
-	<div class="modal fade" id="selectSensorModal" tabindex="-1" role="dialog" aria-labelledby="selectSensorModalLabel" aria-hidden="true">
+	<div class="modal fade" id="selectSensorModal" tabindex="-1" role="dialog" aria-labelledby="selectSensorModalLabel"
+		aria-hidden="true">
 		<div class="modal-dialog" role="document">
 			<div class="modal-content">
 				<div class="modal-header">
 					<h5 class="modal-title" id="selectSensorModalLabel">Choose sensor</h5>
 					<button type="button" class="close" data-dismiss="modal" aria-label="Close">
-					<span aria-hidden="true">&times;</span>
+						<span aria-hidden="true">&times;</span>
 					</button>
 				</div>
 				<div class="modal-body">
@@ -38,8 +41,10 @@
 						<select class="form-control" id="selectSensorModalSelect">
 						</select>
 						<div class="form-check">
-							<input class="form-check-input" type="checkbox" value="" checked id="selectSensorModalSelectLimit">
-							<label class="form-check-label" for="selectSensorModalSelectLimit">Allow selection of current and new only</label>
+							<input class="form-check-input" type="checkbox" value="" checked
+								id="selectSensorModalSelectLimit">
+							<label class="form-check-label" for="selectSensorModalSelectLimit">Allow selection of
+								current and new only</label>
 						</div>
 					</form>
 				</div>
@@ -60,17 +65,23 @@
 						<label for="roomSelectorSelect">Select room to edit</label>
 						<div class="input-group">
 							<div class="input-group-prepend">
-								<button class="btn btn-outline-secondary" type="button" id="roomNameEdit" onclick="openEditRoomNameModal(event);"><svg width="16px" height="16px"><use href="#img-edit" /></svg></button>
+								<button class="btn btn-outline-secondary" type="button" id="roomNameEdit"
+									onclick="openEditRoomNameModal(event);"><svg width="16px" height="16px">
+										<use href="#img-edit" />
+									</svg></button>
 							</div>
-							<select class="form-control" id="roomSelectorSelect" name="roomselected" aria-describedby="roomNameEdit" onchange="changeRoom()">
+							<select class="form-control" id="roomSelectorSelect" name="roomselected"
+								aria-describedby="roomNameEdit" onchange="changeRoom()">
 							</select>
 						</div>
 					</div>
 					<div class="col-md-2 mb-2">
-						<button type="button" class="btn btn-success form-control" onclick='openAddNewRoomModal(event);'>Add new room</button>
+						<button type="button" class="btn btn-success form-control"
+							onclick='openAddNewRoomModal(event);'>Add new room</button>
 					</div>
 					<div class="col-md-2 mb-2">
-						<button type="button" class="btn btn-dark form-control" onclick="deleteRoom();">Delete room</button>
+						<button type="button" class="btn btn-dark form-control" onclick="deleteRoom();">Delete
+							room</button>
 					</div>
 				</div>
 			</div>
@@ -81,13 +92,14 @@
 
 		</div>
 		<div class="card-footer text-muted">
-			<button type="button" class="btn btn-primary mb-2" onclick="saveProgram();" id="saveprogram">Save program</button>
+			<button type="button" class="btn btn-primary mb-2" onclick="saveProgram();" id="saveprogram">Save
+				program</button>
 		</div>
 
 	</div>
 
 
-	</form>
+</form>
 
 
 
@@ -96,7 +108,7 @@
 	var loadedProgram = undefined;
 	var roomFound = undefined;
 
-	$(document).ready(function() {
+	$(document).ready(function () {
 
 		$("#selectSensorModal").on('show.bs.modal', function (event) {
 			$('#selectSensorModalSelect').empty();
@@ -114,11 +126,11 @@
 						var upElement = element.toUpperCase();
 
 						if (upElement === currentSensor) {
-							$('#selectSensorModalSelect').append( $( "<option selected>" + element + "</option>" ) );
+							$('#selectSensorModalSelect').append($("<option selected>" + element + "</option>"));
 						} else {
 							var disableIt = false;
 							if (hideUtilised) {
-								disableIt = loadedProgram.find(function(prog) {
+								disableIt = loadedProgram.find(function (prog) {
 									if (prog.sensor.toUpperCase() === upElement) {
 										return true;
 									} else {
@@ -127,16 +139,16 @@
 								});
 							}
 							if (disableIt) {
-								$('#selectSensorModalSelect').append( $( "<option disabled>" + element + "</option>" ) );
+								$('#selectSensorModalSelect').append($("<option disabled>" + element + "</option>"));
 							} else {
-								$('#selectSensorModalSelect').append( $( "<option>" + element + "</option>" ) );
+								$('#selectSensorModalSelect').append($("<option>" + element + "</option>"));
 							}
 						}
 
 					});
 
 
-				}).catch(function(error) {
+				}).catch(function (error) {
 					// content.value = "";
 					alert("Cannot fetch devices.\n" + error);
 				}
@@ -152,17 +164,17 @@
 			$('#selectSensorModal').modal('hide');
 		});
 
-		$('#selectSensorModalSelectLimit').change(function() {
+		$('#selectSensorModalSelectLimit').change(function () {
 			var hideUtilised = $(this).prop('checked');
 			var currentSensor = $('#roomSensor').val().toUpperCase();
 			var currentIsSelected = false;
 
-			$("#selectSensorModalSelect > option").each(function() {
+			$("#selectSensorModalSelect > option").each(function () {
 				if (hideUtilised) {
 					var disableIt = false;
 					var upElement = this.text.toUpperCase();
 					if (upElement !== currentSensor) {
-						disableIt = loadedProgram.find(function(prog) {
+						disableIt = loadedProgram.find(function (prog) {
 							if (prog.sensor.toUpperCase() === upElement) {
 								return true;
 							} else {
@@ -202,52 +214,52 @@
 			headers: { "Content-Type": "application/json" },
 			body: program
 		})
-		.then(res => {
-			if ((res.status >= 200 && res.status <=205) || res.type === "opaque") {
-				// if (confirm("Program '" + selector.value + "' saved.\nDo you want to reboot device to\nchanges take place?")) {
-				// 	reboot();
-				// 	return;
-				// }
-			} else {
-				alert("Not sure if program saved\nStatus: " + res.status + "\nBody:\n" + res.body);
-			}
-		})
-		.catch(function(error) {
-			alert(error);
-		});
+			.then(res => {
+				if ((res.status >= 200 && res.status <= 205) || res.type === "opaque") {
+					// if (confirm("Program '" + selector.value + "' saved.\nDo you want to reboot device to\nchanges take place?")) {
+					// 	reboot();
+					// 	return;
+					// }
+				} else {
+					alert("Not sure if program saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+				}
+			})
+			.catch(function (error) {
+				alert(error);
+			});
 		$("#saveprogram").prop('disabled', true);
 
 	}
 
 	function getAvailablePrograms() {
 		fetch(hostName + '/status/programs')
-		.then(res => res.json())
-		.then((programs) => {
-			fetch(hostName + '/config/program/current')
-				.then(res => res.json())
-				.then((prog) => {
-					var currentProgram = prog.program;
+			.then(res => res.json())
+			.then((programs) => {
+				fetch(hostName + '/config/program/current')
+					.then(res => res.json())
+					.then((prog) => {
+						var currentProgram = prog.program;
 
-					var selector = document.getElementById('selectprogram');
+						var selector = document.getElementById('selectprogram');
 
-					programs.forEach(element => {
-						if (element === currentProgram) {
-							$('#selectprogram').append( $( "<option selected>" + element + "</option>" ) );
-						} else {
-							$('#selectprogram').append( $( "<option>" + element + "</option>" ) );
-						}
+						programs.forEach(element => {
+							if (element === currentProgram) {
+								$('#selectprogram').append($("<option selected>" + element + "</option>"));
+							} else {
+								$('#selectprogram').append($("<option>" + element + "</option>"));
+							}
+						});
+
+						$("#loadingprogress").addClass('invisible');
+						$('#programeditform').removeClass('invisible');
+
+						loadProgram();
 					});
-
-					$("#loadingprogress").addClass('invisible');
-					$('#programeditform').removeClass('invisible');
-
-					loadProgram();
-				});
-		}).catch(function(error) {
-			alert(error);
-			getAvailablePrograms();
-		}
-		);
+			}).catch(function (error) {
+				alert(error);
+				getAvailablePrograms();
+			}
+			);
 	}
 
 	function openCreateProgramNameModal(event) {
@@ -263,7 +275,7 @@
 		</form>`);
 
 		$("#editModalSave").off('click');
-		$("#editModalSave").on('click', function(event) {
+		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
 			let name = $('#modalEditorInput').val();
 			if (name === undefined || name.length === 0) {
@@ -282,7 +294,7 @@
 			loadedProgram = [];
 		}
 
-		$('#selectprogram').append( $( "<option selected>" + name + "</option>" ) );
+		$('#selectprogram').append($("<option selected>" + name + "</option>"));
 		saveProgram();
 		refreshLoadedProgram();
 	}
@@ -304,17 +316,17 @@
 			cache: 'no-cache',
 			credentials: 'same-origin'
 		})
-		.then(res => {
-			if ((res.status >= 200 && res.status <=205) || res.type === "opaque") {
-				$('#selectprogram option:selected').remove()
-				$('#selectprogram').trigger('change');
-			} else {
-				alert("Not sure if program deleted\nStatus: " + res.status + "\nBody:\n" + res.body);
-			}
-		})
-		.catch(function(error) {
-			alert(error);
-		});
+			.then(res => {
+				if ((res.status >= 200 && res.status <= 205) || res.type === "opaque") {
+					$('#selectprogram option:selected').remove()
+					$('#selectprogram').trigger('change');
+				} else {
+					alert("Not sure if program deleted\nStatus: " + res.status + "\nBody:\n" + res.body);
+				}
+			})
+			.catch(function (error) {
+				alert(error);
+			});
 	}
 
 	function HttpResponseException(message, status) {
@@ -323,7 +335,7 @@
 		this.name = "HTTP Response error";
 	}
 
-	HttpResponseException.prototype.toString = function() {
+	HttpResponseException.prototype.toString = function () {
 		return this.name + ': ' + this.status + ' ' + this.message + '"';
 	}
 
@@ -335,51 +347,51 @@
 		$('#roomSelectorSelect').empty();
 
 		fetch(hostName + '/config/programs/' + selector.value)
-		.then(function(response) {
-			if (!response.ok) {
-				throw new HttpResponseException(response.statusText, response.status);
+			.then(function (response) {
+				if (!response.ok) {
+					throw new HttpResponseException(response.statusText, response.status);
+				}
+				return response;
+			})
+			.then(res => res.json())
+			.then((value) => {
+				$('#roomTemperatureSettings').collapse("show");
+				loadedProgram = value;
+				refreshLoadedProgram();
+			}).catch(function (error) {
+				$('#roomTemperatureSettings').collapse("hide");
+				alert("Cannot load program \"" + selector.value + "\"\n" + error + "\nTrying again.");
+				if (error instanceof HttpResponseException && error.status === 404) {
+					return;
+				}
+				loadProgram();
 			}
-			return response;
-		})
-		.then(res => res.json())
-		.then((value) => {
-			$('#roomTemperatureSettings').collapse("show");
-			loadedProgram = value;
-			refreshLoadedProgram();
-		}).catch(function(error) {
-			$('#roomTemperatureSettings').collapse("hide");
-			alert("Cannot load program \"" + selector.value + "\"\n" + error + "\nTrying again.");
-			if (error instanceof HttpResponseException && error.status === 404) {
-				return;
-			}
-			loadProgram();
-		}
-		);
+			);
 	}
 
 	function refreshLoadedProgram() {
 		$('#roomSelectorSelect').find('option').remove();
 
 		loadedProgram.forEach(element => {
-				$('#roomSelectorSelect').append( $( "<option>" + element.name + "</option>" ) );
-			});
+			$('#roomSelectorSelect').append($("<option>" + element.name + "</option>"));
+		});
 
-			if (loadedProgram.length == 0) {
-				$('#roomTemperatureSettings *').attr('disabled', true);
-				$('#addNewRoom').attr('disabled', false);
-			} else {
-				$('#roomTemperatureSettings *').attr('disabled', false);
-				changeRoom();
-			}
+		if (loadedProgram.length == 0) {
+			$('#roomTemperatureSettings *').attr('disabled', true);
+			$('#addNewRoom').attr('disabled', false);
+		} else {
+			$('#roomTemperatureSettings *').attr('disabled', false);
+			changeRoom();
+		}
 
 	}
 
 	function openEditRoomNameModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter room name");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editRoomName" value="`+roomFound.name+`"></form>`);
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editRoomName" value="` + roomFound.name + `"></form>`);
 		$("#editModalSave").off('click');
-		$("#editModalSave").on('click', function(event) {
+		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
 			let name = $('#editRoomName').val();
 			if (name === undefined || name.length == 0) {
@@ -398,7 +410,7 @@
 		$('#editModalLabel').text("Enter new room name");
 		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewRoomName"></form>`);
 		$("#editModalSave").off('click');
-		$("#editModalSave").on('click', function(event) {
+		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
 			let name = $('#addNewRoomName').val();
 			if (name === undefined || name.length == 0) {
@@ -611,31 +623,32 @@
 		$('#roomValvesSelect').multiselect({
 			numberDisplayed: 0,
 			allSelectedText: false,
-			onChange: function(){
+			onChange: function () {
 				const toNumbers = arr => arr.map(Number);
 				var selectedOptions = toNumbers($('#roomValvesSelect').val());
 				roomFound.valves = selectedOptions;
-			}});
+			}
+		});
 
 		$('#roomValvesSelect').multiselect('select', roomFound.valves);
 
 		$('#roomEnabledCheck').prop('checked', roomFound.enabled === undefined ? true : roomFound.enabled);
-		$('#roomEnabledCheck').change(function() {
+		$('#roomEnabledCheck').change(function () {
 			roomFound.enabled = $(this).prop('checked');
 		});
 
-		$('#roomSensor').val(roomFound.sensor).on('input', function() {
-			roomFound.sensor = $( this ).val();
+		$('#roomSensor').val(roomFound.sensor).on('input', function () {
+			roomFound.sensor = $(this).val();
 		});
 
-		$('#roomBaseTemp').val(roomFound.base_temp/100).on('input', function() {
-			roomFound.base_temp = $( this ).val() * 100;
+		$('#roomBaseTemp').val(roomFound.base_temp / 100).on('input', function () {
+			roomFound.base_temp = $(this).val() * 100;
 		});
-		$('#roomUpperMaging').val(roomFound.temp_margin_up/100).on('input', function() {
-			roomFound.temp_margin_up = $( this ).val() * 100;
+		$('#roomUpperMaging').val(roomFound.temp_margin_up / 100).on('input', function () {
+			roomFound.temp_margin_up = $(this).val() * 100;
 		});
-		$('#roomLowerMargin').val(roomFound.temp_margin_down/100).on('input', function() {
-			roomFound.temp_margin_down = $( this ).val() * 100;
+		$('#roomLowerMargin').val(roomFound.temp_margin_down / 100).on('input', function () {
+			roomFound.temp_margin_down = $(this).val() * 100;
 		});
 
 		showTempOverrides();
@@ -644,8 +657,8 @@
 	function showTempOverrides() {
 		if (roomFound.temperatures !== undefined) {
 			roomFound.temperatures.forEach(element => {
-						$('#tempOverridesSelect').append( $( "<option>" + element.name + "</option>" ) );
-				});
+				$('#tempOverridesSelect').append($("<option>" + element.name + "</option>"));
+			});
 		}
 
 		$('#tempOverridesWeekdays').multiselect({
@@ -654,11 +667,11 @@
 			nonSelectedText: 'Choose weekdays',
 			numberDisplayed: 0,
 			selectAllNumber: false,
-			onChange: function(){
+			onChange: function () {
 				const toNumbers = arr => arr.map(Number);
 				var selectedOptions = toNumbers($('#tempOverridesWeekdays').val());
 
-				if(selectedOptions.length == 0) {
+				if (selectedOptions.length == 0) {
 					alert("You must select at least one day");
 					$('#tempOverridesWeekdays').multiselect('select', getSelectedTemp().days);
 					return false;
@@ -674,7 +687,7 @@
 			nonSelectedText: 'Do not override',
 			numberDisplayed: 0,
 			selectAllNumber: false,
-			onChange: function(){
+			onChange: function () {
 				const toNumbers = arr => arr.map(Number);
 				var selectedOptions = toNumbers($('#tempOverridesValvesSelect').val());
 				if (selectedOptions.length !== 0) {
@@ -697,8 +710,8 @@
 	}
 
 	function getSelectedTemp() {
-			var selected = $("#tempOverridesSelect").prop('selectedIndex');
-			return roomFound.temperatures[selected];
+		var selected = $("#tempOverridesSelect").prop('selectedIndex');
+		return roomFound.temperatures[selected];
 	}
 
 
@@ -709,7 +722,7 @@
 		$('#editModalLabel').text("Enter name for temperature override");
 		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewOverrideName"></form>`);
 		$("#editModalSave").off('click');
-		$("#editModalSave").on('click', function(event) {
+		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
 			let name = $('#addNewOverrideName').val();
 			if (name === undefined || name.length == 0) {
@@ -731,7 +744,7 @@
 		newTemp.temp = 1800;
 		newTemp.boiler_temp = "";
 		newTemp.enabled = false;
-		newTemp.days = [0,1,2,3,4,5,6];
+		newTemp.days = [0, 1, 2, 3, 4, 5, 6];
 		if (roomFound.temperatures === undefined) {
 			roomFound.temperatures = [];
 		}
@@ -746,9 +759,9 @@
 	function openEditTempOverrideNameModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter temperature override name");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editOverrideName" value="`+getSelectedTemp().name+`"></form>`);
+		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editOverrideName" value="` + getSelectedTemp().name + `"></form>`);
 		$("#editModalSave").off('click');
-		$("#editModalSave").on('click', function(event) {
+		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
 			let name = $('#editOverrideName').val();
 			if (name === undefined || name.length == 0) {
@@ -790,28 +803,28 @@
 		}
 
 		$('#tempOverridesEnabled').prop('checked', getSelectedTemp().enabled === undefined ? true : getSelectedTemp().enabled);
-		$('#tempOverridesEnabled').change(function() {
+		$('#tempOverridesEnabled').change(function () {
 			getSelectedTemp().enabled = $(this).prop('checked');
 		});
 
-		$('#tempOverridesTemp').val(getSelectedTemp().temp/100).on('input', function() {
-			getSelectedTemp().temp = $( this ).val() * 100;
+		$('#tempOverridesTemp').val(getSelectedTemp().temp / 100).on('input', function () {
+			getSelectedTemp().temp = $(this).val() * 100;
 		});
 
-		$('#tempOverridesBoiler').val(getSelectedTemp().boiler_temp).on('input', function() {
-			if ($( this ).val().length > 0) {
-				getSelectedTemp().boiler_temp = parseInt($( this ).val());
+		$('#tempOverridesBoiler').val(getSelectedTemp().boiler_temp).on('input', function () {
+			if ($(this).val().length > 0) {
+				getSelectedTemp().boiler_temp = parseInt($(this).val());
 			} else {
 				getSelectedTemp().boiler_temp = null;
 			}
 		});
 
-		$('#tempOverridesTimeFrom').val(getSelectedTemp().time_from).on('input', function() {
-			getSelectedTemp().time_from = $( this ).val();
+		$('#tempOverridesTimeFrom').val(getSelectedTemp().time_from).on('input', function () {
+			getSelectedTemp().time_from = $(this).val();
 		});
 
-		$('#tempOverridesTimeTo').val(getSelectedTemp().time_to).on('input', function() {
-			getSelectedTemp().time_to = $( this ).val();
+		$('#tempOverridesTimeTo').val(getSelectedTemp().time_to).on('input', function () {
+			getSelectedTemp().time_to = $(this).val();
 		});
 	}
 
