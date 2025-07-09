@@ -37,7 +37,7 @@ public:
 		DBGLOGOW("Requesting temperature, last: %ld, now: %ld\n", lastFetch_, now);
 		lastFetch_ = now;
 
-		xTaskCreate(heating::openweather::fetchTask, "OWTask", 2500, this, configMAX_PRIORITIES - 1, NULL);
+		xTaskCreate(heating::openweather::fetchTask, "OWTask", 2500, this, 1, NULL);
 	}
 
 	std::string_view getStatus() const {
