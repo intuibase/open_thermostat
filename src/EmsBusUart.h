@@ -61,9 +61,7 @@ public:
 #define EMSUART_TX_WAIT_HT3 (EMSUART_TX_BIT_TIME * 17) // 1768
 #define EMSUART_TX_BRK_HT3 (EMSUART_TX_BIT_TIME * 11)
 
-	bool writeToEms(std::vector<uint8_t > data) {
-		return writeToEms(data.data(), static_cast<uint8_t>(data.size()));
-	}
+	bool writeToEms(std::vector<uint8_t> const &data) { return writeToEms(data.data(), static_cast<uint8_t>(data.size())); }
 
 	bool writeToEms(uint8_t const *data, uint8_t length) {
 		if (length == 0 || length > EmsMaxTelegramSize) {
@@ -83,7 +81,7 @@ public:
 
 	void reset() {
 		DBGLOGUART("reset\n");
-		uart_wait_tx_done(UartSlot, (UART_NUM_MAX -1));
+		uart_wait_tx_done(UartSlot, (TickType_t)1000 / portTICK_PERIOD_MS); //(UART_NUM_MAX -1));
 		uart_flush(UartSlot);
 		xQueueReset(uartQueue_);
 		uart_send_break(UartSlot);
@@ -143,8 +141,10 @@ static void uart_event_task(void *pvParameters) {
 	uart_event_t event;
 	uint32_t length = 0;
 
+	constexpr auto rxTimeoutMs = 5000;
+
 	for (;;) {
-		if (xQueueReceive(bus->getQueueHandle(), (void *)&event, (TickType_t)portMAX_DELAY)) {
+		if (xQueueReceive(bus->getQueueHandle(), (void *)&event, (TickType_t)rxTimeoutMs / portTICK_PERIOD_MS)) { //(TickType_t)portMAX_DELAY)) {
 			switch (event.type) {
 			//Event of UART receving data
 			/*We'd better handler data event fast, there would be much more data events than
@@ -202,6 +202,9 @@ static void uart_event_task(void *pvParameters) {
 				DBGLOGUART("Event %d\n", event.type);
 				break;
 			}
+		} else {
+			DBGLOGUART("Read queue timeout\n");
+			bus->reset();
 		}
 	}
 	vTaskDelete(nullptr);

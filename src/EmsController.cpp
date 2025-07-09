@@ -226,6 +226,7 @@ void EmsController::processTelegram(uint8_t *data, uint8_t length) { // runs on 
 			if (txNotConfirmed_ > 0) {
 				txNotConfirmed_--;
 			}
+			// TODO validate sent telegrams by ID?
 		} else {
 			DBGLOGEMSVB("Telegram not for us. Src: 0x%2.2X Dest: 0x%2.2X, debug follows:\n", data[0] & 0x7F, data[1] & 0x7F);
 		}
