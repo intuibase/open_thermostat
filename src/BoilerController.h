@@ -161,7 +161,7 @@ private:
 			if (hcOutdoorAxis[idx] * 100 <= outdoorTemperature) {
 				if (idx == 0) {
 					DBGLOGBOILER("getHeatingTemperature: %d , hcOutdoorAxis: %d, hcHeatTemp: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(hcOutdoorAxis[idx] * 100), static_cast<int>(config_.heatingCurve.heatingCurve[idx]));
-					return config_.heatingCurve.heatingCurve[idx];
+					return config_.heatingCurve.heatingCurve[idx] * 100;
 				} else {
 					float slope = static_cast<float>(config_.heatingCurve.heatingCurve[idx] - config_.heatingCurve.heatingCurve[idx - 1]) / static_cast<float>(hcOutdoorAxis[idx] - hcOutdoorAxis[idx - 1]); // (y2-y1)/(x2-x1)
 					float intercept = config_.heatingCurve.heatingCurve[idx - 1] * 100 - (slope * hcOutdoorAxis[idx - 1] * 100); // y1 - (slope * x1)
