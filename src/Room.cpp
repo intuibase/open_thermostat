@@ -11,7 +11,7 @@ bool Room::TemperatureSetting::doesFit(std::string const &time, uint8_t dayOfThe
 		return false;
 	}
 
-	if (!days_[dayOfTheWeek]) {
+	if (!days_[dayOfTheWeek]) { // not valid (enabled) for day of the week
 		DBGLOGROOM("doesFit NO FIT %s dayOfTheWeek '%s', dayOfTheWeek %d\n", name_.c_str(), time.c_str(), dayOfTheWeek);
 		return false;
 	}
@@ -64,13 +64,14 @@ void Room::createTemporaryOverride(int16_t temperature, uint32_t validSeconds) {
 	temporaryOverride_ = std::make_unique<TemporaryOverride>(temperature, validSeconds);
 }
 
-std::tuple<bool, bool, std::optional<uint8_t>> Room::shouldStartBoilerAndHeat() {
+// optional temperature override
+std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoilerAndHeat() {
 	AutoLock lock(mutex_, portMAX_DELAY);
 
 	// start heat boiler, continue heat, data error
 	if (!isTemperatureValid()) {
 		DBGLOGROOM("SSB  %-15.15s no samples\n", name_.c_str());
-		return std::make_tuple(false, true, true);
+		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
 	auto timeInfo = getTimeNow();
@@ -85,11 +86,10 @@ std::tuple<bool, bool, std::optional<uint8_t>> Room::shouldStartBoilerAndHeat() 
 		currentSet = temporaryOverride_->getTemperature();
 	}
 
-
-	int16_t meanTemperature = getAverageTemperature();
-	if (meanTemperature < 0.1f) { // todo optional or bool/int16_t pair
+	auto meanTemperature = getAverageTemperature();
+	if (!meanTemperature.has_value()) {
 		DBGLOGROOM("SSB  %-15.15s %s dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
-		return std::make_tuple(false, true, true);
+		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
 	bool shouldStartBoiler = meanTemperature < currentSet - getTemperatureMarginDown();
@@ -99,7 +99,15 @@ std::tuple<bool, bool, std::optional<uint8_t>> Room::shouldStartBoilerAndHeat() 
 	stats.shouldStartBoiler_ = shouldStartBoiler;
 
 	DBGLOGROOM("SSB  %-15.15s %s mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0,  shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
-	return std::make_tuple(shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride() : std::optional<uint8_t>{});
+
+	Room::TemperatureStatus status{Room::TemperatureStatus::TEMPERATURE_OK};
+	if (shouldStartBoiler) {
+		status = Room::TemperatureStatus::START_HEATING;
+	} else if (shouldContinueHeating) {
+		status = Room::TemperatureStatus::CONTINUE_HEATING;
+	}
+
+	return std::make_tuple(status, currentProgram ? currentProgram->getHeatingTemperatureOverride() : std::optional<uint8_t>{});
 }
 
 bool Room::isEnabled() const {
@@ -127,7 +135,7 @@ std::pair<int16_t, const Room::TemperatureSetting *> Room::getTemperatureSet(std
 	}
 
 	int16_t value = std::numeric_limits<decltype(value)>::min();
-;
+
 	const Room::TemperatureSetting *program = nullptr;
 
 	for (auto const &temp : temperatures_) {
@@ -167,9 +175,10 @@ std::pair<const char *, uint8_t> Room::getTimeNow() const {
 	return {buffer, timeinfo.tm_wday};
 }
 
-int16_t Room::getAverageTemperature() const {
+std::optional<int16_t> Room::getAverageTemperature() const {
 	int16_t avgTemp = 0;
 
+	// TODO int64_t esp_timer_get_time()
 	auto currentTime = millis();
 	size_t validSamples = 0;
 
@@ -188,7 +197,7 @@ int16_t Room::getAverageTemperature() const {
 	}
 
 	if (validSamples == 0) {
-		return 0.0f;
+		return std::nullopt;
 	}
 
 	avgTemp /= validSamples;
@@ -215,7 +224,7 @@ void Room::getStatus(std::ostream &ss) const {
 		ss << ", \"currentHumidity\": " << currentHumidity_;
 		ss << ", \"currentTempAgeMs\": " << millis() - std::get<0>(lastSample);
 		ss << ", \"batteryLevel\": " << static_cast<int>(batteryLevel_);
-		ss << ", \"meanTemp\": " << getAverageTemperature();
+		ss << ", \"meanTemp\": " << getAverageTemperature().value_or(0);
 	}
 
 	auto temperatureSet = (stats.currentProgram_ ? stats.currentProgram_->temperature_ : baseTemperature_);

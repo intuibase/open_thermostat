@@ -2,9 +2,9 @@
 
 #include <array>
 #include <cJSON.h>
+#include <optional>
 
 #include "Room.h"
-#include <optional>
 
 #define VALVE_COUNT 8
 
@@ -102,6 +102,7 @@ struct BoilerConfig {
 	enum class outdoorSensor_t : uint8_t { openweather, ems, no };
 
 	struct Boiler {
+		uint16_t valvePreheatingDelay = 0;
 		uint8_t minHeatingTemp = 20;
 		uint8_t maxHeatingTemp = 90;
 		controlMode_t controlMode = controlMode_t::onoff;

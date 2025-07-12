@@ -8,14 +8,18 @@
 #include <sstream>
 #include <string>
 #include <time.h>
+#include <mutex>
 #include <tuple>
 #include <optional>
 #include <vector>
 #include <Arduino.h>
 
+// TODO use mutex, don't copy object
 namespace heating {
 class Room {
 public:
+	enum class TemperatureStatus : uint8_t { MISSING_TEMPERATURE, TEMPERATURE_OK, START_HEATING, CONTINUE_HEATING };
+
 	Room() = default;
 	Room(Room &&r) = default;
 	Room &operator=(Room &&r) = default;
@@ -70,7 +74,7 @@ public:
 
 
 	std::vector<uint8_t> const &getValves() {
-		AutoLock lock(mutex_, portMAX_DELAY);
+		AutoLock lock(mutex_);
 		return valves_;
 
 		//TODO get valves from current temp if exists
@@ -82,7 +86,8 @@ public:
 
 	void createTemporaryOverride(int16_t temperature, uint32_t validSeconds);
 
-	std::tuple<bool, bool, std::optional<uint8_t>> shouldStartBoilerAndHeat();
+	std::tuple<TemperatureStatus, std::optional<uint8_t>> shouldStartBoilerAndHeat();
+
 	bool isEnabled() const;
 
 	std::string getStatus() const;
@@ -95,7 +100,7 @@ private:
 	int16_t getTemperatureMarginUp() const;
 	int16_t getTemperatureMarginDown() const;
 	std::pair<const char *, uint8_t> getTimeNow() const;
-	int16_t getAverageTemperature() const;
+	std::optional<int16_t> getAverageTemperature() const;
 
 	unsigned long inline getMaxSampleAgeMs() const {
 		return 3 * 60 * 1000; // 3 mins
@@ -116,7 +121,7 @@ private:
 	CircularBuffer<temperatureData_t, 10> temperatureData_;
 	SemaphoreHandle_t mutex_ = xSemaphoreCreateMutex();
 
-//	// statistical data
+	//	// statistical data
 	int8_t batteryLevel_ = -1;
 	int16_t currentHumidity_ = std::numeric_limits<decltype(currentHumidity_)>::min(); // humidity 6005 - 60.05%
 };

@@ -1,14 +1,15 @@
 #pragma once
 
-#include <set>
-#include "Arduino.h"
 #include "config.h"
-#include "AutoLock.h"
+#include "TimeHelpers.h"
 
 #include "Logger.h"
 #include <sstream>
 #include <algorithm>
+#include <set>
 #include <functional>
+#include <mutex>
+#include <optional>
 
 namespace heating {
 
@@ -22,15 +23,35 @@ public:
 	BoilerController(config::BoilerConfig const &config, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature) : config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature), valves_(config::getValvePins()) {
 	}
 
+	bool valvePreheating_ = false;
+	unsigned long lastPreheatTime_ = 0;
+
 	void startBoilerOrContinue(bool shouldStartBoiler, bool shouldBoilerContinue, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
-		DBGLOGBOILER("Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", getBoilerState(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
+		DBGLOGBOILER("Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
+
+		if (valvePreheating_ && heating::millisDurationPassed(lastPreheatTime_, config_.boiler.valvePreheatingDelay * 1000)) {
+			DBGLOGBOILER("Finished valve preheating. Changing boiler state to: %s\n", (shouldStartBoiler || shouldBoilerContinue) ? "enabled" : "disabled");
+			valvePreheating_ = false;
+			changeBoilerState(shouldStartBoiler || shouldBoilerContinue, boilerHeatingTemperatureOverride);
+			return;
+		}
 
 		if (shouldStartBoiler) {
+			if (config_.boiler.valvePreheatingDelay > 0 && !isBoilerStarted()) {
+				if (valvePreheating_) {
+					DBGLOGBOILER("Valve preheating in progress. Delay %zums\n", (config_.boiler.valvePreheatingDelay * 1000) - (millis() - lastPreheatTime_));
+					return;
+				}
+				valvePreheating_ = true;
+				lastPreheatTime_ = millis();
+				DBGLOGBOILER("Started valve preheating. Boiler start delayed by %zums\n", config_.boiler.valvePreheatingDelay * 1000);
+				return;
+			}
 			changeBoilerState(true, boilerHeatingTemperatureOverride);
 			return;
 		}
 
-		if (!shouldBoilerContinue && getBoilerState()) {
+		if (!shouldBoilerContinue && isBoilerStarted()) {
 			changeBoilerState(false, boilerHeatingTemperatureOverride);
 			return;
 		}
@@ -42,12 +63,12 @@ public:
 
 		// for onoff_outdoor we need to update heating temperature in case it changed
 		if (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems || config_.boiler.controlMode == config::BoilerConfig::controlMode_t::onoff_outdoor) {
-			changeBoilerState(getBoilerState(), boilerHeatingTemperatureOverride);
+			changeBoilerState(isBoilerStarted(), boilerHeatingTemperatureOverride);
 		}
 	}
 
 	void handleValves(std::set<uint8_t> const &valvesToClose) {
-		if (!getBoilerState()) {
+		if (!isBoilerStarted()) {
 			openAllValves();
 			return;
 		}
@@ -67,7 +88,7 @@ public:
 	}
 
 	void getStatus(std::ostream &ss) const {
-		ss << "{\"boiler\": " << (getBoilerState() ? "true" : "false") << ", \"valvesOpened\": [";
+		ss << "{\"boiler\": " << (isBoilerStarted() ? "true" : "false") << ", \"valvesOpened\": [";
 		for (size_t valve = 0; valve < valvesStates_.size(); ++valve) {
 			ss << (valvesStates_[valve] ? "true" : "false");
 			if (valve + 1 < valvesStates_.size()) {
@@ -99,7 +120,7 @@ private:
 	}
 
 	void handleValve(uint8_t nr, bool closed) {
-		AutoLock lock(mutex_, portMAX_DELAY);
+		std::lock_guard<std::mutex> lock(mutex_);
 		auto pin = valves_[nr];
 		pinMode(pin, OUTPUT);
 
@@ -109,7 +130,7 @@ private:
 	}
 
 	void changeBoilerState(bool enabled, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
-		AutoLock lock(mutex_, portMAX_DELAY);
+		std::lock_guard<std::mutex> lock(mutex_);
 
 		currentBoilerState_ = enabled;
 		currentHeatingTemperature_ = {};
@@ -149,9 +170,7 @@ private:
 		}
 	}
 
-	bool getBoilerState() const {
-		return currentBoilerState_;
-	}
+	bool isBoilerStarted() const { return currentBoilerState_; }
 
 	int16_t getHeatingTemperature(int16_t outdoorTemperature) {
 		static constexpr std::array<int8_t, 9> hcOutdoorAxis{20, 15, 10, 5, 0, -5, -10, -15, -20};
@@ -195,8 +214,7 @@ private:
 	std::optional<int16_t> currentHeatingTemperature_ = 0;
 	std::optional<int16_t> currentOutdoorTemperature_ = 0;
 
-	SemaphoreHandle_t mutex_ = xSemaphoreCreateMutex();
-
+	std::mutex mutex_;
 };
 
 }
