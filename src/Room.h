@@ -28,14 +28,14 @@ public:
 	using temperatureData_t = std::tuple<unsigned long, int16_t>; // millis of read, temp
 
 	struct TemperatureSetting {
-		bool doesFit(std::string const &time, uint8_t dayOfTheWeek) const;
+		bool doesFit(uint16_t time, uint8_t dayOfTheWeek) const;
 		bool isEnabled() const;
 		int16_t getTemperature() const;
 		std::optional<uint8_t> getHeatingTemperatureOverride() const;
 
 		std::string name_;
-		std::string timeFrom_; // HH:MM
-		std::string timeTo_; // // HH:MM
+		uint16_t timeFrom_; // HHMM - 23:30 - 2300
+		uint16_t timeTo_;   // HHMM
 		int16_t temperature_ = 0;
 		std::optional<uint8_t> heatingTemperatureOverride_;
 		bool enabled_ = true;
@@ -96,10 +96,10 @@ public:
 
 private:
 	bool isTemperatureValid() const;
-	std::pair<int16_t, const Room::TemperatureSetting *> getTemperatureSet(std::string const &currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
+	std::pair<int16_t, const Room::TemperatureSetting *> getTemperatureSet(uint16_t currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
 	int16_t getTemperatureMarginUp() const;
 	int16_t getTemperatureMarginDown() const;
-	std::pair<const char *, uint8_t> getTimeNow() const;
+	std::pair<uint16_t, uint8_t> getTimeNow() const;
 	std::optional<int16_t> getAverageTemperature() const;
 
 	unsigned long inline getMaxSampleAgeMs() const {

@@ -63,11 +63,30 @@ std::vector<uint8_t> parseValves(cJSON *root) {
 	return retVal;
 }
 
+uint16_t parseTimeHHMM(const std::string &str) {
+	if (str.length() != 5 || str[2] != ':') {
+		throw std::invalid_argument("Invalid time format, expected HH:MM");
+	}
+
+	int hours = std::stoi(str.substr(0, 2));
+	int minutes = std::stoi(str.substr(3, 2));
+
+	if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+		throw std::out_of_range("Invalid time value");
+	}
+
+	return static_cast<uint16_t>(hours * 100 + minutes);
+}
+
 heating::Room::TemperatureSetting parseTemperature(cJSON *obj) {
 	heating::Room::TemperatureSetting temp;
 	temp.name_ = json::getString(obj, "name");
-	temp.timeFrom_ = json::getString(obj, "time_from");
-	temp.timeTo_ = json::getString(obj, "time_to");
+	try {
+		temp.timeFrom_ = parseTimeHHMM(json::getString(obj, "time_from"));
+		temp.timeTo_ = parseTimeHHMM(json::getString(obj, "time_to"));
+	} catch (std::exception const &e) {
+		heating::logger.printf("Exception parsing temperature '%s' time ranges: %s\n", temp.name_.c_str(), e.what());
+	}
 	temp.temperature_ = json::getInt(obj, "temp");
 	temp.heatingTemperatureOverride_ = json::getOptInt<uint8_t>(obj, "boiler_temp");
 	temp.valves_ = parseValves(obj);

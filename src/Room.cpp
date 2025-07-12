@@ -5,31 +5,26 @@
 
 namespace heating {
 
-bool Room::TemperatureSetting::doesFit(std::string const &time, uint8_t dayOfTheWeek) const {
-	if (time.length() != 5) {
-		DBGLOGROOM("doesFit wrong time argument '%s'\n", time.c_str());
+bool Room::TemperatureSetting::doesFit(uint16_t time, uint8_t dayOfTheWeek) const {
+	if (time >= 2400) {
+		DBGLOGROOM("doesFit wrong time argument '%d'\n", time);
 		return false;
 	}
 
 	if (!days_[dayOfTheWeek]) { // not valid (enabled) for day of the week
-		DBGLOGROOM("doesFit NO FIT %s dayOfTheWeek '%s', dayOfTheWeek %d\n", name_.c_str(), time.c_str(), dayOfTheWeek);
+		DBGLOGROOM("doesFit NO FIT %s time '%d', dayOfTheWeek %d\n", name_.c_str(), time, dayOfTheWeek);
 		return false;
 	}
 
-	bool lowerTimeFrom = timeFrom_.compare(timeTo_) < 0;
-
-	if (lowerTimeFrom) {
-		return time.compare(timeFrom_) >= 0 && time.compare(timeTo_) <= 0;
-	}
-
-	if (time.compare("00:00") >= 0 && time.compare(timeFrom_) < 0) { // time between 00:00 and timeFrom
-		return time.compare(timeTo_) <= 0;
+	if (timeFrom_ <= timeTo_) {
+		// Normal range, same day
+		return time >= timeFrom_ && time <= timeTo_;
 	} else {
-		return time.compare(timeFrom_) >= 0; // before midnight
+		// Overnight range, e.g. 22:30–06:00
+		return (time >= timeFrom_) || (time <= timeTo_);
 	}
-
-	return false; // unreachable
 }
+
 bool Room::TemperatureSetting::isEnabled() const {
 	return enabled_;
 }
@@ -74,10 +69,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
-	auto timeInfo = getTimeNow();
-
-	const char *time = timeInfo.first;
-	uint8_t dayOfTheWeek = timeInfo.second;
+	auto [time, dayOfTheWeek] = getTimeNow();
 
 	auto [currentSet, currentProgram] = getTemperatureSet(time, dayOfTheWeek);
 	stats.currentProgram_ = currentProgram;
@@ -88,7 +80,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 
 	auto meanTemperature = getAverageTemperature();
 	if (!meanTemperature.has_value()) {
-		DBGLOGROOM("SSB  %-15.15s %s dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
+		DBGLOGROOM("SSB  %-15.15s %d dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
 		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
@@ -98,7 +90,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 	stats.shouldHeat_ = shouldContinueHeating;
 	stats.shouldStartBoiler_ = shouldStartBoiler;
 
-	DBGLOGROOM("SSB  %-15.15s %s mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0,  shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
+	DBGLOGROOM("SSB  %-15.15s %d mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0, shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
 
 	Room::TemperatureStatus status{Room::TemperatureStatus::TEMPERATURE_OK};
 	if (shouldStartBoiler) {
@@ -129,7 +121,7 @@ bool Room::isTemperatureValid() const {
 }
 
 // returns temperature set for current time - maximum one from all, but always overrides base temp
-std::pair<int16_t, const Room::TemperatureSetting *> Room::getTemperatureSet(std::string const &currentTime, uint8_t dayOfTheWeek) const { // HH:MM
+std::pair<int16_t, const Room::TemperatureSetting *> Room::getTemperatureSet(uint16_t currentTime, uint8_t dayOfTheWeek) const { // HH:MM
 	if (temperatures_.empty()) {
 		return {baseTemperature_, nullptr};
 	}
@@ -162,17 +154,14 @@ int16_t Room::getTemperatureMarginDown() const {
 	return temperatureMarginDown_;
 }
 
-std::pair<const char *, uint8_t> Room::getTimeNow() const {
+std::pair<uint16_t, uint8_t> Room::getTimeNow() const {
 	struct tm timeinfo;
 	auto result = getLocalTime(&timeinfo);
-	static char buffer[6];
-	sprintf(buffer, "%2.2d:%2.2d", timeinfo.tm_hour, timeinfo.tm_min);
-
 	if (!result) {
-		logger.printf("TIME ERROR %s\n\n", buffer);
+		logger.printf("TIME ERROR\n");
 	}
-
-	return {buffer, timeinfo.tm_wday};
+	uint16_t time = timeinfo.tm_hour * 100 + timeinfo.tm_min;
+	return {time, timeinfo.tm_wday};
 }
 
 std::optional<int16_t> Room::getAverageTemperature() const {
