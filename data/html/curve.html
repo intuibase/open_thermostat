@@ -23,6 +23,15 @@
 				<div class="form-group">
 					<div class="form-row">
 						<div class="col-md mb-2">
+							<label for="valvePreheatingDelay">Valve preheating delay</label>
+							<div class="input-group">
+								<input type="number" class="form-control" id="valvePreheatingDelay" placeholder="0" value="0" step="1" min=0 max="65535" required>
+								<div class="input-group-append"><div class="input-group-text">sec</div></div>
+							</div>
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="col-md mb-2">
 							<label for="minHeatingTemp">Minimum heating temperature</label>
 							<div class="input-group">
 								<input type="number" class="form-control" id="minHeatingTemp" placeholder="20" value="20" step="1" min=20 max=90 required>
@@ -416,6 +425,7 @@ function validateResponse(response) {
 }
 
 function loadDefaultBoilerSettings() {
+	$('#valvePreheatingDelay').val(0);
 	$('#minHeatingTemp').val(20);
 	$('#maxHeatingTemp').val(90);
 	$('#minHCTemp').val(20);
@@ -454,6 +464,7 @@ function loadBoilerSettings() {
 		$('#maxHCTemp').val(settings.maxHeatingCurveTemp);
 		heatingCurvePoints = settings.heatingCurve;
 
+		$('#valvePreheatingDelay').val(settings.boiler.valvePreheatingDelay);
 		$('#minHeatingTemp').val(settings.boiler.minHeatingTemp);
 		$('#maxHeatingTemp').val(settings.boiler.maxHeatingTemp);
 
@@ -487,6 +498,7 @@ function saveBoilerSettings() {
 		"maxHeatingCurveTemp": parseInt($('#maxHCTemp').val(), 10),
 		"heatingCurve": heatingCurvePoints,
 		"boiler": {
+			"valvePreheatingDelay": parseInt($('#valvePreheatingDelay').val(), 10),
 			"minHeatingTemp": parseInt($('#minHeatingTemp').val(), 10),
 			"maxHeatingTemp": parseInt($('#maxHeatingTemp').val(), 10),
 			"controlMode": $('#BoilerControlMode').val(),

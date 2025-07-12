@@ -13,6 +13,7 @@
 		75
 	],
 	"boiler": {
+		"valvePreheatingDelay": 0,
 		"minHeatingTemp": 20,
 		"maxHeatingTemp": 75,
 		"controlMode": "ems",
