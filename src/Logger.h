@@ -52,6 +52,7 @@ class Logger : public WiFiClient {
 public:
 	void initialize(bool enabled, std::string const &host, uint16_t port) {
 		if (!enabled) {
+			Serial.println("Network logger not enabled");
 			return;
 		}
 
@@ -63,7 +64,7 @@ public:
 		}
 
 		if (!connect(host.c_str(), port, 300)) {
-			Serial.println("Connection to host failed");
+			Serial.println("Network logegr connection to host failed");
 		}
 		initialized_ = true;
 	}

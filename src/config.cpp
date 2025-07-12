@@ -530,6 +530,7 @@ BoilerConfig getBoilerConfig() {
 		return {};
 	}
 
+	config.boiler.valvePreheatingDelay = json::getInt(boiler, "valvePreheatingDelay");
 	config.boiler.minHeatingTemp = json::getInt(boiler, "minHeatingTemp");
 	config.boiler.minHeatingTemp = json::getInt(boiler, "maxHeatingTemp");
 	auto controlMode = json::getString(boiler, "controlMode");

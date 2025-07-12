@@ -44,18 +44,17 @@ public:
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		for (auto &room : rooms_) {
 			if (room.isEnabled()) {
-				auto [roomStartBoiler, roomBoilerHeatContinue, roomBoilerHeatingTempOverride] = room.shouldStartBoilerAndHeat();
+				auto [roomStatus, roomBoilerHeatingTempOverride] = room.shouldStartBoilerAndHeat();
 
-				shouldStartBoiler = shouldStartBoiler || roomStartBoiler;
-				shouldBoilerContinue = shouldBoilerContinue || roomBoilerHeatContinue;//don't continue if error
+				shouldStartBoiler = shouldStartBoiler || roomStatus == Room::TemperatureStatus::START_HEATING;
+				shouldBoilerContinue = shouldBoilerContinue || roomStatus == Room::TemperatureStatus::CONTINUE_HEATING;
 
 				if (roomBoilerHeatingTempOverride.has_value()) {
 					boilerHeatingTempOverride = std::max(boilerHeatingTempOverride.value_or(0), roomBoilerHeatingTempOverride.value()); // use highest boiler supply temperature from overrides
 				}
 
-				if (roomStartBoiler || roomBoilerHeatContinue) {
-					//					valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
-				} else {
+				// valve should be closed only if temperature is in upper/lower margin - in case of no samples, valve should remain open but should not trigger or continue heating
+				if (roomStatus == Room::TemperatureStatus::TEMPERATURE_OK) {
 					if (debug::debug.debugHeatingController) {
 						DBGLOGHC("  adding valves to close for room %s valves: ", room.name_.c_str());
 						for (auto valve : room.valves_) {
