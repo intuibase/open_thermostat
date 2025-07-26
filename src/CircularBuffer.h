@@ -5,28 +5,34 @@
 template <typename T, size_t CAPACITY> class CircularBuffer {
 public:
 	void push(T const &element) {
-		push(std::move(element));
+		buffer_[storePosition_] = element;
+		advance();
 	}
 
 	void push(T &&element) {
-		lastPosition_ = storePosition_;
 		buffer_[storePosition_] = std::move(element);
-		if (size_ < CAPACITY) {
-			size_++;
-		}
-
-		storePosition_++;
-		if (storePosition_ == CAPACITY) {
-			storePosition_ = 0;
-		}
+		advance();
 	}
 
 	T const &operator[](size_t idx) const {
+		if (idx >= size_) {
+			throw std::out_of_range("CircularBuffer::get");
+		}
 		return buffer_[idx];
 	}
 
 	T const &get(size_t idx) const {
+		if (idx >= size_) {
+			throw std::out_of_range("CircularBuffer::get");
+		}
 		return buffer_[idx];
+	}
+
+	T const &newest() const {
+		if (empty()) {
+			throw std::out_of_range("CircularBuffer is empty");
+		}
+		return buffer_[lastPosition_];
 	}
 
 	size_t size() const {
@@ -39,6 +45,19 @@ public:
 
 	bool inline empty() const {
 		return size_ == 0;
+	}
+
+private:
+	void advance() {
+		if (size_ < CAPACITY) {
+			size_++;
+		}
+		lastPosition_ = storePosition_;
+
+		storePosition_++;
+		if (storePosition_ == CAPACITY) {
+			storePosition_ = 0;
+		}
 	}
 
 private:
