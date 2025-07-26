@@ -35,8 +35,8 @@ namespace debug {
 
 namespace heating {
 
-heating::HeatingController *controller = nullptr;
-heating::Logger logger;
+HeatingController *controller = nullptr;
+Logger logger;
 
 std::unique_ptr<REST> rest;
 

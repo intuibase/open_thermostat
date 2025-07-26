@@ -6,7 +6,7 @@
 
 #include <cstdio>
 #include <cstdlib>
-
+#include "Logger.h"
 
 extern "C" {
 int setenv(const char *__string, const char *__value, int __overwrite);

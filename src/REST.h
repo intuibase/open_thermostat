@@ -431,7 +431,6 @@ private:
 				std::ostream ss(&payloadBuf);
 				ss << "{";
 				ss << DEBUG_OPTION_TO_STREAM(debugRoomTemperatures) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugAutoLock) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugHeatingController) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugTemperatureReader) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugREST) << ",";

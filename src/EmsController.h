@@ -10,6 +10,7 @@
 #include <ostream>
 #include <queue>
 #include <list>
+#include <sstream>
 
 namespace heating::ems {
 

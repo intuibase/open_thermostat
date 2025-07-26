@@ -9,7 +9,6 @@
 namespace debug {
 	struct debug {
 		bool debugRoomTemperatures : 1 = false;
-		bool debugAutoLock : 1 = false;
 		bool debugHeatingController : 1 = true;
 		bool debugTemperatureReader : 1 = true;
 		bool debugREST : 1= true;

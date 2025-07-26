@@ -8,6 +8,7 @@
 #include "EmsController.h"
 #include "EmsMetrics.h"
 #include "MQTT.h"
+#include "Room.h"
 
 #include "Logger.h"
 #include <atomic>
@@ -17,14 +18,13 @@
 #include "Arduino.h"
 #include "config.h"
 
-
 namespace heating {
 
 class HeatingController {
 public:
 	using boilerHeatingTemperatureOverride_t = BoilerController::boilerHeatingTemperatureOverride_t;
 
-	HeatingController() : openWeather_(config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(config::getRoomsConfig(currentProgram_)) {
+	HeatingController() : openWeather_(config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(buildRoomsFromConfig()) {
 		bluetoothScan_ = true;
 		lastReadTemperatureCounter_.notifyNow();
 	}
@@ -42,9 +42,9 @@ public:
 
 		{ // mutex scope
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
-		for (auto &room : rooms_) {
-			if (room.isEnabled()) {
-				auto [roomStatus, roomBoilerHeatingTempOverride] = room.shouldStartBoilerAndHeat();
+		for (auto const &room : rooms_) {
+			if (room->isEnabled()) {
+				auto [roomStatus, roomBoilerHeatingTempOverride] = room->shouldStartBoilerAndHeat();
 
 				shouldStartBoiler = shouldStartBoiler || roomStatus == Room::TemperatureStatus::START_HEATING;
 				shouldBoilerContinue = shouldBoilerContinue || roomStatus == Room::TemperatureStatus::CONTINUE_HEATING;
@@ -55,18 +55,19 @@ public:
 
 				// valve should be closed only if temperature is in upper/lower margin - in case of no samples, valve should remain open but should not trigger or continue heating
 				if (roomStatus == Room::TemperatureStatus::TEMPERATURE_OK) {
+					auto valves = room->getValves();
 					if (debug::debug.debugHeatingController) {
-						DBGLOGHC("  adding valves to close for room %s valves: ", room.name_.c_str());
-						for (auto valve : room.valves_) {
+						DBGLOGHC("  adding valves to close for room %s valves: ", room->getName().c_str());
+						for (auto valve : valves) {
 							logger.printf("%d ", valve);
 						}
 						logger.println("");
 					}
 
-					valvesWhichShouldBeClosed.insert(room.valves_.begin(), room.valves_.end());
+					valvesWhichShouldBeClosed.insert(valves.begin(), valves.end());
 				}
 			} else { // room is diabled - let's heat it because we don't know what happened
-				//				valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
+					 //				valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
 			}
 
 			if (bluetoothScan_) {
@@ -167,7 +168,7 @@ public:
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 
 		for (auto const &room : rooms_) {
-			room.getStatus(ss);
+			room->getStatus(ss);
 			r++;
 			if (r != rooms_.size()) {
 				ss << ",";
@@ -187,8 +188,8 @@ public:
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 
 		for (auto &room : rooms_) {
-			if (room.name_ == name) {
-				room.createTemporaryOverride(temperature, validSeconds);
+			if (room->getName() == name) {
+				room->createTemporaryOverride(temperature, validSeconds);
 				return true;
 			}
 		}
@@ -228,7 +229,7 @@ public:
 		DBGLOGHC("reloadConfiguration%s\n", "");
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		currentProgram_ = config::getCurrentProgram();
-		rooms_ = config::getRoomsConfig(currentProgram_);
+		rooms_ = buildRoomsFromConfig();
 	}
 
 private:
@@ -238,25 +239,25 @@ private:
 
 		devicesFound_.emplace(address);
 
-		auto room = std::find_if(std::begin(rooms_), std::end(rooms_), [&adr = address](auto const &room) { return (adr == room.sensorAddress_); });
+		auto room = std::find_if(std::begin(rooms_), std::end(rooms_), [&adr = address](auto const &room) { return (adr == room->getSensorAddress()); });
 		if (room == std::end(rooms_)) {
 			DBGLOGHC("No room for address '" PRiBleAddress "'\n", PRaBleAddress(address));
 			return;
 		}
 
-		DBGLOGHC("push '%s', " PRiBleAddress " temp: %d battery: %d%% BTC MinPeekStack: %d\n", room->name_.c_str(), PRaBleAddress(address), temperature.value_or(std::numeric_limits<decltype(temperature)::value_type>::min()), battery.value_or(std::numeric_limits<decltype(battery)::value_type>::min()), uxTaskGetStackHighWaterMark(nullptr));
+		DBGLOGHC("push '%s', " PRiBleAddress " temp: %d battery: %d%% BTC MinPeekStack: %d\n", (*room)->getName().c_str(), PRaBleAddress(address), temperature.value_or(std::numeric_limits<decltype(temperature)::value_type>::min()), battery.value_or(std::numeric_limits<decltype(battery)::value_type>::min()), uxTaskGetStackHighWaterMark(nullptr));
 
 		if (temperature.has_value()) {
-			room->storeTemperature(temperature.value());
+			(*room)->storeTemperature(temperature.value());
 			lastReadTemperatureCounter_.notifyNow();
 		}
 
 		if (humidity.has_value()) {
-			room->storeHumidity(humidity.value());
+			(*room)->storeHumidity(humidity.value());
 		}
 
 		if (battery.has_value()) {
-			room->storeBattery(battery.value());
+			(*room)->storeBattery(battery.value());
 		}
 
 	}
@@ -301,6 +302,15 @@ private:
 		}
 	}
 
+	std::vector<std::shared_ptr<heating::Room>> buildRoomsFromConfig() {
+		auto configs = config::getRoomsConfig(currentProgram_);
+		std::vector<std::shared_ptr<heating::Room>> rooms;
+		for (const auto config : configs) {
+			rooms_.emplace_back(std::make_unique<heating::Room>(std::move(config)));
+		}
+		return rooms;
+	}
+
 	std::atomic_bool bluetoothScan_;
 	BeaconTemperatureReader tempReader_{[this](BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) { pushTemperatureData(std::move(address), temperature, humidity, battery); }};
 	OpenWeather openWeather_;
@@ -317,7 +327,7 @@ private:
 		}
 	};
 	std::string currentProgram_;
-	std::vector<heating::Room> rooms_;
+	std::vector<std::shared_ptr<heating::Room>> rooms_;
 	ib::PeriodicCounter lastReadTemperatureCounter_{5 * 60 * 1000}; // 5 mins in ms
 	BeaconTemperatureReader::BleDevices_t devicesFound_;
 	mutable std::mutex roomsAccessMutex_;
