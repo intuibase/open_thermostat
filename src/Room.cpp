@@ -202,8 +202,8 @@ void Room::getStatus(std::ostream &ss) const {
 		ss << ", \"currentProgram\": \"" << currentProgramName << "\"";
 	}
 	ss << ", \"tempSet\": " << temperatureSet ;
-	ss << ", \"tempMarginUp\": " << config_.temperatureMarginUp_;
-	ss << ", \"tempMarginDown\": " << config_.temperatureMarginDown_;
+	ss << ", \"tempMarginUp\": " << (int)config_.temperatureMarginUp_;
+	ss << ", \"tempMarginDown\": " << (int)config_.temperatureMarginDown_;
 	ss << ", \"temporaryProgramSecondsLeft\": " << temporaryProgramSecondsLeft;
 	ss << ", \"shouldContinueHeating\": " << (stats.shouldHeat_ ? "true" : "false");
 	ss << ", \"shouldStartBoiler\": " << (stats.shouldStartBoiler_ ? "true" : "false");
