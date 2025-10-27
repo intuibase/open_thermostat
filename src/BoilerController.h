@@ -21,6 +21,10 @@ public:
 	using emsSetHeatingTemperature_t = std::function<void(uint8_t)>;
 
 	BoilerController(config::BoilerConfig const &config, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature) : config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature), valves_(config::getValvePins()) {
+		for (size_t valve = 0; valve < valves_.size(); ++valve) {
+			auto pin = valves_[valve];
+			pinMode(pin, OUTPUT);
+		}
 	}
 
 	bool valvePreheating_ = false;
@@ -68,22 +72,14 @@ public:
 	}
 
 	void handleValves(std::set<uint8_t> const &valvesToClose) {
-		if (!isBoilerStarted()) {
+		if (!isBoilerStarted() && !valvePreheating_) {
 			openAllValves();
 			return;
 		}
 
-		DBGLOGBOILER("valves to close count: %zu CLOSED: ", valvesToClose.size());
-
 		for (size_t valve = 0; valve < valves_.size(); ++valve) {
 			bool close = valvesToClose.find(valve) != std::end(valvesToClose);
 			handleValve(valve, close);
-			if (debug::debug.debugBoilerController) {
-				logger.printf("%d", close);
-			}
-		}
-		if (debug::debug.debugBoilerController) {
-			logger.println();
 		}
 	}
 
@@ -120,13 +116,15 @@ private:
 	}
 
 	void handleValve(uint8_t nr, bool closed) {
-		std::lock_guard<std::mutex> lock(mutex_);
-		auto pin = valves_[nr];
-		pinMode(pin, OUTPUT);
-
+		uint8_t pin = 0;
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			pin = valves_[nr];
+			valvesStates_[nr] = !closed;
+		}
 		digitalWrite(pin, closed ? LOW : HIGH);
-		valvesStates_[nr] = !closed;
-		//		DBGLOGBOILER("Handle valve %d state: %s coil %s \n", nr, !closed ? "open " : "close", closed ? "on" : "off");
+		delay(10); // to avoid power surge when multiple valves are changed at once
+		DBGLOGBOILER("Handle valve %d state: %s coil %s \n", nr, !closed ? "open " : "close", closed ? "on" : "off");
 	}
 
 	void changeBoilerState(bool enabled, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {

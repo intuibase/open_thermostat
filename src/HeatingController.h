@@ -75,6 +75,7 @@ public:
 			}
 		}
 		}
+
 		boiler_.handleValves(valvesWhichShouldBeClosed);
 		boiler_.startBoilerOrContinue(shouldStartBoiler, shouldBoilerContinue, boilerHeatingTempOverride);
 
