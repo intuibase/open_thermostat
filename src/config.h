@@ -4,7 +4,7 @@
 #include <cJSON.h>
 #include <optional>
 
-#include "Room.h"
+#include "RoomConfig.h"
 
 #define VALVE_COUNT 8
 
@@ -145,8 +145,7 @@ EmsPins getEmsPins();
 std::optional<EmsForwarderPins> getEmsForwarderPins();
 EmsConfig getEmsConfig();
 
-std::vector<heating::Room> getRoomsConfig(std::string const &program);
-std::vector<heating::Room> getRoomsConfig();
+std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program);
 std::string getCurrentProgram();
 
 std::string parseProgram(std::string const &data);

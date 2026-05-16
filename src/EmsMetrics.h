@@ -16,13 +16,13 @@ public:
 	using registerProcessorFunc_t = std::function<void(uint16_t telegramId, std::function<void(heating::ems::EmsTelegram const &)> processor)>;
 
 	struct BurnerPowerState {
-		BurnerPowerState(uint8_t power) : powerPercentage(power), time(getTimeMillis()) {}
+		BurnerPowerState(uint8_t power) : powerPercentage(power), time(ib::getTimeMillis()) {}
 		uint8_t powerPercentage = 0;
 		uint64_t time = 0;
 	};
 
 	struct WarmWaterState {
-		WarmWaterState(uint8_t flow) : flow(flow), time(getTimeMillis()) {}
+		WarmWaterState(uint8_t flow) : flow(flow), time(ib::getTimeMillis()) {}
 		uint8_t flow = 0; // l/10min  12 means 1.2l/min
 		uint64_t time = 0;
 	};
@@ -85,7 +85,7 @@ public:
 	std::tuple<double, double> getWarmWaterUsage() {
 		std::lock_guard<std::mutex> lock(mutex_);
 
-		auto now = getTimeMillis();
+		auto now = ib::getTimeMillis();
 		double totalWarmWaterUsage = totalWarmWaterUsage_;
 		double flow = totalWarmWaterUsage * 60000 / (now - lastWarmWaterFlowGet_);
 
@@ -160,6 +160,6 @@ private:
 
 	WarmWaterState previousWarmWaterState_ = {0};
 	double totalWarmWaterUsage_ = 0.0; // liters
-	uint64_t lastWarmWaterFlowGet_ = getTimeMillis();
+	uint64_t lastWarmWaterFlowGet_ = ib::getTimeMillis();
 };
 } // namespace heating::ems

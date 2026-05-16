@@ -40,13 +40,13 @@ public:
 		xTaskCreate(heating::openweather::fetchTask, "OWTask", 2500, this, 1, NULL);
 	}
 
-	std::string_view getStatus() const {
+	std::string getStatus() const {
 		std::lock_guard<std::mutex> lock(mutex_);
 
 		if (payload_.isEmpty()) {
 			return "{}";
 		}
-		return {payload_.c_str(), payload_.length()}; // buggy, data not protected by mutex anymore after return
+		return {payload_.c_str(), payload_.length()};
 	}
 
 	struct Outdoor {

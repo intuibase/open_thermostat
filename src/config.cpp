@@ -1,12 +1,10 @@
-
 #include "config.h"
 #include "BeaconBleAddress.h"
 #include "Logger.h"
 
 #include <SPIFFS.h>
 #include <array>
-
-
+#include <memory>
 
 namespace json {
 std::string getString(cJSON *root, const char *name) {
@@ -27,7 +25,7 @@ int getInt(cJSON *root, const char *name) {
 
 bool getBool(cJSON *root, const char *name) {
 	auto obj = cJSON_GetObjectItem(root, name);
-	if (!obj || obj->type != cJSON_False && obj->type != cJSON_True) {
+	if (!obj || (obj->type != cJSON_False && obj->type != cJSON_True)) {
 		return false;
 	}
 	return obj->type == cJSON_True;
@@ -63,11 +61,30 @@ std::vector<uint8_t> parseValves(cJSON *root) {
 	return retVal;
 }
 
-heating::Room::TemperatureSetting parseTemperature(cJSON *obj) {
-	heating::Room::TemperatureSetting temp;
+uint16_t parseTimeHHMM(const std::string &str) {
+	if (str.length() != 5 || str[2] != ':') {
+		throw std::invalid_argument("Invalid time format, expected HH:MM");
+	}
+
+	int hours = std::stoi(str.substr(0, 2));
+	int minutes = std::stoi(str.substr(3, 2));
+
+	if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+		throw std::out_of_range("Invalid time value");
+	}
+
+	return static_cast<uint16_t>(hours * 100 + minutes);
+}
+
+heating::RoomConfig::TemperatureSetting parseTemperature(cJSON *obj) {
+	heating::RoomConfig::TemperatureSetting temp;
 	temp.name_ = json::getString(obj, "name");
-	temp.timeFrom_ = json::getString(obj, "time_from");
-	temp.timeTo_ = json::getString(obj, "time_to");
+	try {
+		temp.timeFrom_ = parseTimeHHMM(json::getString(obj, "time_from"));
+		temp.timeTo_ = parseTimeHHMM(json::getString(obj, "time_to"));
+	} catch (std::exception const &e) {
+		heating::logger.printf("Exception parsing temperature '%s' time ranges: %s\n", temp.name_.c_str(), e.what());
+	}
 	temp.temperature_ = json::getInt(obj, "temp");
 	temp.heatingTemperatureOverride_ = json::getOptInt<uint8_t>(obj, "boiler_temp");
 	temp.valves_ = parseValves(obj);
@@ -93,15 +110,14 @@ heating::Room::TemperatureSetting parseTemperature(cJSON *obj) {
 					}
 				}
 			}
-
 		}
 	}
 
 	return temp;
 }
 
-heating::Room parseRoom(cJSON *obj) {
-	heating::Room room;
+heating::RoomConfig parseRoom(cJSON *obj) {
+	heating::RoomConfig room;
 	room.baseTemperature_ = json::getInt(obj, "base_temp");
 	room.temperatureMarginUp_ = json::getInt(obj, "temp_margin_up");
 	room.temperatureMarginDown_ = json::getInt(obj, "temp_margin_down");
@@ -134,7 +150,6 @@ heating::Room parseRoom(cJSON *obj) {
 
 	return room;
 }
-
 }
 
 uint8_t getBoilerPin() {
@@ -574,24 +589,7 @@ std::string getCurrentProgram() {
 	return program;
 }
 
-std::vector<heating::Room> getRoomsConfig() {
-	File file = SPIFFS.open("/cfg/cfgprogram.json", FILE_READ);
-	if (!file) {
-		return {};
-	}
-	auto program = parseProgram(file.readString().c_str());
-	file.close();
-	if (program.empty()) {
-		return {};
-	}
-	heating::logger.printf("getRoomsConfig '%s'\n", program.c_str());
-
-	return getRoomsConfig(program);
-
-}
-
-
-std::vector<heating::Room> getRoomsConfig(std::string const &program) {
+std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	std::string filename = "/programs/" + program + ".json";
 
 	heating::logger.printf("Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
@@ -614,7 +612,7 @@ std::vector<heating::Room> getRoomsConfig(std::string const &program) {
 		return {};
 	}
 
-	std::vector<heating::Room> retVal;
+	std::vector<heating::RoomConfig> retVal;
 
 	auto noRooms = cJSON_GetArraySize(rooms.get());
 	for (auto room = 0; room < noRooms; ++room) {
@@ -642,7 +640,6 @@ void setDebugOptionsFromJson(const char *json) {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(json), &cJSON_Delete);
 	#define READ_JSON_DEBUG_OPTION(name) debug::debug.name = json::getBool(root.get(), #name)
 	READ_JSON_DEBUG_OPTION(debugRoomTemperatures);
-	READ_JSON_DEBUG_OPTION(debugAutoLock);
 	READ_JSON_DEBUG_OPTION(debugHeatingController);
 	READ_JSON_DEBUG_OPTION(debugTemperatureReader);
 	READ_JSON_DEBUG_OPTION(debugREST);

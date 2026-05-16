@@ -431,7 +431,6 @@ private:
 				std::ostream ss(&payloadBuf);
 				ss << "{";
 				ss << DEBUG_OPTION_TO_STREAM(debugRoomTemperatures) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugAutoLock) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugHeatingController) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugTemperatureReader) << ",";
 				ss << DEBUG_OPTION_TO_STREAM(debugREST) << ",";
@@ -563,6 +562,7 @@ private:
 			error << "Room " << roomName << " not found";
 			std::string errorStr = error.str();
 			server_.send(404, "text/plain", errorStr.c_str());
+			return;
 		}
 		server_.send(201);
 	}
@@ -607,6 +607,7 @@ private:
 					DBGLOGREST("Program reloaded: '%s'\n", filename.c_str());
 					controller_.reloadConfiguration();
 					server_.send(205);
+					return;
 				}
 				server_.send(204);
 				break;
@@ -652,10 +653,12 @@ private:
 
 		if (!SPIFFS.exists(path)) {
 			server_.send(404, "text/plain", "FileNotFound");
+			return;
 		}
 		File file = SPIFFS.open(path, FILE_READ);
 		if (!file) {
 			server_.send(500, "text/plain", "Internal Server Error. Can't open file.");
+			return;
 		}
 
 		auto content = getContentType(path);
