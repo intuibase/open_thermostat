@@ -132,7 +132,7 @@ std::pair<uint16_t, uint8_t> Room::getTimeNow() const {
 }
 
 std::optional<int16_t> Room::getAverageTemperature() const {
-	int16_t avgTemp = 0;
+	int32_t avgTemp = 0;
 
 	// TODO int64_t esp_timer_get_time()
 	auto currentTime = clock_t::now();
