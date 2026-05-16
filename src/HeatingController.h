@@ -307,7 +307,7 @@ private:
 		auto configs = config::getRoomsConfig(currentProgram_);
 		std::vector<std::shared_ptr<heating::Room>> rooms;
 		for (const auto config : configs) {
-			rooms_.emplace_back(std::make_unique<heating::Room>(std::move(config)));
+			rooms.emplace_back(std::make_shared<heating::Room>(std::move(config)));
 		}
 		return rooms;
 	}
