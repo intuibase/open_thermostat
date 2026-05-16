@@ -154,6 +154,4 @@ std::string parseProgram(std::string const &data);
 
 void setDebugOptionsFromJson(const char *json);
 void readDebugOptions();
-
-
 }
