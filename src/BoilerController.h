@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <set>
 #include <functional>
+#include <chrono>
 #include <mutex>
 #include <optional>
 
@@ -27,13 +28,10 @@ public:
 		}
 	}
 
-	bool valvePreheating_ = false;
-	unsigned long lastPreheatTime_ = 0;
-
 	void startBoilerOrContinue(bool shouldStartBoiler, bool shouldBoilerContinue, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
 		DBGLOGBOILER("Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
 
-		if (valvePreheating_ && ib::millisDurationPassed(lastPreheatTime_, config_.boiler.valvePreheatingDelay * 1000)) {
+		if (valvePreheating_ && (clock_t::now() - lastPreheatTime_ >= std::chrono::seconds(config_.boiler.valvePreheatingDelay))) {
 			DBGLOGBOILER("Finished valve preheating. Changing boiler state to: %s\n", (shouldStartBoiler || shouldBoilerContinue) ? "enabled" : "disabled");
 			valvePreheating_ = false;
 			changeBoilerState(shouldStartBoiler || shouldBoilerContinue, boilerHeatingTemperatureOverride);
@@ -43,12 +41,13 @@ public:
 		if (shouldStartBoiler) {
 			if (config_.boiler.valvePreheatingDelay > 0 && !isBoilerStarted()) {
 				if (valvePreheating_) {
-					DBGLOGBOILER("Valve preheating in progress. Delay %zums\n", (config_.boiler.valvePreheatingDelay * 1000) - (millis() - lastPreheatTime_));
+					auto remaining = std::chrono::seconds(config_.boiler.valvePreheatingDelay) - (clock_t::now() - lastPreheatTime_);
+					DBGLOGBOILER("Valve preheating in progress. Delay %lldms\n", std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
 					return;
 				}
 				valvePreheating_ = true;
-				lastPreheatTime_ = millis();
-				DBGLOGBOILER("Started valve preheating. Boiler start delayed by %zums\n", config_.boiler.valvePreheatingDelay * 1000);
+				lastPreheatTime_ = clock_t::now();
+				DBGLOGBOILER("Started valve preheating. Boiler start delayed by %ds\n", config_.boiler.valvePreheatingDelay);
 				return;
 			}
 			changeBoilerState(true, boilerHeatingTemperatureOverride);
@@ -84,6 +83,7 @@ public:
 	}
 
 	void getStatus(std::ostream &ss) const {
+		std::lock_guard<std::mutex> lock(mutex_);
 		ss << "{\"boiler\": " << (isBoilerStarted() ? "true" : "false") << ", \"valvesOpened\": [";
 		for (size_t valve = 0; valve < valvesStates_.size(); ++valve) {
 			ss << (valvesStates_[valve] ? "true" : "false");
@@ -207,12 +207,16 @@ private:
 	std::array<bool, VALVE_COUNT> valvesStates_ = {{true, true, true, true, true, true, true, true}}; // not needed, for debugging? UI?
 	uint8_t boilerPin_ = config::getBoilerPin();
 
+	using clock_t = std::chrono::steady_clock;
+
+	bool valvePreheating_ = false;
+	clock_t::time_point lastPreheatTime_;
 
 	bool currentBoilerState_ = false; // true - heating
 	std::optional<int16_t> currentHeatingTemperature_ = 0;
 	std::optional<int16_t> currentOutdoorTemperature_ = 0;
 
-	std::mutex mutex_;
+	mutable std::mutex mutex_;
 };
 
 }
