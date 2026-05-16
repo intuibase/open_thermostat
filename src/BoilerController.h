@@ -33,7 +33,7 @@ public:
 	void startBoilerOrContinue(bool shouldStartBoiler, bool shouldBoilerContinue, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
 		DBGLOGBOILER("Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
 
-		if (valvePreheating_ && heating::millisDurationPassed(lastPreheatTime_, config_.boiler.valvePreheatingDelay * 1000)) {
+		if (valvePreheating_ && ib::millisDurationPassed(lastPreheatTime_, config_.boiler.valvePreheatingDelay * 1000)) {
 			DBGLOGBOILER("Finished valve preheating. Changing boiler state to: %s\n", (shouldStartBoiler || shouldBoilerContinue) ? "enabled" : "disabled");
 			valvePreheating_ = false;
 			changeBoilerState(shouldStartBoiler || shouldBoilerContinue, boilerHeatingTemperatureOverride);

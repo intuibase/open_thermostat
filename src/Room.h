@@ -82,7 +82,7 @@ private:
 	bool debugLog_ = true;
 	RoomConfig config_;
 	std::unique_ptr<TemporaryOverride> temporaryOverride_;
-	CircularBuffer<temperatureData_t, 10> temperatureData_;
+	ib::CircularBuffer<temperatureData_t, 10> temperatureData_;
 	mutable std::mutex mutex_;
 
 	//	// statistical data

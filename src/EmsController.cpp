@@ -155,13 +155,13 @@ void EmsController::requestPeriodicData() {
 	}
 
 	auto now = millis();
-	if (lastBoilerParametersReadRequestMillis_ == 0 || millisDurationPassed(now, lastBoilerParametersReadRequestMillis_, 1000ul * boilerParametersReadRequestIntervalSecs)) {
+	if (lastBoilerParametersReadRequestMillis_ == 0 || ib::millisDurationPassed(now, lastBoilerParametersReadRequestMillis_, 1000ul * boilerParametersReadRequestIntervalSecs)) {
 		DBGLOGEMS("requestPeriodicData - outdoor temp and external EMS\n");
 		enqueueTelegramToSend(EmsTelegram(EmsTelegram::operation_t::WRITE, deviceId_, 0x08, 0, 0x00E7, {0x00, 0x02, 0x00}), true); // enable external EMS controller
 		lastBoilerParametersReadRequestMillis_ = now;
 	}
 
-	if (lastBoilerDetailsReadRequestMillis_ == 0 || millisDurationPassed(now, lastBoilerDetailsReadRequestMillis_, 1000ul * boilerDetailsReadRequestIntervalSecs)) {
+	if (lastBoilerDetailsReadRequestMillis_ == 0 || ib::millisDurationPassed(now, lastBoilerDetailsReadRequestMillis_, 1000ul * boilerDetailsReadRequestIntervalSecs)) {
 		DBGLOGEMS("requestPeriodicData - heating and ww params\n");
 		enqueueTelegramToSend(UBAParametersWWPlus::getRequest(deviceId_, boilerId_));
 		enqueueTelegramToSend(UBAParametersPlus::getRequest(deviceId_, boilerId_));

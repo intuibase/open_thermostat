@@ -22,6 +22,7 @@
 #include "Logger.h"
 #include "REST.h"
 #include "TimeHelpers.h"
+#include "RTCTimeHelpers.h"
 
 #include <ESPmDNS.h>
 #include "MQTT.h"
@@ -229,7 +230,7 @@ void loop() {
 	static unsigned long lastMillis = 0;
 
 	auto now = millis();
-	if (heating::millisDurationPassed(now, lastMillis, 10000)) {
+	if (ib::millisDurationPassed(now, lastMillis, 10000)) {
 		lastMillis = now;
 
 		heating::controller->operate();
