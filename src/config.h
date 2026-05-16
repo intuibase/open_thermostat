@@ -3,6 +3,8 @@
 #include <array>
 #include <cJSON.h>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "RoomConfig.h"
 

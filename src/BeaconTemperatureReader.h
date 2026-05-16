@@ -3,14 +3,14 @@
 #include "config.h"
 #include "Logger.h"
 #include "BeaconBleAddress.h"
-#include "TimeHelpers.h"
 
 #include <NimBLEDevice.h>
 #include <NimBLEAdvertisedDevice.h>
 #include <esp_gap_ble_api.h>
 
 #include <atomic>
-#include <memory>
+#include <functional>
+#include <optional>
 #include <set>
 #include <string_view>
 #include <vector>

@@ -1,14 +1,12 @@
 #pragma once
 
 #include "Logger.h"
-#include <stdint.h>
 
 #include <driver/uart.h>
 #include <hal/uart_types.h>
 #include <soc/uart_reg.h>
 #include <array>
 
-#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include <queue>

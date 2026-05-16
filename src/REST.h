@@ -8,9 +8,11 @@
 
 #include "viewable_stringbuf.h"
 #include "HeatingController.h"
-#include "Logger.h"
 
 #include "Network.h"
+#include <iomanip>
+#include <memory>
+#include <sstream>
 #include <string_view>
 
 namespace heating {

@@ -4,7 +4,7 @@
 #include "Logger.h"
 #include <HTTPClient.h>
 #include <cJSON.h>
-#include <optional>
+#include <memory>
 #include <mutex>
 
 namespace heating {

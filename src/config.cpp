@@ -3,7 +3,6 @@
 #include "Logger.h"
 
 #include <SPIFFS.h>
-#include <array>
 #include <memory>
 
 namespace json {

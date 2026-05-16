@@ -1,9 +1,8 @@
 #pragma once
 
-
 #include <Arduino.h>
-#include <HardwareSerial.h>
 #include <WiFi.h>
+#include <string>
 
 // in case of extending, update REST.h configDebug() too
 namespace debug {

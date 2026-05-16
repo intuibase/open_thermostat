@@ -10,13 +10,13 @@
 #include "MQTT.h"
 #include "Room.h"
 
-#include "Logger.h"
-#include <atomic>
-#include <set>
+#include <algorithm>
+#include <functional>
 #include <iomanip>
-#include <mutex>
-#include "Arduino.h"
-#include "config.h"
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace heating {
 
