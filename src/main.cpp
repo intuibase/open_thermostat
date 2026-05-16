@@ -14,9 +14,6 @@
 #include <SPI.h>  // for I2C with RTC module
 #include <RTClib.h>
 
-#include <time.h>
-
-
 #include "config.h"
 #include "HeatingController.h"
 #include "Logger.h"

@@ -25,7 +25,7 @@ int getInt(cJSON *root, const char *name) {
 
 bool getBool(cJSON *root, const char *name) {
 	auto obj = cJSON_GetObjectItem(root, name);
-	if (!obj || obj->type != cJSON_False && obj->type != cJSON_True) {
+	if (!obj || (obj->type != cJSON_False && obj->type != cJSON_True)) {
 		return false;
 	}
 	return obj->type == cJSON_True;

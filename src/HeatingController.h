@@ -29,9 +29,7 @@ public:
 		lastReadTemperatureCounter_.notifyNow();
 	}
 
-	~HeatingController() {
-		vTaskDelete(nullptr);
-	}
+	~HeatingController() {}
 
 	void operate() {
 		bool shouldStartBoiler = false;
