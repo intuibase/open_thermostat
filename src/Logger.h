@@ -1,7 +1,11 @@
 #pragma once
 
+#ifdef ARDUINO
 #include <Arduino.h>
 #include <WiFi.h>
+#endif
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 
 // in case of extending, update REST.h configDebug() too
@@ -46,6 +50,7 @@ namespace debug {
 
 namespace heating {
 
+#ifdef ARDUINO
 class Logger : public WiFiClient {
 public:
 	void initialize(bool enabled, std::string const &host, uint16_t port) {
@@ -147,6 +152,16 @@ private:
 	std::string host_;
 	unsigned long lastReconnect_ = 0;
 };
+
+#else // !ARDUINO
+
+class Logger {
+public:
+	void logf(const char *, ...) {}
+	void printf(const char *, ...) {}
+};
+
+#endif // ARDUINO
 
 extern Logger logger;
 
