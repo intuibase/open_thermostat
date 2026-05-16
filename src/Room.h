@@ -1,10 +1,12 @@
 #pragma once
 
-#include "AutoLock.h"
+#include "RoomConfig.h"
 #include "BeaconBleAddress.h"
 #include "CircularBuffer.h"
 #include "Logger.h"
 
+#include <atomic>
+#include <chrono>
 #include <sstream>
 #include <string>
 #include <time.h>
@@ -12,73 +14,41 @@
 #include <tuple>
 #include <optional>
 #include <vector>
-#include <Arduino.h>
 
-// TODO use mutex, don't copy object
 namespace heating {
 class Room {
 public:
+	using clock_t = std::chrono::steady_clock;
+
 	enum class TemperatureStatus : uint8_t { MISSING_TEMPERATURE, TEMPERATURE_OK, START_HEATING, CONTINUE_HEATING };
 
-	Room() = default;
+	Room(RoomConfig config) : config_(std::move(config)) {}
+
 	Room(Room &&r) = default;
 	Room &operator=(Room &&r) = default;
 	Room &operator=(const Room &r) = delete;
 	Room(const Room &r) = delete;
-	using temperatureData_t = std::tuple<unsigned long, int16_t>; // millis of read, temp
-
-	struct TemperatureSetting {
-		bool doesFit(std::string const &time, uint8_t dayOfTheWeek) const;
-		bool isEnabled() const;
-		int16_t getTemperature() const;
-		std::optional<uint8_t> getHeatingTemperatureOverride() const;
-
-		std::string name_;
-		std::string timeFrom_; // HH:MM
-		std::string timeTo_; // // HH:MM
-		int16_t temperature_ = 0;
-		std::optional<uint8_t> heatingTemperatureOverride_;
-		bool enabled_ = true;
-		std::vector<uint8_t> valves_;
-		std::array<bool, 7> days_ = {{true, true, true, true, true, true, true}}; // TODO memory use bitfields
-	};
+	using temperatureData_t = std::tuple<std::chrono::steady_clock::time_point, int16_t>; // temp
 
 	class TemporaryOverride {
 	public:
-		TemporaryOverride(int16_t temperature, uint32_t lifeTimeSecs) : temperature_(temperature), lifeTimeSecs_(lifeTimeSecs) {
+		TemporaryOverride(int16_t temperature, uint32_t lifeTimeSecs) : temperature_(temperature), lifeTime_(std::chrono::seconds(lifeTimeSecs)), activation_(std::chrono::steady_clock::now()) {}
+
+		bool isValid() const { return std::chrono::steady_clock::now() < activation_ + lifeTime_; }
+
+		uint32_t getSecondsLeft() const {
+			auto now = std::chrono::steady_clock::now();
+			auto remaining = std::chrono::duration_cast<std::chrono::seconds>((activation_ + lifeTime_) - now);
+			return remaining.count() > 0 ? static_cast<uint32_t>(remaining.count()) : 0;
 		}
 
-		bool isValid() const {
-			return activation_ + lifeTimeSecs_ * 1000 > millis();
-		}
-
-		uint32_t getSecondsLeft() {
-			return ((activation_ + lifeTimeSecs_ * 1000) - millis()) / 1000;
-		}
-
-		int16_t getTemperature() const {
-			return temperature_;
-		}
+		int16_t getTemperature() const { return temperature_; }
 
 	private:
-		unsigned long activation_ = millis();
-		int16_t temperature_ = 0;
-		uint32_t lifeTimeSecs_;
+		int16_t temperature_;
+		std::chrono::seconds lifeTime_;
+		std::chrono::steady_clock::time_point activation_;
 	};
-
-	struct Statistics {
-		const TemperatureSetting *currentProgram_ = nullptr;
-		bool shouldStartBoiler_ = false;
-		bool shouldHeat_ = false;
-	} stats;
-
-
-	std::vector<uint8_t> const &getValves() {
-		AutoLock lock(mutex_);
-		return valves_;
-
-		//TODO get valves from current temp if exists
-	}
 
 	void storeTemperature(int16_t temperature);
 	void storeBattery(int8_t batteryLevel);
@@ -90,39 +60,39 @@ public:
 
 	bool isEnabled() const;
 
+	const std::string &getName() const { return config_.name_; }
+
+	auto getValves() const { return config_.valves_; }
+	auto const &getSensorAddress() const { return config_.sensorAddress_; }
+
 	std::string getStatus() const;
 	void getStatus(std::ostream &ss) const;
 
 
 private:
 	bool isTemperatureValid() const;
-	std::pair<int16_t, const Room::TemperatureSetting *> getTemperatureSet(std::string const &currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
+	std::pair<int16_t, const RoomConfig::TemperatureSetting *> getTemperatureSet(uint16_t currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
 	int16_t getTemperatureMarginUp() const;
 	int16_t getTemperatureMarginDown() const;
-	std::pair<const char *, uint8_t> getTimeNow() const;
+	std::pair<uint16_t, uint8_t> getTimeNow() const;
 	std::optional<int16_t> getAverageTemperature() const;
 
-	unsigned long inline getMaxSampleAgeMs() const {
-		return 3 * 60 * 1000; // 3 mins
-	}
+	auto getMaxSampleAgeMs() const { return std::chrono::minutes(3); }
 
-public:
 	bool debugLog_ = true;
-	bool enabled_ = false;
-	std::string name_; // TODO memory limit to 15 to avoid allocation?
-	BleAddress_t sensorAddress_;
-	std::vector<uint8_t> valves_;
-	int baseTemperature_ = 2100; // TODO uint16_t
-	int temperatureMarginUp_ = 20; // TODO int8_t
-	int temperatureMarginDown_ = 20; // TODO int8_t
-	std::vector<TemperatureSetting> temperatures_;
-	std::unique_ptr<TemporaryOverride> temporaryOverride_; // TODO use optional? why?
-private:
-	CircularBuffer<temperatureData_t, 10> temperatureData_;
-	SemaphoreHandle_t mutex_ = xSemaphoreCreateMutex();
+	RoomConfig config_;
+	std::unique_ptr<TemporaryOverride> temporaryOverride_;
+	ib::CircularBuffer<temperatureData_t, 10> temperatureData_;
+	mutable std::mutex mutex_;
 
 	//	// statistical data
-	int8_t batteryLevel_ = -1;
-	int16_t currentHumidity_ = std::numeric_limits<decltype(currentHumidity_)>::min(); // humidity 6005 - 60.05%
+	std::atomic<int8_t> batteryLevel_ = -1;
+	std::atomic<int16_t> currentHumidity_ = std::numeric_limits<decltype(currentHumidity_)>::min(); // humidity 6005 - 60.05%
+
+	struct Statistics {
+		const RoomConfig::TemperatureSetting *currentProgram_ = nullptr;
+		bool shouldStartBoiler_ = false;
+		bool shouldHeat_ = false;
+	} stats;
 };
 }

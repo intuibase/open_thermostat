@@ -14,14 +14,12 @@
 #include <SPI.h>  // for I2C with RTC module
 #include <RTClib.h>
 
-#include <time.h>
-
-
 #include "config.h"
 #include "HeatingController.h"
 #include "Logger.h"
 #include "REST.h"
 #include "TimeHelpers.h"
+#include "RTCTimeHelpers.h"
 
 #include <ESPmDNS.h>
 #include "MQTT.h"
@@ -35,8 +33,8 @@ namespace debug {
 
 namespace heating {
 
-heating::HeatingController *controller = nullptr;
-heating::Logger logger;
+HeatingController *controller = nullptr;
+Logger logger;
 
 std::unique_ptr<REST> rest;
 
@@ -229,7 +227,7 @@ void loop() {
 	static unsigned long lastMillis = 0;
 
 	auto now = millis();
-	if (heating::millisDurationPassed(now, lastMillis, 10000)) {
+	if (ib::millisDurationPassed(now, lastMillis, 10000)) {
 		lastMillis = now;
 
 		heating::controller->operate();

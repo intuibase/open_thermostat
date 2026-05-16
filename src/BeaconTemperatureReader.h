@@ -59,7 +59,7 @@ public:
 		}
 
 		auto now = millis();
-		if (lastScanFinishedMillis_ != 0 && !millisDurationPassed(now, lastScanFinishedMillis_, 1000ul * config_.scanInterval)) {
+		if (lastScanFinishedMillis_ != 0 && !ib::millisDurationPassed(now, lastScanFinishedMillis_, 1000ul * config_.scanInterval)) {
 			DBGLOGTR("Scan interval %ds didn't pass yet\n", config_.scanInterval);
 			return;
 		}

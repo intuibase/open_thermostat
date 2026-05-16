@@ -3,7 +3,7 @@
 
 #include "config.h"
 #include "Logger.h"
-#include "TimeHelpers.h"
+#include "RTCTimeHelpers.h"
 
 #include <PubSubClient.h>
 #include <ESPPubSubClientWrapper.h>
