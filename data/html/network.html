@@ -7,7 +7,7 @@
 	</div>
 </div>
 
-<form id="networkeditform" class="invisible">
+<form id="networkeditform" class="invisible" novalidate>
 
 	<div class="modal fade" id="selectWiFiSSID" tabindex="-1" role="dialog" aria-labelledby="selectWiFiSSIDLabel"
 		aria-hidden="true">
@@ -100,7 +100,8 @@
 											required></div>
 									<div class="col-md mb-2"><label for="DeviceListenPort">Listen port</label><input
 											type="number" class="form-control" id="DeviceListenPort" min="1" max="65535"
-											step="1" placeholder="80" required></div>
+											step="1" placeholder="80" required>
+									<div class="invalid-feedback">1 - 65535</div></div>
 								</div>
 							</div>
 						</div>
@@ -330,9 +331,9 @@
 					networks.forEach(element => {
 						let ssid = element.ssid;
 						if (ssid === currentWiFi) {
-							$('#selectWiFiSSIDSelect').append($("<option selected>" + ssid + "</option>"));
+							$('#selectWiFiSSIDSelect').append($('<option>').prop('selected', true).text(ssid));
 						} else {
-							$('#selectWiFiSSIDSelect').append($("<option>" + ssid + "</option>"));
+							$('#selectWiFiSSIDSelect').append($('<option>').text(ssid));
 						}
 
 					});
@@ -394,24 +395,6 @@
 		$('#networkeditform').removeClass('invisible');
 
 	});
-
-	//TODO shared
-	function HttpResponseException(message, status) {
-		this.message = message;
-		this.status = status;
-		this.name = "HTTP Response error";
-	}
-
-	HttpResponseException.prototype.toString = function () {
-		return this.name + ': ' + this.status + ' "' + this.message + '"';
-	}
-
-	function validateResponse(response) {
-		if (!response.ok) {
-			throw new HttpResponseException(response.statusText, response.status);
-		}
-		return response;
-	}
 
 	function showWiFiPassword(event, show) {
 		event.preventDefault();
@@ -512,7 +495,6 @@
 
 		fetch(hostName + '/config/debug', {
 			method: 'post',
-			mode: 'no-cors',
 			cache: 'no-cache',
 			credentials: 'same-origin',
 			headers: { "Content-Type": "application/json" },
@@ -525,13 +507,15 @@
 						return;
 					}
 				} else {
-					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 				}
 			})
 			.catch(function (error) {
 				alert(error);
+			})
+			.finally(function () {
+				$("#DebugSettings").prop('disabled', false);
 			});
-		$("#DebugSettings").prop('disabled', false);
 	}
 
 	function loadWiFiSettings() {
@@ -555,6 +539,7 @@
 	}
 
 	function saveWiFiSettings() {
+		if (!validateForm('#networkeditform')) return;
 		$("#SaveWiFiSettings").prop('disabled', true);
 
 		let settings = {
@@ -564,7 +549,6 @@
 
 		fetch(hostName + '/config/wifi', {
 			method: 'post',
-			mode: 'no-cors',
 			cache: 'no-cache',
 			credentials: 'same-origin',
 			headers: { "Content-Type": "application/json" },
@@ -577,13 +561,15 @@
 						return;
 					}
 				} else {
-					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 				}
 			})
 			.catch(function (error) {
 				alert(error);
+			})
+			.finally(function () {
+				$("#SaveWiFiSettings").prop('disabled', false);
 			});
-		$("#SaveWiFiSettings").prop('disabled', false);
 	}
 
 	function loadDeviceSettings() {
@@ -645,6 +631,7 @@
 	}
 
 	function saveDeviceSettings() {
+		if (!validateForm('#networkeditform')) return;
 		$("#SaveDeviceSettings").prop('disabled', true);
 
 		let settings = {
@@ -688,7 +675,6 @@
 
 		fetch(hostName + '/config/device', {
 			method: 'post',
-			mode: 'no-cors',
 			cache: 'no-cache',
 			credentials: 'same-origin',
 			headers: { "Content-Type": "application/json" },
@@ -701,13 +687,15 @@
 						return;
 					}
 				} else {
-					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+					alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 				}
 			})
 			.catch(function (error) {
 				alert(error);
+			})
+			.finally(function () {
+				$("#SaveDeviceSettings").prop('disabled', false);
 			});
-		$("#SaveDeviceSettings").prop('disabled', false);
 	}
 
 	function reboot() {
