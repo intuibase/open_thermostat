@@ -7,13 +7,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <time.h>
 #include <mutex>
 #include <tuple>
 #include <optional>
-#include <vector>
 
 namespace heating {
 class Room {

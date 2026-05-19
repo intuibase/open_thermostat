@@ -8,6 +8,7 @@
 #include <PubSubClient.h>
 #include <ESPPubSubClientWrapper.h>
 #include <viewable_stringbuf.h>
+#include <functional>
 #include <ostream>
 #include <string_view>
 #include "PeriodicCounter.h"

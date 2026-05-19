@@ -8,9 +8,11 @@
 
 #include "viewable_stringbuf.h"
 #include "HeatingController.h"
-#include "Logger.h"
 
 #include "Network.h"
+#include <iomanip>
+#include <memory>
+#include <sstream>
 #include <string_view>
 
 namespace heating {
@@ -568,7 +570,12 @@ private:
 	}
 
 	void configPrograms() {
-		String filename = "/programs/" + server_.pathArg(0) + ".json";
+		auto programName = server_.pathArg(0);
+		if (programName.indexOf("..") >= 0 || programName.indexOf('/') >= 0 || programName.indexOf('\\') >= 0) {
+			server_.send(400, "text/plain", "Invalid program name");
+			return;
+		}
+		String filename = "/programs/" + programName + ".json";
 
 		DBGLOGREST("configPrograms for '%s' METHOD %d\n", filename.c_str(), server_.method());
 
@@ -599,6 +606,10 @@ private:
 				//TODO parse/validate json
 				DBGLOGREST("Received program: '%s'\n", filename.c_str());
 				File file = SPIFFS.open(filename, FILE_WRITE);
+				if (!file) {
+					server_.send(500, "text/plain", "Failed to open file for writing");
+					break;
+				}
 				file.write((uint8_t *)body.c_str(), body.length());
 				file.close();
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Logger.h"
-#include <stdint.h>
 
 #include <driver/uart.h>
 #include <hal/uart_types.h>

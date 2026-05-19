@@ -1,8 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include "TimeHelpers.h"
-
+#include "HeatingCurve.h"
 #include "Logger.h"
 #include <sstream>
 #include <algorithm>
@@ -21,10 +20,18 @@ public:
 	using emsChangeBoilerState_t = std::function<void(bool, uint8_t)>;
 	using emsSetHeatingTemperature_t = std::function<void(uint8_t)>;
 
-	BoilerController(config::BoilerConfig const &config, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature) : config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature), valves_(config::getValvePins()) {
+	struct GpioOps {
+		std::function<void(uint8_t pin, uint8_t mode)> setPinMode;
+		std::function<void(uint8_t pin, uint8_t value)> writePin;
+		std::function<void(uint32_t ms)> delayMs;
+		uint8_t PIN_OUTPUT;
+		uint8_t PIN_LOW;
+		uint8_t PIN_HIGH;
+	};
+
+	BoilerController(config::BoilerConfig const &config, config::valves_t valves, uint8_t boilerPin, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature, GpioOps gpio) : config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature), valves_(valves), boilerPin_(boilerPin), gpio_(std::move(gpio)) {
 		for (size_t valve = 0; valve < valves_.size(); ++valve) {
-			auto pin = valves_[valve];
-			pinMode(pin, OUTPUT);
+			gpio_.setPinMode(valves_[valve], gpio_.PIN_OUTPUT);
 		}
 	}
 
@@ -122,8 +129,8 @@ private:
 			pin = valves_[nr];
 			valvesStates_[nr] = !closed;
 		}
-		digitalWrite(pin, closed ? LOW : HIGH);
-		delay(10); // to avoid power surge when multiple valves are changed at once
+		gpio_.writePin(pin, closed ? gpio_.PIN_LOW : gpio_.PIN_HIGH);
+		gpio_.delayMs(10); // to avoid power surge when multiple valves are changed at once
 		DBGLOGBOILER("Handle valve %d state: %s coil %s \n", nr, !closed ? "open " : "close", closed ? "on" : "off");
 	}
 
@@ -149,9 +156,9 @@ private:
 				emsSetHeatingTemperature(currentHeatingTemperature_.value() / 100);
 			}
 
-			pinMode(boilerPin_, OUTPUT);
+			gpio_.setPinMode(boilerPin_, gpio_.PIN_OUTPUT);
 			DBGLOGBOILER("ON/OFF BOILER pin: %d enabled: %d\n", boilerPin_, enabled);
-			digitalWrite(boilerPin_, enabled ? LOW : HIGH);
+			gpio_.writePin(boilerPin_, enabled ? gpio_.PIN_LOW : gpio_.PIN_HIGH);
 		} else if  (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems) {
 			currentOutdoorTemperature_ = getOutdoorTemp_();
 			currentHeatingTemperature_ = getHeatingTemperature(currentOutdoorTemperature_.value());
@@ -171,26 +178,9 @@ private:
 	bool isBoilerStarted() const { return currentBoilerState_; }
 
 	int16_t getHeatingTemperature(int16_t outdoorTemperature) {
-		static constexpr std::array<int8_t, 9> hcOutdoorAxis{20, 15, 10, 5, 0, -5, -10, -15, -20};
-
-		for (size_t idx = 0; idx < hcOutdoorAxis.size(); ++idx) {
-
-			if (hcOutdoorAxis[idx] * 100 <= outdoorTemperature) {
-				if (idx == 0) {
-					DBGLOGBOILER("getHeatingTemperature: %d , hcOutdoorAxis: %d, hcHeatTemp: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(hcOutdoorAxis[idx] * 100), static_cast<int>(config_.heatingCurve.heatingCurve[idx]));
-					return config_.heatingCurve.heatingCurve[idx] * 100;
-				} else {
-					float slope = static_cast<float>(config_.heatingCurve.heatingCurve[idx] - config_.heatingCurve.heatingCurve[idx - 1]) / static_cast<float>(hcOutdoorAxis[idx] - hcOutdoorAxis[idx - 1]); // (y2-y1)/(x2-x1)
-					float intercept = config_.heatingCurve.heatingCurve[idx - 1] * 100 - (slope * hcOutdoorAxis[idx - 1] * 100); // y1 - (slope * x1)
-					int16_t temp = slope * outdoorTemperature + intercept;
-					DBGLOGBOILER("getHeatingTemperature outdoor: %d , hcOutdoorAxis: %d, hcHeatTemp: %d Calculated: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(hcOutdoorAxis[idx] * 100), static_cast<int>(config_.heatingCurve.heatingCurve[idx]), static_cast<int>(temp));
-					return temp;
-				}
-			}
-		}
-
-		DBGLOGBOILER("getHeatingTemperature outdoor: %d , heat temp: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(config_.heatingCurve.heatingCurve[8]));
-		return config_.heatingCurve.heatingCurve[8];
+		auto temp = calcHeatingTemperature(outdoorTemperature, config_.heatingCurve.heatingCurve);
+		DBGLOGBOILER("getHeatingTemperature outdoor: %d, calculated: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(temp));
+		return temp;
 	}
 
 	void emsSetHeatingTemperature(uint8_t temperature) {
@@ -204,8 +194,9 @@ private:
 	emsChangeBoilerState_t emsChangeBoilerState_;
 	emsSetHeatingTemperature_t emsSetHeatingTemperature_;
 	config::valves_t valves_;
-	std::array<bool, VALVE_COUNT> valvesStates_ = {{true, true, true, true, true, true, true, true}}; // not needed, for debugging? UI?
-	uint8_t boilerPin_ = config::getBoilerPin();
+	std::array<bool, VALVE_COUNT> valvesStates_ = {{true, true, true, true, true, true, true, true}};
+	uint8_t boilerPin_;
+	GpioOps gpio_;
 
 	using clock_t = std::chrono::steady_clock;
 
