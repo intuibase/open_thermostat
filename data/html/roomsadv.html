@@ -5,7 +5,7 @@
 		</div>
 	</div>
 
-	<form id = "programeditform" class="invisible">
+	<form id = "programeditform" class="invisible" novalidate>
 		<div class="form-group">
 			<label for="selectprogram">Select program to edit</label>
 			<select class="form-control" id="selectprogram" name="program" onchange="loadProgram()">
@@ -49,10 +49,10 @@
 					var currentProgram = prog.program;
 
 					var selector = document.getElementById('selectprogram');
-					
+
 					programs.forEach(element => {
-						var opt = document.createElement('option'); 
-						opt.innerHTML = element;
+						var opt = document.createElement('option');
+						opt.textContent = element;
 						selector.appendChild(opt);
 					});
 
@@ -63,7 +63,6 @@
 				});
 		}).catch(function(error) {
 			alert(error);
-			getAvailablePrograms();
 		}
 		);
 	}
@@ -72,14 +71,14 @@
 		var selector = document.getElementById('selectprogram');
 		var content = document.getElementById('configContent');
 
-		$('programeditform').submit(false);
+		$('#programeditform').submit(false);
 
 
 		fetch(hostName + '/config/programs/' + selector.value)
 		.then(res => res.text())
 		.then((value) => {
 			content.value = value;
-			$('programeditform').submit(true);
+			$('#programeditform').submit(true);
 
 		}).catch(function(error) {
 			content.value = "";
@@ -97,7 +96,6 @@
 
 		fetch(hostName + '/config/programs/' + selector.value, {
 			method: 'post',
-			mode: 'no-cors',
 			cache: 'no-cache',
 			credentials: 'same-origin',
 			headers: { "Content-Type": "application/json" },
@@ -107,7 +105,7 @@
 			if (res.status == 200 || res.status == 201) {
 				alert("Saved");
 			} else {
-				alert(res.status + " " + res.body);
+				alert(res.status + " " + res.statusText);
 			}
 			getAvailablePrograms();
 		})

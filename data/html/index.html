@@ -24,6 +24,63 @@
 
 	<script type='text/javascript'>
 		var hostName = "";
+
+		function escapeHtml(str) {
+			var div = document.createElement('div');
+			div.appendChild(document.createTextNode(str));
+			return div.innerHTML;
+		}
+
+		function HttpResponseException(message, status) {
+			this.message = message;
+			this.status = status;
+			this.name = "HTTP Response error";
+		}
+
+		HttpResponseException.prototype.toString = function() {
+			return this.name + ': ' + this.status + ' "' + this.message + '"';
+		}
+
+		function validateResponse(response) {
+			if (!response.ok) {
+				throw new HttpResponseException(response.statusText, response.status);
+			}
+			return response;
+		}
+
+		function postJSON(url, data) {
+			return fetch(hostName + url, {
+				method: 'post',
+				cache: 'no-cache',
+				credentials: 'same-origin',
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(data, undefined, '\t')
+			});
+		}
+
+		function getJSON(url) {
+			return fetch(hostName + url)
+				.then(validateResponse)
+				.then(res => res.json());
+		}
+
+		function validateForm(formSelector) {
+			var form = $(formSelector)[0];
+			form.classList.add('was-validated');
+			if (!form.checkValidity()) {
+				$(formSelector).find(':invalid').first().focus();
+				return false;
+			}
+			return true;
+		}
+
+		$(document).on('input change', '.form-control', function() {
+			if (this.checkValidity()) {
+				$(this).removeClass('is-invalid').addClass('is-valid');
+			} else {
+				$(this).removeClass('is-valid').addClass('is-invalid');
+			}
+		});
 	</script>
 
 	<title>Heating controller</title>
@@ -33,9 +90,17 @@
 
 	<style>
 		@keyframes blink {
-			0% { opacity: 0; }
-			50% { opacity: .5; }
-			100% { opacity: 1; }
+			0% {
+				opacity: 0;
+			}
+
+			50% {
+				opacity: .5;
+			}
+
+			100% {
+				opacity: 1;
+			}
 		}
 	</style>
 
@@ -306,9 +371,6 @@
 
 			$("#temporaryTempModalSave").on('click', function (event) {
 				event.preventDefault();
-				var selection = $('#selectWiFiSSIDSelect option:selected').text()
-				$('#WiFiSSID').val(selection).trigger('input');
-				event.preventDefault();
 
 
 				let seconds = parseInt($('#temporaryTempModalTime').val()) * 60;
@@ -317,7 +379,6 @@
 
 				fetch(hostName + '/config/temporary', {
 					method: 'post',
-					mode: 'no-cors',
 					cache: 'no-cache',
 					credentials: 'same-origin',
 					headers: { "Content-Type": "application/json" },
@@ -331,7 +392,7 @@
 						if ((res.status >= 200 && res.status <= 205) || res.type === "opaque") {
 							// return;
 						} else {
-							alert("Not sure if temporary temperature set.\nStatus: " + res.status + "\nBody:\n" + res.body);
+							alert("Not sure if temporary temperature set.\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 						}
 					})
 					.catch(function (error) {
@@ -469,9 +530,9 @@
 		<div class='flex-column d-flex m-1 border border-3 rounded-lg bg-light justify-content-between'  style='width: 9rem; height: 8rem;'>
 			<div class='flex-row d-flex mt-1 justify-content-center'>
 				<div class='flex-column d-flex justify-content-top'>
-					<div class='flex-row d-flex justify-content-center' style='font-size: 0.6rem; font-weight: bold;'>` + owStatus.name + `</div>
-					<div class='flex-row d-flex justify-content-center' style='font-size: 0.6rem;'>` + weather.description + `</div>
-					<div class='flex-row d-flex justify-content-center'><img style="width: 2.3rem; height: 2.3rem;"  src="http://openweathermap.org/img/w/` + weather.icon + `.png"></div>
+					<div class='flex-row d-flex justify-content-center' style='font-size: 0.6rem; font-weight: bold;'>` + escapeHtml(owStatus.name) + `</div>
+					<div class='flex-row d-flex justify-content-center' style='font-size: 0.6rem;'>` + escapeHtml(weather.description) + `</div>
+					<div class='flex-row d-flex justify-content-center'><img style="width: 2.3rem; height: 2.3rem;"  src="https://openweathermap.org/img/w/` + encodeURIComponent(weather.icon) + `.png"></div>
 					<div class='flex-row d-flex justify-content-center' style='font-size: 1rem; font-weight: bold;'>` + owStatus.main.temp.toFixed(1) + `&deg;C</div>
 					<div class='flex-row d-flex justify-content-center' style='font-size: 0.5rem;'>` + (owStatus.main.feels_like).toFixed(1) + `&deg;C</div>
 				</div>
@@ -582,11 +643,11 @@
 			}
 
 			var cont = `
-			<div class='col m-1 border border-3 rounded-lg bg-light' onclick='setTemporaryTemp(event, "`+ room.name + `");' style='width: 9rem; height: 8rem;'>
-				<div class='row justify-content-center' style='font-size: 0.9rem;'>` + room.name + `</div>
+			<div class='col m-1 border border-3 rounded-lg bg-light' onclick='setTemporaryTemp(event, "` + escapeHtml(room.name) + `");' style='width: 9rem; height: 8rem;'>
+				<div class='row justify-content-center' style='font-size: 0.9rem;'>` + escapeHtml(room.name) + `</div>
 				<div class='row justify-content-center' style='font-size: 1.5rem; font-weight: bold;'>` + meanTemp + `&deg;C</div>
 				<div class='row justify-content-center' style='font-size: 0.8rem;'>` + setTemp + `&deg;C</div>
-				<div class='row mb-3 justify-content-center' style='font-size: 0.6rem;'>` + programName + `</div>
+				<div class='row mb-3 justify-content-center' style='font-size: 0.6rem;'>` + escapeHtml(programName) + `</div>
 				<div class='row d-flex justify-content-between' style='height: 1.0rem;'>
 					<div class='ml-1' style='font-size: 0.6rem; height: 1.0rem; width: 3rem; display: flex; justify-content: flex-start;  align-items: center; ` + humidityVisibility + `'><svg viewBox="0 0 4.2333 4.2333" style="height: 0.7rem;"><path d="m1.8871 0.27523c-0.37917 0.56261-0.80901 1.1306-1.0408 1.7744-0.93792 2.6049 3.277 2.8553 2.5517 0.33054-0.20597-0.7169-1.0431-1.6366-1.3761-2.2757l-0.13472 0.17081m-0.938 2.4606c0.037288 0.26239 0.15761 0.47453 0.30894 0.64822 0.3167 0.2848 0.51096 0.32871 0.8065 0.43986-0.47881 0.099642-1.2481-0.55694-1.1154-1.0881z" fill="#090909"/></svg>` + currentHumidity + `</div>
 					<div style='font-size: 0.6rem; height: 1.0rem;'>` + heatingIcon + `</div>
