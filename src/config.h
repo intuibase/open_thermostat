@@ -3,6 +3,8 @@
 #include <array>
 #include <cJSON.h>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "RoomConfig.h"
 
@@ -152,6 +154,4 @@ std::string parseProgram(std::string const &data);
 
 void setDebugOptionsFromJson(const char *json);
 void readDebugOptions();
-
-
 }

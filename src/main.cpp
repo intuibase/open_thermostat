@@ -1,28 +1,16 @@
-#include <algorithm>
-#include <vector>
-#include <set>
-
 #include <Arduino.h>
+#include <Wire.h>
 #include <time.h>
-#include <sys/time.h>
 
 #include <WiFi.h>
-#include <WiFiClient.h>
-#include <WebServer.h>
 #include <SPIFFS.h>
-
-#include <SPI.h>  // for I2C with RTC module
-#include <RTClib.h>
+#include <ESPmDNS.h>
+#include <TimeHelpers.h>
 
 #include "config.h"
 #include "HeatingController.h"
-#include "Logger.h"
 #include "REST.h"
-#include "TimeHelpers.h"
 #include "RTCTimeHelpers.h"
-
-#include <ESPmDNS.h>
-#include "MQTT.h"
 
 #define ONBOARD_LED 2
 

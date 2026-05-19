@@ -10,13 +10,13 @@
 #include "MQTT.h"
 #include "Room.h"
 
-#include "Logger.h"
-#include <atomic>
-#include <set>
+#include <algorithm>
+#include <functional>
 #include <iomanip>
-#include <mutex>
-#include "Arduino.h"
-#include "config.h"
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
 
 namespace heating {
 
@@ -316,15 +316,9 @@ private:
 	ems::EmsController ems_;
 	config::BoilerConfig boilerConfig_{config::getBoilerConfig()};
 
-	BoilerController boiler_ {boilerConfig_,
-		[this]() { return getOutdoorTemperature(); },
-		[&ems = ems_](bool enabled, uint8_t flowTempSet) {
-			ems.changeBoilerState(enabled, flowTempSet);
-		},
-		[&ems = ems_](uint8_t heatingTemperature) {
-			ems.setHeatingTemperature(heatingTemperature);
-		}
-	};
+	BoilerController boiler_{boilerConfig_, config::getValvePins(), config::getBoilerPin(), [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
+			ems.changeBoilerState(enabled, flowTempSet); }, [&ems = ems_](uint8_t heatingTemperature) {
+			ems.setHeatingTemperature(heatingTemperature); }, BoilerController::GpioOps{[](uint8_t pin, uint8_t mode) { pinMode(pin, mode); }, [](uint8_t pin, uint8_t value) { digitalWrite(pin, value); }, [](uint32_t ms) { delay(ms); }, OUTPUT, LOW, HIGH}};
 	std::string currentProgram_;
 	std::vector<std::shared_ptr<heating::Room>> rooms_;
 	ib::PeriodicCounter lastReadTemperatureCounter_{5 * 60 * 1000}; // 5 mins in ms

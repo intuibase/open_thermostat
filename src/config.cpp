@@ -1,9 +1,9 @@
 #include "config.h"
 #include "BeaconBleAddress.h"
 #include "Logger.h"
+#include "TimeUtils.h"
 
 #include <SPIFFS.h>
-#include <array>
 #include <memory>
 
 namespace json {
@@ -61,27 +61,12 @@ std::vector<uint8_t> parseValves(cJSON *root) {
 	return retVal;
 }
 
-uint16_t parseTimeHHMM(const std::string &str) {
-	if (str.length() != 5 || str[2] != ':') {
-		throw std::invalid_argument("Invalid time format, expected HH:MM");
-	}
-
-	int hours = std::stoi(str.substr(0, 2));
-	int minutes = std::stoi(str.substr(3, 2));
-
-	if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-		throw std::out_of_range("Invalid time value");
-	}
-
-	return static_cast<uint16_t>(hours * 100 + minutes);
-}
-
 heating::RoomConfig::TemperatureSetting parseTemperature(cJSON *obj) {
 	heating::RoomConfig::TemperatureSetting temp;
 	temp.name_ = json::getString(obj, "name");
 	try {
-		temp.timeFrom_ = parseTimeHHMM(json::getString(obj, "time_from"));
-		temp.timeTo_ = parseTimeHHMM(json::getString(obj, "time_to"));
+		temp.timeFrom_ = ib::timeutils::parseTimeHHMM(json::getString(obj, "time_from"));
+		temp.timeTo_ = ib::timeutils::parseTimeHHMM(json::getString(obj, "time_to"));
 	} catch (std::exception const &e) {
 		heating::logger.printf("Exception parsing temperature '%s' time ranges: %s\n", temp.name_.c_str(), e.what());
 	}
