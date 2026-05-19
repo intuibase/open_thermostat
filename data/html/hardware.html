@@ -4,7 +4,7 @@
 	</div>
 </div>
 
-<form id = "hardwareeditform" class="invisible">
+<form id = "hardwareeditform" class="invisible" novalidate>
 
 <div class="col-md-auto">
 
@@ -150,23 +150,6 @@ $(document).ready(function() {
 });
 
 //TODO shared
-function HttpResponseException(message, status) {
-	this.message = message;
-	this.status = status;
-	this.name = "HTTP Response error";
-}
-
-HttpResponseException.prototype.toString = function() {
-	return this.name + ': ' + this.status + ' "' + this.message + '"';
-}
-
-function validateResponse(response) {
-	if (!response.ok) {
-			throw new HttpResponseException(response.statusText, response.status);
-		}
-		return response;
-}
-
 function loadHardwareSettings() {
 	fetch(hostName + '/config/hardware')
 	.then(validateResponse)
@@ -192,14 +175,14 @@ function loadHardwareSettings() {
 	}).catch(function(error) {
 		if (error instanceof HttpResponseException && error.status === 404) {
 			alert("Cannot load hardware settings\n" + error);
-		}
-		if (confirm("Cannot load hardware settings\n" + error + "\nTry again?")) {
+		} else if (confirm("Cannot load hardware settings\n" + error + "\nTry again?")) {
 			loadHardwareSettings();
 		}
 	});
 }
 
 function saveHardwareSettings() {
+	if (!validateForm('#hardwareeditform')) return;
 	$("#SaveHardwareSettings").prop('disabled', true);
 
 	let settings = {
@@ -216,7 +199,6 @@ function saveHardwareSettings() {
 
 	fetch(hostName + '/config/hardware', {
 		method: 'post',
-		mode: 'no-cors',
 		cache: 'no-cache',
 		credentials: 'same-origin',
 		headers: { "Content-Type": "application/json" },
@@ -229,13 +211,15 @@ function saveHardwareSettings() {
 				return;
 			}
 		} else {
-			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 		}
 	})
 	.catch(function(error) {
 		alert(error);
+	})
+	.finally(function() {
+		$("#SaveHardwareSettings").prop('disabled', false);
 	});
-	$("#SaveHardwareSettings").prop('disabled', false);
 }
 
 function reboot() {

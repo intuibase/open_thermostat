@@ -4,7 +4,7 @@
 	</div>
 </div>
 
-<form id = "boilereditform" class="invisible">
+<form id = "boilereditform" class="invisible" novalidate>
 
 <div class="col-md-auto">
 
@@ -27,6 +27,7 @@
 							<div class="input-group">
 								<input type="number" class="form-control" id="valvePreheatingDelay" placeholder="0" value="0" step="1" min=0 max="65535" required>
 								<div class="input-group-append"><div class="input-group-text">sec</div></div>
+								<div class="invalid-feedback" id="valvePreheatingDelay_fb">0 - 65535</div>
 							</div>
 						</div>
 					</div>
@@ -36,6 +37,7 @@
 							<div class="input-group">
 								<input type="number" class="form-control" id="minHeatingTemp" placeholder="20" value="20" step="1" min=20 max=90 required>
 								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+								<div class="invalid-feedback" id="minHeatingTemp_fb">20 - 90 &deg;C</div>
 							</div>
 						</div>
 						<div class="col-md mb-2">
@@ -43,6 +45,7 @@
 							<div class="input-group">
 								<input type="number" class="form-control" id="maxHeatingTemp" placeholder="90" value="90" step="1" min=20 max=90 required>
 								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+								<div class="invalid-feedback" id="maxHeatingTemp_fb">20 - 90 &deg;C</div>
 							</div>
 						</div>
 					</div>
@@ -74,6 +77,7 @@
 							<div class="input-group">
 								<input type="number" class="form-control" id="minHCTemp" placeholder="20" value="20" step="1" min=0 max=90 required>
 								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+								<div class="invalid-feedback" id="minHCTemp_fb">0 - 90 &deg;C</div>
 							</div>
 						</div>
 						<div class="col-md mb-2">
@@ -81,6 +85,7 @@
 							<div class="input-group">
 								<input type="number" class="form-control" id="maxHCTemp" placeholder="90" value="90" step="1" min=0 max=90 required>
 								<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+								<div class="invalid-feedback" id="maxHCTemp_fb">0 - 90 &deg;C</div>
 							</div>
 						</div>
 					</div>
@@ -104,7 +109,8 @@
 						</div>
 						<div class="col mb-2">
 							<label for="hcformula">Edit formula</label>
-							<input type="string" class="form-control" id="hcformula" value="x" required>
+							<input type="text" class="form-control" id="hcformula" value="x" pattern="[0-9x +\-*/().,%]+" required>
+							<div class="invalid-feedback">Only numbers, x, + - * / ( ) . , allowed</div>
 						</div>
 						<div class="col mb-2">
 							<label for="generatehc">&nbsp;</label>
@@ -263,6 +269,7 @@ function updateHeatingCurveMinMax() {
 	$('#minHCTemp').prop('max', $('#maxHCTemp').val());
 	$('#maxHCTemp').prop('min', $('#minHCTemp').val());
 	$('#maxHCTemp').prop('max', $('#maxHeatingTemp').val());
+	updateValidationFeedback();
 }
 
 function updateMinHeatingTemp() {
@@ -287,6 +294,13 @@ function updateMaxHeatingTemp() {
 	}
 
 	updateHeatingCurveMinMax();
+}
+
+function updateValidationFeedback() {
+	$('#minHeatingTemp_fb').html($('#minHeatingTemp').prop('min') + ' - ' + $('#minHeatingTemp').prop('max') + ' &deg;C');
+	$('#maxHeatingTemp_fb').html($('#maxHeatingTemp').prop('min') + ' - ' + $('#maxHeatingTemp').prop('max') + ' &deg;C');
+	$('#minHCTemp_fb').html($('#minHCTemp').prop('min') + ' - ' + $('#minHCTemp').prop('max') + ' &deg;C');
+	$('#maxHCTemp_fb').html($('#maxHCTemp').prop('min') + ' - ' + $('#maxHCTemp').prop('max') + ' &deg;C');
 }
 
 function updateHeatingCurveTemp() {
@@ -386,9 +400,15 @@ $(document).ready(function() {
 		var formula = $('#hcformula').val();
 		var minTemp = parseInt($('#minHCTemp').val());
 		var maxTemp = parseInt($('#maxHCTemp').val());
+
+		if (!/^[0-9x\s+\-*/().,%]+$/.test(formula)) {
+			alert("Formula contains invalid characters.\nAllowed: numbers, x, + - * / ( ) . ,");
+			return;
+		}
+
 		try {
 			heatingCurvePoints = heatingCurveTemperatureRange.map(function(x) {
-				var temp = parseInt(eval(formula));
+				var temp = parseInt(Function('x', 'return (' + formula + ')')(x));
 				temp = temp > maxTemp ? maxTemp : temp;
 				temp = temp < minTemp ? minTemp : temp;
 				return temp;
@@ -400,29 +420,19 @@ $(document).ready(function() {
 		}
 	});
 
+	$('#hcformula').on('input', function() {
+		if (/^[0-9x\s+\-*/().,%]+$/.test($(this).val())) {
+			$(this).removeClass('is-invalid').addClass('is-valid');
+		} else {
+			$(this).removeClass('is-valid').addClass('is-invalid');
+		}
+	});
+
 	$('#BoilerControlMode').change(verifyBoilerControlMode)
 
 	loadBoilerParams();
 	loadBoilerSettings();
 });
-
-//TODO shared
-function HttpResponseException(message, status) {
-	this.message = message;
-	this.status = status;
-	this.name = "HTTP Response error";
-}
-
-HttpResponseException.prototype.toString = function() {
-	return this.name + ': ' + this.status + ' "' + this.message + '"';
-}
-
-function validateResponse(response) {
-	if (!response.ok) {
-			throw new HttpResponseException(response.statusText, response.status);
-		}
-		return response;
-}
 
 function loadDefaultBoilerSettings() {
 	$('#valvePreheatingDelay').val(0);
@@ -491,6 +501,7 @@ function loadBoilerSettings() {
 }
 
 function saveBoilerSettings() {
+	if (!validateForm('#boilereditform')) return;
 	$("#SaveBoilerSettings").prop('disabled', true);
 
 	let settings = {
@@ -509,7 +520,6 @@ function saveBoilerSettings() {
 
 	fetch(hostName + '/config/boiler', {
 		method: 'post',
-		mode: 'no-cors',
 		cache: 'no-cache',
 		credentials: 'same-origin',
 		headers: { "Content-Type": "application/json" },
@@ -522,13 +532,15 @@ function saveBoilerSettings() {
 				return;
 			}
 		} else {
-			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+			alert("Not sure if config saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 		}
 	})
 	.catch(function(error) {
 		alert(error);
+	})
+	.finally(function() {
+		$("#SaveBoilerSettings").prop('disabled', false);
 	});
-	$("#SaveBoilerSettings").prop('disabled', false);
 }
 
 function reboot() {

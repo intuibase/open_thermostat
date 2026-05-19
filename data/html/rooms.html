@@ -8,7 +8,7 @@
 	</div>
 </div>
 
-<form id="programeditform" class="invisible">
+<form id="programeditform" class="invisible" novalidate>
 	<div class="form-group">
 		<div class="form-row align-items-end">
 			<div class="col mb-2">
@@ -126,7 +126,7 @@
 						var upElement = element.toUpperCase();
 
 						if (upElement === currentSensor) {
-							$('#selectSensorModalSelect').append($("<option selected>" + element + "</option>"));
+							$('#selectSensorModalSelect').append($('<option>').prop('selected', true).text(element));
 						} else {
 							var disableIt = false;
 							if (hideUtilised) {
@@ -139,9 +139,9 @@
 								});
 							}
 							if (disableIt) {
-								$('#selectSensorModalSelect').append($("<option disabled>" + element + "</option>"));
+								$('#selectSensorModalSelect').append($('<option>').prop('disabled', true).text(element));
 							} else {
-								$('#selectSensorModalSelect').append($("<option>" + element + "</option>"));
+								$('#selectSensorModalSelect').append($('<option>').text(element));
 							}
 						}
 
@@ -201,6 +201,7 @@
 	});
 
 	function saveProgram() {
+		if (!validateForm('#programeditform')) return;
 		var program = JSON.stringify(loadedProgram, undefined, null);
 		var selector = document.getElementById('selectprogram');
 
@@ -208,7 +209,6 @@
 
 		fetch(hostName + '/config/programs/' + selector.value, {
 			method: 'post',
-			mode: 'no-cors',
 			cache: 'no-cache',
 			credentials: 'same-origin',
 			headers: { "Content-Type": "application/json" },
@@ -221,14 +221,15 @@
 					// 	return;
 					// }
 				} else {
-					alert("Not sure if program saved\nStatus: " + res.status + "\nBody:\n" + res.body);
+					alert("Not sure if program saved\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 				}
 			})
 			.catch(function (error) {
 				alert(error);
+			})
+			.finally(function () {
+				$("#saveprogram").prop('disabled', false);
 			});
-		$("#saveprogram").prop('disabled', true);
-
 	}
 
 	function getAvailablePrograms() {
@@ -244,9 +245,9 @@
 
 						programs.forEach(element => {
 							if (element === currentProgram) {
-								$('#selectprogram').append($("<option selected>" + element + "</option>"));
+								$('#selectprogram').append($('<option>').prop('selected', true).text(element));
 							} else {
-								$('#selectprogram').append($("<option>" + element + "</option>"));
+								$('#selectprogram').append($('<option>').text(element));
 							}
 						});
 
@@ -257,7 +258,6 @@
 					});
 			}).catch(function (error) {
 				alert(error);
-				getAvailablePrograms();
 			}
 			);
 	}
@@ -294,7 +294,7 @@
 			loadedProgram = [];
 		}
 
-		$('#selectprogram').append($("<option selected>" + name + "</option>"));
+		$('#selectprogram').append($('<option>').prop('selected', true).text(name));
 		saveProgram();
 		refreshLoadedProgram();
 	}
@@ -321,22 +321,12 @@
 					$('#selectprogram option:selected').remove()
 					$('#selectprogram').trigger('change');
 				} else {
-					alert("Not sure if program deleted\nStatus: " + res.status + "\nBody:\n" + res.body);
+					alert("Not sure if program deleted\nStatus: " + res.status + "\nBody:\n" + res.statusText);
 				}
 			})
 			.catch(function (error) {
 				alert(error);
 			});
-	}
-
-	function HttpResponseException(message, status) {
-		this.message = message;
-		this.status = status;
-		this.name = "HTTP Response error";
-	}
-
-	HttpResponseException.prototype.toString = function () {
-		return this.name + ': ' + this.status + ' ' + this.message + '"';
 	}
 
 	function loadProgram() {
@@ -373,7 +363,7 @@
 		$('#roomSelectorSelect').find('option').remove();
 
 		loadedProgram.forEach(element => {
-			$('#roomSelectorSelect').append($("<option>" + element.name + "</option>"));
+			$('#roomSelectorSelect').append($('<option>').text(element.name));
 		});
 
 		if (loadedProgram.length == 0) {
@@ -389,15 +379,15 @@
 	function openEditRoomNameModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter room name");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editRoomName" value="` + roomFound.name + `"></form>`);
+		$('#editModalBody').html('<form novalidate><input type="text" class="form-control" id="editRoomName" pattern="[A-Za-z0-9_\\-]+" required><div class="invalid-feedback">Only letters, digits, _ and - allowed</div></form>');
+		$('#editRoomName').val(roomFound.name);
 		$("#editModalSave").off('click');
 		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
+			var input = $('#editRoomName')[0];
+			input.parentElement.classList.add('was-validated');
+			if (!input.checkValidity()) return;
 			let name = $('#editRoomName').val();
-			if (name === undefined || name.length == 0) {
-				alert("Name cannot be empty");
-				return;
-			}
 			roomFound.name = name;
 			$('#roomSelectorSelect').children("option:selected").text(roomFound.name);
 			$('#editModal').modal('hide');
@@ -408,15 +398,14 @@
 	function openAddNewRoomModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter new room name");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewRoomName"></form>`);
+		$('#editModalBody').html('<form novalidate><input type="text" class="form-control" id="addNewRoomName" pattern="[A-Za-z0-9_\\-]+" required><div class="invalid-feedback">Only letters, digits, _ and - allowed</div></form>');
 		$("#editModalSave").off('click');
 		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
+			var input = $('#addNewRoomName')[0];
+			input.parentElement.classList.add('was-validated');
+			if (!input.checkValidity()) return;
 			let name = $('#addNewRoomName').val();
-			if (name === undefined || name.length == 0) {
-				alert("Name must be set");
-				return;
-			}
 			addNewRoom(name);
 			$('#editModal').modal('hide');
 		});
@@ -491,6 +480,7 @@
 			<div class="input-group">
 				<input type="number" class="form-control" id="roomBaseTemp" placeholder="20.00" value="" step="0.05" min=10 max=30 required>
 				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+				<div class="invalid-feedback">10 - 30 &deg;C</div>
 			</div>
 		</div>
 		<div class="col-md-4 mb-2">
@@ -498,6 +488,7 @@
 			<div class="input-group">
 				<input type="number" class="form-control" id="roomUpperMaging" placeholder="0.10" value="" step="0.05" min=0.01 max=5  required>
 				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+				<div class="invalid-feedback">0.01 - 5 &deg;C</div>
 			</div>
 		</div>
 		<div class="col-md-4 mb-2">
@@ -505,6 +496,7 @@
 			<div class="input-group">
 				<input type="number" class="form-control" id="roomLowerMargin" placeholder="0.10" value="" step="0.05" min=0.01 max=5 required>
 				<div class="input-group-append"><div class="input-group-text">&deg;C</div></div>
+				<div class="invalid-feedback">0.01 - 5 &deg;C</div>
 			</div>
 		</div>
 	</div>
@@ -657,7 +649,7 @@
 	function showTempOverrides() {
 		if (roomFound.temperatures !== undefined) {
 			roomFound.temperatures.forEach(element => {
-				$('#tempOverridesSelect').append($("<option>" + element.name + "</option>"));
+				$('#tempOverridesSelect').append($('<option>').text(element.name));
 			});
 		}
 
@@ -720,15 +712,14 @@
 	function openAddNewOverrideModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter name for temperature override");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="addNewOverrideName"></form>`);
+		$('#editModalBody').html('<form novalidate><input type="text" class="form-control" id="addNewOverrideName" pattern="[A-Za-z0-9_\\-]+" required><div class="invalid-feedback">Only letters, digits, _ and - allowed</div></form>');
 		$("#editModalSave").off('click');
 		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
+			var input = $('#addNewOverrideName')[0];
+			input.parentElement.classList.add('was-validated');
+			if (!input.checkValidity()) return;
 			let name = $('#addNewOverrideName').val();
-			if (name === undefined || name.length == 0) {
-				alert("Name must be set");
-				return;
-			}
 			createNewTempOverride(name);
 			$('#editModal').modal('hide');
 		});
@@ -759,15 +750,15 @@
 	function openEditTempOverrideNameModal(event) {
 		event.preventDefault();
 		$('#editModalLabel').text("Enter temperature override name");
-		$('#editModalBody').html(`<form><input type="text" class="form-control" id="editOverrideName" value="` + getSelectedTemp().name + `"></form>`);
+		$('#editModalBody').html('<form novalidate><input type="text" class="form-control" id="editOverrideName" pattern="[A-Za-z0-9_\\-]+" required><div class="invalid-feedback">Only letters, digits, _ and - allowed</div></form>');
+		$('#editOverrideName').val(getSelectedTemp().name);
 		$("#editModalSave").off('click');
 		$("#editModalSave").on('click', function (event) {
 			event.preventDefault();
+			var input = $('#editOverrideName')[0];
+			input.parentElement.classList.add('was-validated');
+			if (!input.checkValidity()) return;
 			let name = $('#editOverrideName').val();
-			if (name === undefined || name.length == 0) {
-				alert("Name cannot be empty");
-				return;
-			}
 			getSelectedTemp().name = name;
 			$('#tempOverridesSelect').children("option:selected").text(getSelectedTemp().name);
 			$('#editModal').modal('hide');
