@@ -102,6 +102,18 @@
 				opacity: 1;
 			}
 		}
+
+		@keyframes alternateA {
+			0%, 45% { opacity: 1; }
+			50%, 95% { opacity: 0; }
+			100% { opacity: 1; }
+		}
+
+		@keyframes alternateB {
+			0%, 45% { opacity: 0; }
+			50%, 95% { opacity: 1; }
+			100% { opacity: 0; }
+		}
 	</style>
 
 	<svg style="display: none">
@@ -463,6 +475,9 @@
 
 			let burnerPower = emsStatus.currentBurnerPower != null && emsStatus.burningGas ? emsStatus.currentBurnerPower + '%' : '';
 
+			let hasError = emsStatus.displayCode != null && emsStatus.displayCode !== '--';
+			let errorCode = hasError ? escapeHtml(emsStatus.displayCode) : '';
+
 			if (emsStatus.warmWaterEnabled != null) {
 				$('#img-watertap > #img-watertap-off').css('display', emsStatus.warmWaterEnabled ? 'none' : 'inline');
 			}
@@ -486,8 +501,16 @@
 						<div class='row m-0 mb-0 justify-content-center' style='font-size: 0.6rem; height: 1.0rem;'><svg width="16px" height="16px"><use style='` + showFlame + `' href="#img-flame" /></svg></div>
 						<div class='row m-0 justify-content-center' style='font-size: 0.5rem;'>` + burnerPower + `</div>
 					</div>
-					<div class='row justify-content-center' style='font-size: 1.5rem; font-weight: bold;'><span>` + flowTemp + `</span><span style='font-size: 0.8rem; line-height: 1.8rem;'>` + (flowTemp.length > 0 ? '&deg;C' : '') + `</span></div>
-					<div class='row justify-content-center' style='font-size: 0.8rem;'><span>` + setTemp + `</span><span style='font-size: 0.6rem; line-height: 1.1rem;'>` + (setTemp.length > 0 ? '&deg;C' : '') + `</span></div>
+					<div style='position: relative;'>
+						<div style='` + (hasError ? 'animation: alternateA 4s ease-in-out infinite;' : '') + `'>
+							<div class='row justify-content-center' style='font-size: 1.5rem; font-weight: bold;'><span>` + flowTemp + `</span><span style='font-size: 0.8rem; line-height: 1.8rem;'>` + (flowTemp.length > 0 ? '&deg;C' : '') + `</span></div>
+							<div class='row justify-content-center' style='font-size: 0.8rem;'><span>` + setTemp + `</span><span style='font-size: 0.6rem; line-height: 1.1rem;'>` + (setTemp.length > 0 ? '&deg;C' : '') + `</span></div>
+						</div>
+` + (hasError ? `						<div style='position: absolute; top: 0; left: 0; right: 0; animation: alternateB 4s ease-in-out infinite;'>
+							<div class='row justify-content-center' style='font-size: 1.5rem; font-weight: bold; color: red;'><span>` + errorCode + `</span></div>
+							<div class='row justify-content-center' style='font-size: 0.8rem; color: red;'><span>` + emsStatus.serviceCode + `</span></div>
+						</div>
+` : '') + `					</div>
 					<div class='row justify-content-center align-items-end' style='height: 100%;'>
 						<div class='d-flex flex-column mb-1' style='width: 1.6rem; height: 1.0rem;' >
 							<div class='m-0 text-center' style='font-size: 0.6rem; font-weight: bold; height:60%'>` + outdoorTemperature + `</div>
