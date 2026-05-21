@@ -45,16 +45,17 @@ namespace config {
 
 namespace helper {
 
-
-std::vector<uint8_t> parseValves(cJSON *root) {
-	std::vector<uint8_t> retVal;
+std::vector<std::string> parseValves(cJSON *root) {
+	std::vector<std::string> retVal;
 	auto valves = cJSON_GetObjectItem(root, "valves");
 	if (valves && valves->type == cJSON_Array) {
 		auto noValves = cJSON_GetArraySize(valves);
 		for (auto valve = 0; valve < noValves; ++valve) {
 			auto item = cJSON_GetArrayItem(valves, valve);
-			if (cJSON_IsNumber(item)) {
-				retVal.push_back(item->valueint);
+			if (cJSON_IsString(item)) {
+				retVal.push_back(item->valuestring);
+			} else if (cJSON_IsNumber(item)) {
+				retVal.push_back(std::to_string(item->valueint)); // backward compat: index as string
 			}
 		}
 	}
@@ -128,8 +129,8 @@ heating::RoomConfig parseRoom(cJSON *obj) {
 
 	heating::logger.printf("Room '%s' sensor: '" PRiBleAddress "' baseTemp: %d enabled: %d valves: %zu temperatures: %zu valves: ", room.name_.c_str(), PRaBleAddress(room.sensorAddress_), room.baseTemperature_, room.enabled_, room.valves_.size(), room.temperatures_.size());
 
-	for (auto valve : room.valves_) {
-		heating::logger.printf("%d ", valve);
+	for (auto const &valve : room.valves_) {
+		heating::logger.printf("'%s' ", valve.c_str());
 	}
 	heating::logger.println("");
 
@@ -137,15 +138,35 @@ heating::RoomConfig parseRoom(cJSON *obj) {
 }
 }
 
-uint8_t getBoilerPin() {
+std::optional<PinConfig> getBoilerPin() {
 	File file = SPIFFS.open("/cfg/cfgpins.json", FILE_READ);
+	if (!file)
+		return {};
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
 	file.close();
-	if (!root) {
-		heating::logger.println("Error parsing json");
+	if (!root)
 		return {};
+
+	auto bp = cJSON_GetObjectItem(root.get(), "boiler_pin");
+	if (!bp)
+		return {};
+
+	// New format: {"source": "builtin", "pin": 14}
+	if (bp->type == cJSON_Object) {
+		auto src = cJSON_GetObjectItem(bp, "source");
+		auto pin = cJSON_GetObjectItem(bp, "pin");
+		if (!src || !cJSON_IsString(src) || !pin || !cJSON_IsNumber(pin))
+			return {};
+		return PinConfig{src->valuestring, static_cast<uint8_t>(pin->valueint)};
 	}
-	return json::getInt(root.get(), "boiler_pin");
+
+	// Legacy format: plain number
+	if (cJSON_IsNumber(bp)) {
+		return PinConfig{"builtin", static_cast<uint8_t>(bp->valueint)};
+	}
+
+	// null = not used
+	return {};
 }
 
 RTCPins getRTCPins() {
@@ -259,8 +280,10 @@ std::optional<EmsForwarderPins> getEmsForwarderPins() {
 	return {pins};
 }
 
-std::array<uint8_t, 8> getValvePins() {
+std::vector<PinConfig> getValvePins() {
 	File file = SPIFFS.open("/cfg/cfgpins.json", FILE_READ);
+	if (!file)
+		return {};
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
 	file.close();
 	if (!root) {
@@ -275,20 +298,66 @@ std::array<uint8_t, 8> getValvePins() {
 	}
 
 	auto noValves = cJSON_GetArraySize(valve_pins);
-	if (noValves != 8) {
-		heating::logger.printf("Found %d valves, should be 8\n", noValves);
-		return {};
-	}
+	std::vector<PinConfig> result;
+	result.reserve(noValves);
 
-	std::array<uint8_t, 8> returnValue;
-	for (auto valve = 0; valve < noValves; ++valve) {
-		auto item = cJSON_GetArrayItem(valve_pins, valve);
+	for (int i = 0; i < noValves; ++i) {
+		auto item = cJSON_GetArrayItem(valve_pins, i);
+
+		if (cJSON_IsNull(item)) {
+			continue; // skip "not used" entries
+		}
+
+		// New format: {"source": "ext:Ext1", "pin": 0}
+		if (item->type == cJSON_Object) {
+			auto src = cJSON_GetObjectItem(item, "source");
+			auto pin = cJSON_GetObjectItem(item, "pin");
+			if (src && cJSON_IsString(src) && pin && cJSON_IsNumber(pin)) {
+				std::string label;
+				auto lbl = cJSON_GetObjectItem(item, "label");
+				if (lbl && cJSON_IsString(lbl))
+					label = lbl->valuestring;
+				result.push_back(PinConfig{src->valuestring, static_cast<uint8_t>(pin->valueint), std::move(label)});
+			}
+			continue;
+		}
+
+		// Legacy format: plain number
 		if (cJSON_IsNumber(item)) {
-			returnValue[valve] = item->valueint;
-			//			heating::logger.printf("Valve %d pin: %d\n", valve, item->valueint);
+			result.push_back(PinConfig{"builtin", static_cast<uint8_t>(item->valueint)});
 		}
 	}
-	return returnValue;
+	return result;
+}
+
+std::vector<GpioExtenderConfig> getGpioExtenders() {
+	File file = SPIFFS.open("/cfg/cfgpins.json", FILE_READ);
+	if (!file)
+		return {};
+	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
+	file.close();
+	if (!root)
+		return {};
+
+	auto arr = cJSON_GetObjectItem(root.get(), "gpio_extenders");
+	if (!arr || arr->type != cJSON_Array)
+		return {};
+
+	std::vector<GpioExtenderConfig> result;
+	for (int i = 0; i < cJSON_GetArraySize(arr); ++i) {
+		auto item = cJSON_GetArrayItem(arr, i);
+		if (item->type != cJSON_Object)
+			continue;
+
+		auto type = cJSON_GetObjectItem(item, "type");
+		auto addr = cJSON_GetObjectItem(item, "address");
+		auto label = cJSON_GetObjectItem(item, "label");
+
+		if (type && addr && label && cJSON_IsString(type) && cJSON_IsNumber(addr) && cJSON_IsString(label)) {
+			result.push_back(GpioExtenderConfig{type->valuestring, static_cast<uint8_t>(addr->valueint), label->valuestring});
+		}
+	}
+	return result;
 }
 
 APConfig getAPConfig() {
