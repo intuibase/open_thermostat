@@ -36,6 +36,9 @@ public:
 	}
 
 	void startBoilerOrContinue(bool shouldStartBoiler, bool shouldBoilerContinue, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
+		if (isManualTestActive())
+			return; // manual test overrides normal operation
+
 		DBGLOGBOILER("Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
 
 		if (valvePreheating_ && (clock_t::now() - lastPreheatTime_ >= std::chrono::seconds(config_.boiler.valvePreheatingDelay))) {
@@ -78,6 +81,9 @@ public:
 	}
 
 	void handleValves(std::set<uint8_t> const &valvesToClose) {
+		if (isManualTestActive())
+			return; // manual test overrides normal operation
+
 		if (!isBoilerStarted() && !valvePreheating_) {
 			openAllValves();
 			return;
@@ -99,11 +105,25 @@ public:
 			}
 		}
 		ss << "]";
+		ss << ", \"valveLabels\": [";
+		for (size_t valve = 0; valve < valveLabels_.size(); ++valve) {
+			ss << "\"" << valveLabels_[valve] << "\"";
+			if (valve + 1 < valveLabels_.size()) {
+				ss << ", ";
+			}
+		}
+		ss << "]";
 		if (currentOutdoorTemperature_) {
 			ss << ", \"outdoorTemperature\": " << currentOutdoorTemperature_.value();
 		}
 		if (currentHeatingTemperature_) {
 			ss << ", \"heatingTemperature\": " << currentHeatingTemperature_.value();
+		}
+		if (manualTestActive_) {
+			auto remaining = std::chrono::duration_cast<std::chrono::seconds>(manualTestEnd_ - clock_t::now()).count();
+			if (remaining < 0)
+				remaining = 0;
+			ss << ", \"manualTest\": {\"active\": true, \"remainingSeconds\": " << remaining << "}";
 		}
 		ss << "}";
 	}
@@ -113,6 +133,50 @@ public:
 		std::stringstream ss;
 		getStatus(ss);
 		return ss.str();
+	}
+
+	void startManualTest(bool boilerState, std::vector<bool> const &valveStates, uint32_t durationSeconds) {
+		DBGLOGBOILER("startManualTest boiler: %d, valves: %zu, duration: %ds\n", boilerState, valveStates.size(), durationSeconds);
+
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			manualTestActive_ = true;
+			manualTestEnd_ = clock_t::now() + std::chrono::seconds(durationSeconds);
+			currentBoilerState_ = boilerState;
+		}
+
+		boilerPort_->write(boilerState);
+
+		for (size_t i = 0; i < valvePorts_.size() && i < valveStates.size(); ++i) {
+			bool opened = valveStates[i];
+			handleValve(i, !opened); // handleValve takes "closed" flag
+		}
+	}
+
+	void stopManualTest() {
+		DBGLOGBOILER("stopManualTest%s\n", "");
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			manualTestActive_ = false;
+		}
+		// Turn off boiler and open all valves for safety
+		boilerPort_->write(false);
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			currentBoilerState_ = false;
+		}
+		openAllValves();
+	}
+
+	bool isManualTestActive() {
+		if (!manualTestActive_)
+			return false;
+		if (clock_t::now() >= manualTestEnd_) {
+			DBGLOGBOILER("Manual test expired, stopping%s\n", "");
+			stopManualTest();
+			return false;
+		}
+		return true;
 	}
 
 private:
@@ -210,6 +274,9 @@ private:
 	bool currentBoilerState_ = false; // true - heating
 	std::optional<int16_t> currentHeatingTemperature_ = 0;
 	std::optional<int16_t> currentOutdoorTemperature_ = 0;
+
+	bool manualTestActive_ = false;
+	clock_t::time_point manualTestEnd_;
 
 	mutable std::mutex mutex_;
 };

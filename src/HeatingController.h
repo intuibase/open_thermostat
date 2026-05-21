@@ -256,6 +256,10 @@ public:
 		return false;
 	}
 
+	void startManualGpioTest(bool boilerState, std::vector<bool> const &valveStates, uint32_t durationSeconds) { boiler_.startManualTest(boilerState, valveStates, durationSeconds); }
+
+	void stopManualGpioTest() { boiler_.stopManualTest(); }
+
 	void getDevicesFound(std::ostream &ss) {
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 

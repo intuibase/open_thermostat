@@ -81,6 +81,8 @@ public:
 		server_.on("/config/boiler", [this]() { configBoiler(); });
 		server_.on("/config/hardware", [this]() { configHardware(); });
 		server_.on("/hardware/i2c/scan", HTTP_GET, [this]() { i2cScan(); });
+		server_.on("/hardware/test/gpio", HTTP_POST, [this]() { gpioTestStart(); });
+		server_.on("/hardware/test/gpio", HTTP_DELETE, [this]() { gpioTestStop(); });
 		server_.on("/config/debug", [this]() { configDebug(); });
 
 		server_.on("/config/program/current", [this]() { configProgramCurrent(); }); // get selected program
@@ -462,6 +464,56 @@ private:
 		ss << "]";
 
 		server_.sendView(200, "application/json"sv, payloadBuf.view());
+	}
+
+	void gpioTestStart() {
+		DBGLOGREST("gpioTestStart\n");
+
+		if (!server_.hasArg("plain")) {
+			server_.send(400, "text/plain", "Missing body");
+			return;
+		}
+		auto body = server_.arg("plain");
+		if (body.isEmpty()) {
+			server_.send(400, "text/plain", "Empty body");
+			return;
+		}
+
+		std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(body.c_str()), &cJSON_Delete);
+		if (!root) {
+			server_.send(400, "text/plain", "Invalid JSON");
+			return;
+		}
+
+		auto durationObj = cJSON_GetObjectItem(root.get(), "duration");
+		if (!durationObj || !cJSON_IsNumber(durationObj) || durationObj->valueint <= 0 || durationObj->valueint > 3600) {
+			server_.send(400, "text/plain", "Invalid duration (1-3600s)");
+			return;
+		}
+		uint32_t duration = durationObj->valueint;
+
+		auto boilerObj = cJSON_GetObjectItem(root.get(), "boiler");
+		bool boilerState = boilerObj && cJSON_IsTrue(boilerObj);
+
+		auto valvesArr = cJSON_GetObjectItem(root.get(), "valves");
+		std::vector<bool> valveStates;
+		if (valvesArr && cJSON_IsArray(valvesArr)) {
+			int size = cJSON_GetArraySize(valvesArr);
+			for (int i = 0; i < size; ++i) {
+				auto item = cJSON_GetArrayItem(valvesArr, i);
+				valveStates.push_back(cJSON_IsTrue(item));
+			}
+		}
+
+		DBGLOGREST("gpioTestStart boiler: %d, valves: %zu, duration: %ds\n", boilerState, valveStates.size(), duration);
+		controller_.startManualGpioTest(boilerState, valveStates, duration);
+		server_.send(200, "text/plain", "OK");
+	}
+
+	void gpioTestStop() {
+		DBGLOGREST("gpioTestStop\n");
+		controller_.stopManualGpioTest();
+		server_.send(200, "text/plain", "OK");
 	}
 
 	void configDebug() {
