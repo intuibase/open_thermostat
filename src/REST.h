@@ -3,6 +3,7 @@
 #include <esp_ota_ops.h>
 #include <SPIFFS.h>
 #include <WebServer.h>
+#include <Wire.h>
 #include <uri/UriBraces.h>
 #include <cJSON.h>
 
@@ -79,6 +80,7 @@ public:
 		server_.on("/config/device", [this]() { configDevice(); });
 		server_.on("/config/boiler", [this]() { configBoiler(); });
 		server_.on("/config/hardware", [this]() { configHardware(); });
+		server_.on("/hardware/i2c/scan", HTTP_GET, [this]() { i2cScan(); });
 		server_.on("/config/debug", [this]() { configDebug(); });
 
 		server_.on("/config/program/current", [this]() { configProgramCurrent(); }); // get selected program
@@ -419,6 +421,47 @@ private:
 				break;
 			}
 		}
+	}
+
+	void i2cScan() {
+		DBGLOGREST("i2cScan\n");
+
+		// Known GPIO extender address ranges
+		struct KnownRange {
+			uint8_t from;
+			uint8_t to;
+			const char *type;
+		};
+		static constexpr KnownRange ranges[] = {
+			{0x20, 0x27, "pcf8574"},  // PCF8574
+			{0x38, 0x3F, "pcf8574a"}, // PCF8574A
+			{0x20, 0x27, "mcp23017"}, // MCP23017 (same range as PCF8574)
+		};
+
+		ib::viewable_stringbuf payloadBuf;
+		std::ostream ss(&payloadBuf);
+		ss << "[";
+		bool first = true;
+
+		for (uint8_t addr = 0x03; addr < 0x78; ++addr) {
+			Wire.beginTransmission(addr);
+			if (Wire.endTransmission() == 0) {
+				const char *guessedType = "unknown";
+				for (auto const &r : ranges) {
+					if (addr >= r.from && addr <= r.to) {
+						guessedType = r.type;
+						break;
+					}
+				}
+				if (!first)
+					ss << ",";
+				first = false;
+				ss << "{\"address\":" << static_cast<int>(addr) << ",\"type\":\"" << guessedType << "\"}";
+			}
+		}
+		ss << "]";
+
+		server_.sendView(200, "application/json"sv, payloadBuf.view());
 	}
 
 	void configDebug() {

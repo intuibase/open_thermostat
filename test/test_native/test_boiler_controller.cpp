@@ -1,41 +1,45 @@
 #include <gtest/gtest.h>
 #include "BoilerController.h"
+#include "GpioPort.h"
 
 #include <vector>
+#include <memory>
 
 // ============================================================================
-// GPIO mock / recorder
+// GPIO mock
 // ============================================================================
 
 namespace {
 
-struct GpioRecorder {
-	struct PinWrite { uint8_t pin; uint8_t value; };
-	std::vector<PinWrite> writes;
-	std::vector<std::pair<uint8_t, uint8_t>> modes;
+struct MockGpioPort : public gpio::GpioPort {
+	int id;
+	bool initialized = false;
+	bool lastValue = false;
+	int writeCount = 0;
 
-	heating::BoilerController::GpioOps makeOps() {
-		return heating::BoilerController::GpioOps{
-			[this](uint8_t pin, uint8_t mode) { modes.push_back({pin, mode}); },
-			[this](uint8_t pin, uint8_t value) { writes.push_back({pin, value}); },
-			[](uint32_t) {}, // no-op delay
-			0x03, // PIN_OUTPUT
-			0x00, // PIN_LOW
-			0x01  // PIN_HIGH
-		};
-	}
+	explicit MockGpioPort(int id) : id(id) {}
 
-	void clear() { writes.clear(); modes.clear(); }
-
-	bool lastWriteFor(uint8_t pin, uint8_t &value) const {
-		for (auto it = writes.rbegin(); it != writes.rend(); ++it) {
-			if (it->pin == pin) { value = it->value; return true; }
-		}
-		return false;
+	void initOutput() override { initialized = true; }
+	void write(bool high) override {
+		lastValue = high;
+		writeCount++;
 	}
 };
 
+// Helper: create valve ports and keep raw pointers for assertions
+struct ValveMocks {
+	std::vector<MockGpioPort *> raw;
 
+	std::vector<std::unique_ptr<gpio::GpioPort>> makePorts(int count) {
+		std::vector<std::unique_ptr<gpio::GpioPort>> ports;
+		for (int i = 0; i < count; i++) {
+			auto p = std::make_unique<MockGpioPort>(i);
+			raw.push_back(p.get());
+			ports.push_back(std::move(p));
+		}
+		return ports;
+	}
+};
 
 // ============================================================================
 // Test fixtures
@@ -44,9 +48,8 @@ struct GpioRecorder {
 class BoilerOnOffTest : public ::testing::Test {
 protected:
 	config::BoilerConfig cfg;
-	config::valves_t valves = {{10, 11, 12, 13, 14, 15, 16, 17}};
-	uint8_t boilerPin = 5;
-	GpioRecorder gpio;
+	MockGpioPort *boilerGpio = nullptr;
+	ValveMocks valveMocks;
 	int16_t outdoorTemp = 500; // 5°C
 
 	void SetUp() override {
@@ -56,11 +59,9 @@ protected:
 	}
 
 	heating::BoilerController makeController() {
-		return heating::BoilerController(cfg, valves, boilerPin,
-			[this]() { return outdoorTemp; },
-			[](bool, uint8_t) {},
-			[](uint8_t) {},
-			gpio.makeOps());
+		auto bp = std::make_unique<MockGpioPort>(99);
+		boilerGpio = bp.get();
+		return heating::BoilerController(cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [](uint8_t) {}, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -77,14 +78,11 @@ TEST_F(BoilerOnOffTest, StartsOff) {
 
 TEST_F(BoilerOnOffTest, StartBoiler) {
 	auto bc = makeController();
-	gpio.clear();
 
 	bc.startBoilerOrContinue(true, false, std::nullopt);
 
-	// Boiler pin should be set LOW (active low)
-	uint8_t val = 0xFF;
-	ASSERT_TRUE(gpio.lastWriteFor(boilerPin, val));
-	EXPECT_EQ(val, 0x00); // PIN_LOW
+	// Boiler port should be written (enabled)
+	EXPECT_TRUE(boilerGpio->lastValue);
 
 	std::stringstream ss;
 	bc.getStatus(ss);
@@ -95,12 +93,9 @@ TEST_F(BoilerOnOffTest, StopBoiler) {
 	auto bc = makeController();
 	bc.startBoilerOrContinue(true, false, std::nullopt);
 
-	gpio.clear();
 	bc.startBoilerOrContinue(false, false, std::nullopt);
 
-	uint8_t val = 0xFF;
-	ASSERT_TRUE(gpio.lastWriteFor(boilerPin, val));
-	EXPECT_EQ(val, 0x01); // PIN_HIGH
+	EXPECT_FALSE(boilerGpio->lastValue);
 
 	std::stringstream ss;
 	bc.getStatus(ss);
@@ -183,34 +178,25 @@ TEST_F(ValvePreheatingTest, NoPreheating_WhenDelayZero) {
 
 TEST_F(BoilerOnOffTest, HandleValves_AllOpen_WhenBoilerOff) {
 	auto bc = makeController();
-	gpio.clear();
 
 	bc.handleValves({0, 2, 4}); // these should be ignored — boiler is off
 
-	// All valves should be opened (HIGH)
-	for (auto const &w : gpio.writes) {
-		EXPECT_EQ(w.value, 0x01);
+	// All valves should be opened (write false = open)
+	for (auto *v : valveMocks.raw) {
+		EXPECT_FALSE(v->lastValue);
 	}
 }
 
 TEST_F(BoilerOnOffTest, HandleValves_ClosesSpecified_WhenBoilerOn) {
 	auto bc = makeController();
 	bc.startBoilerOrContinue(true, false, std::nullopt);
-	gpio.clear();
 
 	bc.handleValves({1, 3}); // close valves 1 and 3
 
-	// Check GPIO writes for valve pins
-	uint8_t v0, v1, v2, v3;
-	ASSERT_TRUE(gpio.lastWriteFor(valves[0], v0));
-	ASSERT_TRUE(gpio.lastWriteFor(valves[1], v1));
-	ASSERT_TRUE(gpio.lastWriteFor(valves[2], v2));
-	ASSERT_TRUE(gpio.lastWriteFor(valves[3], v3));
-
-	EXPECT_EQ(v0, 0x01); // open
-	EXPECT_EQ(v1, 0x00); // closed
-	EXPECT_EQ(v2, 0x01); // open
-	EXPECT_EQ(v3, 0x00); // closed
+	EXPECT_FALSE(valveMocks.raw[0]->lastValue); // open
+	EXPECT_TRUE(valveMocks.raw[1]->lastValue);  // closed
+	EXPECT_FALSE(valveMocks.raw[2]->lastValue); // open
+	EXPECT_TRUE(valveMocks.raw[3]->lastValue);  // closed
 }
 
 // ============================================================================
@@ -220,9 +206,8 @@ TEST_F(BoilerOnOffTest, HandleValves_ClosesSpecified_WhenBoilerOn) {
 class BoilerEmsTest : public ::testing::Test {
 protected:
 	config::BoilerConfig cfg;
-	config::valves_t valves = {{10, 11, 12, 13, 14, 15, 16, 17}};
-	uint8_t boilerPin = 5;
-	GpioRecorder gpio;
+	MockGpioPort *boilerGpio = nullptr;
+	ValveMocks valveMocks;
 	int16_t outdoorTemp = 500; // 5°C
 
 	bool lastEmsEnabled = false;
@@ -237,11 +222,15 @@ protected:
 	}
 
 	heating::BoilerController makeController() {
-		return heating::BoilerController(cfg, valves, boilerPin,
-			[this]() { return outdoorTemp; },
-			[this](bool enabled, uint8_t flowTemp) { lastEmsEnabled = enabled; lastEmsFlowTemp = flowTemp; },
-			[this](uint8_t temp) { lastEmsHeatingTemp = temp; },
-			gpio.makeOps());
+		auto bp = std::make_unique<MockGpioPort>(99);
+		boilerGpio = bp.get();
+		return heating::BoilerController(
+			cfg, [this]() { return outdoorTemp; },
+			[this](bool enabled, uint8_t flowTemp) {
+				lastEmsEnabled = enabled;
+				lastEmsFlowTemp = flowTemp;
+			},
+			[this](uint8_t temp) { lastEmsHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -292,9 +281,8 @@ TEST_F(BoilerEmsTest, StopBoiler_SendsEmsDisable) {
 class BoilerOnOffOutdoorTest : public ::testing::Test {
 protected:
 	config::BoilerConfig cfg;
-	config::valves_t valves = {{10, 11, 12, 13, 14, 15, 16, 17}};
-	uint8_t boilerPin = 5;
-	GpioRecorder gpio;
+	MockGpioPort *boilerGpio = nullptr;
+	ValveMocks valveMocks;
 	int16_t outdoorTemp = 500;
 	uint8_t lastSetHeatingTemp = 0;
 
@@ -305,11 +293,9 @@ protected:
 	}
 
 	heating::BoilerController makeController() {
-		return heating::BoilerController(cfg, valves, boilerPin,
-			[this]() { return outdoorTemp; },
-			[](bool, uint8_t) {},
-			[this](uint8_t temp) { lastSetHeatingTemp = temp; },
-			gpio.makeOps());
+		auto bp = std::make_unique<MockGpioPort>(99);
+		boilerGpio = bp.get();
+		return heating::BoilerController(cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [this](uint8_t temp) { lastSetHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -321,10 +307,8 @@ TEST_F(BoilerOnOffOutdoorTest, SetsHeatingTemperatureFromCurve) {
 
 	EXPECT_EQ(lastSetHeatingTemp, 35);
 
-	// Also sets boiler pin LOW
-	uint8_t val = 0xFF;
-	ASSERT_TRUE(gpio.lastWriteFor(boilerPin, val));
-	EXPECT_EQ(val, 0x00);
+	// Also sets boiler port
+	EXPECT_TRUE(boilerGpio->lastValue);
 }
 
 TEST_F(BoilerOnOffOutdoorTest, UpdatesOnContinue) {

@@ -22,7 +22,7 @@ struct RoomConfig {
 		int16_t temperature_ = 0;
 		std::optional<uint8_t> heatingTemperatureOverride_; // heating temperature set on boiler
 		bool enabled_ = true;
-		std::vector<uint8_t> valves_;
+		std::vector<std::string> valves_;
 		std::array<bool, 7> days_ = {{true, true, true, true, true, true, true}}; // TODO memory use bitfields
 	};
 
@@ -36,7 +36,7 @@ struct RoomConfig {
 	BleAddress_t sensorAddress_;
 
 	std::vector<TemperatureSetting> temperatures_;
-	std::vector<uint8_t> valves_;
+	std::vector<std::string> valves_;
 };
 
 }
