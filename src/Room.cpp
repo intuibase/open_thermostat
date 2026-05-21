@@ -212,12 +212,12 @@ void Room::getStatus(std::ostream &ss) const {
 	bool firstValve = true;
 
 	auto const &valves = stats.currentProgram_ && !stats.currentProgram_->valves_.empty() ? stats.currentProgram_->valves_ : config_.valves_;
-	for (auto valve : valves) {
+	for (auto const &valve : valves) {
 		if (firstValve) {
-			ss << (int)valve;
+			ss << "\"" << valve << "\"";
 			firstValve = false;
 		} else {
-			ss << ", " << (int)valve;
+			ss << ", \"" << valve << "\"";
 		}
 	}
 	ss << "]}";

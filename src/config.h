@@ -1,14 +1,14 @@
 #pragma once
 
 #include <array>
+#include <vector>
+#include <string>
 #include <cJSON.h>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "RoomConfig.h"
-
-#define VALVE_COUNT 8
 
 namespace json {
 
@@ -30,9 +30,24 @@ std::optional<T> getOptInt(cJSON *root, const char *name) {
 
 namespace config {
 
-using valves_t = std::array<uint8_t, VALVE_COUNT>;
+// Describes a single output pin: built-in GPIO or on an I2C extender
+struct PinConfig {
+	std::string source = "builtin"; // "builtin" or "ext:<label>"
+	uint8_t pin = 0;
+	std::string label;
+};
+
+struct GpioExtenderConfig {
+	std::string type;    // "pcf8574" or "mcp23017"
+	uint8_t address = 0; // I2C address
+	std::string label;
+};
+
+using valves_t = std::vector<PinConfig>;
 
 valves_t getValvePins();
+std::optional<PinConfig> getBoilerPin();
+std::vector<GpioExtenderConfig> getGpioExtenders();
 
 struct APConfig {
 	std::string ssid = "IntuiBaseHeating";
@@ -141,7 +156,6 @@ OpenWeatherConfig getOpenWeatherConfig();
 BoilerConfig getBoilerConfig();
 BluetoothConfig getBluetoothConfig();
 
-uint8_t getBoilerPin();
 RTCPins getRTCPins();
 EmsPins getEmsPins();
 std::optional<EmsForwarderPins> getEmsForwarderPins();

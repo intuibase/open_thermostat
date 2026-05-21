@@ -2,6 +2,7 @@
 
 #include "BeaconBleAddress.h"
 #include "BoilerController.h"
+#include "BuiltinGpioPort.h"
 #include "BeaconTemperatureReader.h"
 #include "OpenWeather.h"
 #include "PeriodicCounter.h"
@@ -10,8 +11,13 @@
 #include "MQTT.h"
 #include "Room.h"
 
+#include "Logger.h"
 #include <algorithm>
+#include <atomic>
 #include <functional>
+#include <memory>
+#include <set>
+#include <unordered_map>
 #include <iomanip>
 #include <memory>
 #include <sstream>
@@ -20,11 +26,59 @@
 
 namespace heating {
 
+inline std::unique_ptr<gpio::GpioPort> createGpioPort(config::PinConfig const &pinCfg) {
+	if (pinCfg.source == "builtin") {
+		return std::make_unique<gpio::BuiltinGpioPort>(pinCfg.pin);
+	}
+	// TODO: handle "ext:<label>" — PCF8574/MCP23017 extenders
+	return std::make_unique<gpio::NullGpioPort>();
+}
+
+inline std::unique_ptr<gpio::GpioPort> createBoilerPort() {
+	auto pin = config::getBoilerPin();
+	if (!pin)
+		return std::make_unique<gpio::NullGpioPort>();
+	return createGpioPort(*pin);
+}
+
+inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts() {
+	auto pins = config::getValvePins();
+	std::vector<std::unique_ptr<gpio::GpioPort>> ports;
+	ports.reserve(pins.size());
+	for (auto const &p : pins) {
+		ports.push_back(createGpioPort(p));
+	}
+	return ports;
+}
+
+inline std::vector<std::string> createValveLabels() {
+	auto pins = config::getValvePins();
+	std::vector<std::string> labels;
+	labels.reserve(pins.size());
+	for (uint8_t i = 0; i < pins.size(); ++i) {
+		labels.push_back(pins[i].label.empty() ? std::to_string(i) : pins[i].label);
+	}
+	return labels;
+}
+
+inline std::unordered_map<std::string, uint8_t> buildValveLabelMap() {
+	auto pins = config::getValvePins();
+	std::unordered_map<std::string, uint8_t> map;
+	for (uint8_t i = 0; i < pins.size(); ++i) {
+		map[std::to_string(i)] = i; // backward compat: "0" → 0
+		if (!pins[i].label.empty()) {
+			map[pins[i].label] = i;
+		}
+	}
+	return map;
+}
+
 class HeatingController {
 public:
 	using boilerHeatingTemperatureOverride_t = BoilerController::boilerHeatingTemperatureOverride_t;
 
 	HeatingController() : openWeather_(config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(buildRoomsFromConfig()) {
+		heating::logger.printf("HeatingController constructed\n");
 		bluetoothScan_ = true;
 		lastReadTemperatureCounter_.notifyNow();
 	}
@@ -56,13 +110,18 @@ public:
 					auto valves = room->getValves();
 					if (debug::debug.debugHeatingController) {
 						DBGLOGHC("  adding valves to close for room %s valves: ", room->getName().c_str());
-						for (auto valve : valves) {
-							logger.printf("%d ", valve);
+						for (auto const &valve : valves) {
+							logger.printf("'%s' ", valve.c_str());
 						}
 						logger.println("");
 					}
 
-					valvesWhichShouldBeClosed.insert(valves.begin(), valves.end());
+					for (auto const &valve : valves) {
+						auto it = valveLabelMap_.find(valve);
+						if (it != valveLabelMap_.end()) {
+							valvesWhichShouldBeClosed.insert(it->second);
+						}
+					}
 				}
 			} else { // room is diabled - let's heat it because we don't know what happened
 					 //				valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
@@ -316,11 +375,12 @@ private:
 	ems::EmsController ems_;
 	config::BoilerConfig boilerConfig_{config::getBoilerConfig()};
 
-	BoilerController boiler_{boilerConfig_, config::getValvePins(), config::getBoilerPin(), [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
+	BoilerController boiler_{boilerConfig_, [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
 			ems.changeBoilerState(enabled, flowTempSet); }, [&ems = ems_](uint8_t heatingTemperature) {
-			ems.setHeatingTemperature(heatingTemperature); }, BoilerController::GpioOps{[](uint8_t pin, uint8_t mode) { pinMode(pin, mode); }, [](uint8_t pin, uint8_t value) { digitalWrite(pin, value); }, [](uint32_t ms) { delay(ms); }, OUTPUT, LOW, HIGH}};
+			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(), createValvePorts(), createValveLabels()};
 	std::string currentProgram_;
 	std::vector<std::shared_ptr<heating::Room>> rooms_;
+	std::unordered_map<std::string, uint8_t> valveLabelMap_{buildValveLabelMap()};
 	ib::PeriodicCounter lastReadTemperatureCounter_{5 * 60 * 1000}; // 5 mins in ms
 	BeaconTemperatureReader::BleDevices_t devicesFound_;
 	mutable std::mutex roomsAccessMutex_;

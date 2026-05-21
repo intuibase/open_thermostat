@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config.h"
+#include "GpioPort.h"
 #include "HeatingCurve.h"
 #include "Logger.h"
 #include <sstream>
@@ -10,6 +11,8 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
+#include <memory>
+#include <vector>
 
 namespace heating {
 
@@ -20,18 +23,15 @@ public:
 	using emsChangeBoilerState_t = std::function<void(bool, uint8_t)>;
 	using emsSetHeatingTemperature_t = std::function<void(uint8_t)>;
 
-	struct GpioOps {
-		std::function<void(uint8_t pin, uint8_t mode)> setPinMode;
-		std::function<void(uint8_t pin, uint8_t value)> writePin;
-		std::function<void(uint32_t ms)> delayMs;
-		uint8_t PIN_OUTPUT;
-		uint8_t PIN_LOW;
-		uint8_t PIN_HIGH;
-	};
-
-	BoilerController(config::BoilerConfig const &config, config::valves_t valves, uint8_t boilerPin, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature, GpioOps gpio) : config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature), valves_(valves), boilerPin_(boilerPin), gpio_(std::move(gpio)) {
-		for (size_t valve = 0; valve < valves_.size(); ++valve) {
-			gpio_.setPinMode(valves_[valve], gpio_.PIN_OUTPUT);
+	BoilerController(config::BoilerConfig const &config, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature,
+		std::unique_ptr<gpio::GpioPort> boilerPort, std::vector<std::unique_ptr<gpio::GpioPort>> valvePorts, std::vector<std::string> valveLabels)
+		: config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature)
+		, boilerPort_(std::move(boilerPort)), valvePorts_(std::move(valvePorts))
+		, valveLabels_(std::move(valveLabels))
+		, valvesStates_(valvePorts_.size(), true) {
+		boilerPort_->initOutput();
+		for (auto &vp : valvePorts_) {
+			vp->initOutput();
 		}
 	}
 
@@ -83,7 +83,7 @@ public:
 			return;
 		}
 
-		for (size_t valve = 0; valve < valves_.size(); ++valve) {
+		for (size_t valve = 0; valve < valvePorts_.size(); ++valve) {
 			bool close = valvesToClose.find(valve) != std::end(valvesToClose);
 			handleValve(valve, close);
 		}
@@ -116,22 +116,27 @@ public:
 	}
 
 private:
+	const char *valveLabel(uint8_t nr) const {
+		return nr < valveLabels_.size() && !valveLabels_[nr].empty() ? valveLabels_[nr].c_str() : "?";
+	}
+
 	void openAllValves() {
-		for (size_t valve = 0; valve < valves_.size(); ++valve) {
+		for (size_t valve = 0; valve < valvePorts_.size(); ++valve) {
 			handleValve(valve, false);
 		}
 	}
 
 	void handleValve(uint8_t nr, bool closed) {
-		uint8_t pin = 0;
 		{
 			std::lock_guard<std::mutex> lock(mutex_);
-			pin = valves_[nr];
 			valvesStates_[nr] = !closed;
 		}
-		gpio_.writePin(pin, closed ? gpio_.PIN_LOW : gpio_.PIN_HIGH);
-		gpio_.delayMs(10); // to avoid power surge when multiple valves are changed at once
-		DBGLOGBOILER("Handle valve %d state: %s coil %s \n", nr, !closed ? "open " : "close", closed ? "on" : "off");
+		valvePorts_[nr]->write(closed); // HIGH = coil on = closed
+		// small delay to avoid power surge when multiple valves change at once
+#ifdef ARDUINO
+		delay(10);
+#endif
+		DBGLOGBOILER("Handle valve %d '%s' state: %s coil %s \n", nr, valveLabel(nr), !closed ? "open " : "close", closed ? "on" : "off");
 	}
 
 	void changeBoilerState(bool enabled, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
@@ -156,9 +161,8 @@ private:
 				emsSetHeatingTemperature(currentHeatingTemperature_.value() / 100);
 			}
 
-			gpio_.setPinMode(boilerPin_, gpio_.PIN_OUTPUT);
-			DBGLOGBOILER("ON/OFF BOILER pin: %d enabled: %d\n", boilerPin_, enabled);
-			gpio_.writePin(boilerPin_, enabled ? gpio_.PIN_LOW : gpio_.PIN_HIGH);
+			DBGLOGBOILER("ON/OFF BOILER enabled: %d\n", enabled);
+			boilerPort_->write(enabled);
 		} else if  (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems) {
 			currentOutdoorTemperature_ = getOutdoorTemp_();
 			currentHeatingTemperature_ = getHeatingTemperature(currentOutdoorTemperature_.value());
@@ -193,10 +197,10 @@ private:
 	getOutdoorTemp_t getOutdoorTemp_;
 	emsChangeBoilerState_t emsChangeBoilerState_;
 	emsSetHeatingTemperature_t emsSetHeatingTemperature_;
-	config::valves_t valves_;
-	std::array<bool, VALVE_COUNT> valvesStates_ = {{true, true, true, true, true, true, true, true}};
-	uint8_t boilerPin_;
-	GpioOps gpio_;
+	std::unique_ptr<gpio::GpioPort> boilerPort_;
+	std::vector<std::unique_ptr<gpio::GpioPort>> valvePorts_;
+	std::vector<std::string> valveLabels_;
+	std::vector<bool> valvesStates_;
 
 	using clock_t = std::chrono::steady_clock;
 
