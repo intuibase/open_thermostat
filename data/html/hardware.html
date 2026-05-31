@@ -17,6 +17,7 @@
 
 		<ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
 			<li class="nav-item"><a class="nav-link active" id="pills-pins-tab" data-toggle="pill" href="#pills-pins" role="tab" aria-controls="pills-pins" aria-selected="true">Hardware I/O pins configuration</a></li>
+			<li class="nav-item"><a class="nav-link" id="pills-iotest-tab" data-toggle="pill" href="#pills-iotest" role="tab" aria-controls="pills-iotest" aria-selected="false">Manual I/O Test</a></li>
 			<!-- <li class="nav-item"><a class="nav-link" id="pills-curve-tab" data-toggle="pill" href="#pills-curve" role="tab" aria-controls="pills-curve" aria-selected="false">Heating curve</a></li> -->
 		</ul>
 		<div class="tab-content" id="pills-tabContent">
@@ -72,65 +73,83 @@
 					</div>
 
 					<div class="card mb-2">
-						<div class="card-header">Relay on/off pins</div>
+						<div class="card-header d-flex justify-content-between align-items-center">
+							<span>I2C GPIO Extenders</span>
+							<div>
+								<button type="button" class="btn btn-sm btn-outline-secondary" onclick="scanI2CBus();">Scan I2C bus</button>
+								<button type="button" class="btn btn-sm btn-success" onclick="addExtender();">+ Add</button>
+							</div>
+						</div>
+						<div class="card-body" id="ExtendersCard">
+							<div id="extendersList">
+								<!-- dynamically populated -->
+							</div>
+							<div id="extendersEmpty" class="text-muted text-center py-2">No GPIO extenders configured</div>
+						</div>
+					</div>
+
+					<div class="card mb-2">
+						<div class="card-header d-flex justify-content-between align-items-center">
+							<span>Relay on/off pins</span>
+							<button type="button" class="btn btn-sm btn-success" onclick="addValveRow();">+ Add heating circuit</button>
+						</div>
 						<div class="card-body" id="RelaysPinsCard">
-							<div class="form-row">
-								<div class="col-md-6 mb-2">
-									<label for="PinsRelays_Boiler">Boiler On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_Boiler" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
+							<div class="form-row mb-2">
+								<div class="col-md-4"><strong>Output</strong></div>
+								<div class="col-md-4"><strong>GPIO source</strong></div>
+								<div class="col-md-3"><strong>Pin</strong></div>
+								<div class="col-md-1"></div>
 							</div>
-							<div class="form-row">
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC1">Heating circuit 1 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC1" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+							<div id="relayPinBoiler" class="form-row mb-1">
+								<div class="col-md-4 d-flex align-items-center">Boiler On/Off</div>
+								<div class="col-md-4">
+									<select class="form-control form-control-sm relay-source" data-relay="boiler" onchange="onRelaySourceChange(this);">
+										<option value="none">Not used</option>
+										<option value="builtin" selected>Built-in GPIO</option>
+									</select>
 								</div>
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC2">Heating circuit 2 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC2" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+								<div class="col-md-3">
+									<input type="number" class="form-control form-control-sm relay-pin" id="PinsRelays_Boiler" min="0" max="34" step="1" required>
 								</div>
+								<div class="col-md-1"></div>
 							</div>
-							<div class="form-row">
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC3">Heating circuit 3 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC3" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC4">Heating circuit 4 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC4" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-							</div>
-							<div class="form-row">
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC5">Heating circuit 5 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC5" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC6">Heating circuit 6 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC6" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-							</div>
-							<div class="form-row">
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC7">Heating circuit 7 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC7" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-								<div class="col-md mb-2">
-									<label for="PinsRelays_HC8">Heating circuit 8 On/Off</label>
-									<input type="number" class="form-control" id="PinsRelays_HC8" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
-								</div>
-							</div>
+							<div id="relayPinsValves"></div>
 						</div>
 					</div>
 				</div>
+				<button type="button" class="btn btn-primary mb-2 mt-3" onclick="saveHardwareSettings();" id="SaveHardwareSettings">Save settings</button>
 			</div>
+
+			<div class="tab-pane fade" id="pills-iotest" role="tabpanel" aria-labelledby="pills-iotest-tab">
+				<div class="card mb-3">
+					<div class="card-header d-flex justify-content-between align-items-center">
+						<span>Manual I/O Test</span>
+						<span id="iotestStatus" class="badge badge-secondary">Inactive</span>
+					</div>
+					<div class="card-body">
+						<p class="text-warning"><strong>Warning:</strong> This will directly control GPIO outputs, bypassing normal heating logic for the set duration.</p>
+						<div class="form-group">
+							<label for="iotestDuration">Duration (seconds)</label>
+							<input type="number" class="form-control" id="iotestDuration" min="1" max="3600" value="30" style="max-width: 200px;">
+						</div>
+						<div class="form-group">
+							<div class="custom-control custom-switch mb-2">
+								<input type="checkbox" class="custom-control-input" id="iotestBoiler">
+								<label class="custom-control-label" for="iotestBoiler"><strong>Boiler relay</strong></label>
+							</div>
+						</div>
+						<div id="iotestValvesList">
+							<p class="text-muted">Loading valve configuration...</p>
+						</div>
+						<hr>
+						<button type="button" class="btn btn-success mr-2" id="iotestStartBtn" onclick="startIoTest();">Start Test</button>
+						<button type="button" class="btn btn-danger" id="iotestStopBtn" onclick="stopIoTest();" disabled>Stop Test</button>
+						<span id="iotestCountdown" class="ml-3 text-muted"></span>
+					</div>
+				</div>
+			</div>
+
 		</div>
-
-
-
-
-		<div class="card-footer text-muted">
-			<button type="button" class="btn btn-primary mb-2" onclick="saveHardwareSettings();" id="SaveHardwareSettings">Save settings</button>
 		</div>
 
 	</div>
@@ -144,12 +163,191 @@
 
 <script type='text/javascript'>
 
+var gpioExtenders = []; // [{type: "pcf8574", address: 32, label: "Ext1"}, ...]
+
+function getExtenderMaxPin(type) {
+	if (type === 'mcp23017') return 15;
+	return 7; // pcf8574
+}
+
+function renderExtenders() {
+	var list = $('#extendersList');
+	list.empty();
+	$('#extendersEmpty').toggle(gpioExtenders.length === 0);
+
+	gpioExtenders.forEach(function(ext, idx) {
+		var row = $('<div class="form-row mb-1 align-items-center"></div>');
+		row.append('<div class="col-md-3"><select class="form-control form-control-sm" onchange="updateExtenderType(' + idx + ', this.value);">'
+			+ '<option value="pcf8574"' + (ext.type === 'pcf8574' ? ' selected' : '') + '>PCF8574 (8 pins)</option>'
+			+ '<option value="mcp23017"' + (ext.type === 'mcp23017' ? ' selected' : '') + '>MCP23017 (16 pins)</option>'
+			+ '</select></div>');
+		row.append('<div class="col-md-3"><div class="input-group input-group-sm">'
+			+ '<div class="input-group-prepend"><span class="input-group-text">0x</span></div>'
+			+ '<input type="text" class="form-control" value="' + ext.address.toString(16).padStart(2, '0') + '" '
+			+ 'pattern="[0-9a-fA-F]{1,2}" maxlength="2" required '
+			+ 'onchange="updateExtenderAddress(' + idx + ', this.value);">'
+			+ '<div class="invalid-feedback">Hex 00-7F</div>'
+			+ '</div></div>');
+		row.append('<div class="col-md-3"><input type="text" class="form-control form-control-sm" value="' + escapeHtml(ext.label) + '" '
+			+ 'pattern="[A-Za-z0-9_\\-]+" required placeholder="Label" '
+			+ 'onchange="updateExtenderLabel(' + idx + ', this.value);">'
+			+ '</div>');
+		row.append('<div class="col-md-3"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeExtender(' + idx + ');">&times; Remove</button></div>');
+		list.append(row);
+	});
+
+	updateRelaySourceOptions();
+}
+
+function addExtender() {
+	var idx = gpioExtenders.length;
+	gpioExtenders.push({
+		type: 'pcf8574',
+		address: 0x20 + idx,
+		label: 'Ext' + (idx + 1)
+	});
+	renderExtenders();
+}
+
+function removeExtender(idx) {
+	gpioExtenders.splice(idx, 1);
+	renderExtenders();
+}
+
+function updateExtenderType(idx, value) {
+	gpioExtenders[idx].type = value;
+	updateRelaySourceOptions();
+}
+
+function updateExtenderAddress(idx, hexStr) {
+	gpioExtenders[idx].address = parseInt(hexStr, 16);
+}
+
+function updateExtenderLabel(idx, value) {
+	gpioExtenders[idx].label = value;
+	updateRelaySourceOptions();
+}
+
+function scanI2CBus() {
+	fetch(hostName + '/hardware/i2c/scan')
+	.then(validateResponse)
+	.then(res => res.json())
+	.then(function(devices) {
+		if (devices.length === 0) {
+			alert("No I2C devices found");
+			return;
+		}
+		devices.forEach(function(dev) {
+			var exists = gpioExtenders.some(function(e) { return e.address === dev.address; });
+			if (!exists) {
+				gpioExtenders.push({
+					type: dev.type,
+					address: dev.address,
+					label: 'Ext' + (gpioExtenders.length + 1)
+				});
+			}
+		});
+		renderExtenders();
+	})
+	.catch(function(error) {
+		alert("I2C scan failed: " + error);
+	});
+}
+
+// --- Relay pin rows ---
+
+function buildRelaySourceSelect(relayId, selectedSource) {
+	var html = '<select class="form-control form-control-sm relay-source" data-relay="' + relayId + '" onchange="onRelaySourceChange(this);">';
+	html += '<option value="none"' + (selectedSource === 'none' ? ' selected' : '') + '>Not used</option>';
+	html += '<option value="builtin"' + (selectedSource === 'builtin' ? ' selected' : '') + '>Built-in GPIO</option>';
+	gpioExtenders.forEach(function(ext) {
+		var val = 'ext:' + ext.label;
+		html += '<option value="' + val + '"' + (selectedSource === val ? ' selected' : '') + '>' + escapeHtml(ext.label) + ' (' + ext.type + ' 0x' + ext.address.toString(16) + ')</option>';
+	});
+	html += '</select>';
+	return html;
+}
+
+function onRelaySourceChange(selectEl) {
+	var source = $(selectEl).val();
+	var pinInput = $(selectEl).closest('.form-row').find('.relay-pin');
+
+	if (source === 'none') {
+		pinInput.prop('disabled', true).val('').prop('required', false);
+	} else if (source === 'builtin') {
+		pinInput.prop('disabled', false).prop('required', true).prop('min', 0).prop('max', 34);
+	} else if (source.startsWith('ext:')) {
+		var label = source.substring(4);
+		var ext = gpioExtenders.find(function(e) { return e.label === label; });
+		var maxPin = ext ? getExtenderMaxPin(ext.type) : 7;
+		pinInput.prop('disabled', false).prop('required', true).prop('min', 0).prop('max', maxPin);
+	}
+	pinInput.trigger('input');
+}
+
+var valveCount = 0;
+
+function renderValveRows() {
+	var container = $('#relayPinsValves');
+	container.empty();
+	valveCount = 0;
+}
+
+function addValveRow(source, pinVal, label) {
+	valveCount++;
+	var i = valveCount;
+	var relayId = 'hc' + i;
+	var src = source || 'builtin';
+	var lblVal = label || ('Heating circuit ' + i);
+	var row = $('<div class="form-row mb-1" data-valve="' + i + '"></div>');
+	row.append('<div class="col-md-3"><input type="text" class="form-control form-control-sm valve-label" id="PinsRelays_Label' + i + '" value="' + lblVal.replace(/"/g, '&quot;') + '" maxlength="16" pattern="[A-Za-z0-9 _]+" title="Max 16 characters, alphanumeric, spaces and underscores only" required></div>');
+	row.append('<div class="col-md-3">' + buildRelaySourceSelect(relayId, src) + '</div>');
+	row.append('<div class="col-md-3"><input type="number" class="form-control form-control-sm relay-pin" id="PinsRelays_HC' + i + '" min="0" max="34" step="1" required></div>');
+	row.append('<div class="col-md-3 d-flex align-items-center"><button type="button" class="btn btn-sm btn-outline-danger px-2 py-0" onclick="removeValveRow(this);">&times;</button></div>');
+	$('#relayPinsValves').append(row);
+
+	if (pinVal !== undefined) {
+		$('#PinsRelays_HC' + i).val(pinVal);
+	}
+	onRelaySourceChange(row.find('.relay-source')[0]);
+}
+
+function removeValveRow(btn) {
+	$(btn).closest('.form-row').remove();
+	renumberValveRows();
+}
+
+function renumberValveRows() {
+	valveCount = 0;
+	$('#relayPinsValves .form-row').each(function(idx) {
+		valveCount = idx + 1;
+		var i = valveCount;
+		$(this).attr('data-valve', i);
+		$(this).find('.valve-label').attr('id', 'PinsRelays_Label' + i);
+		$(this).find('.relay-source').attr('data-relay', 'hc' + i);
+		$(this).find('.relay-pin').attr('id', 'PinsRelays_HC' + i);
+	});
+}
+
+function updateRelaySourceOptions() {
+	$('.relay-source').each(function() {
+		var current = $(this).val();
+		var relayId = $(this).data('relay');
+		$(this).replaceWith(buildRelaySourceSelect(relayId, current));
+	});
+	// re-bind since we replaced elements
+	$('.relay-source').each(function() {
+		onRelaySourceChange(this);
+	});
+}
+
+// --- Load / Save ---
 
 $(document).ready(function() {
+	renderValveRows();
 	loadHardwareSettings();
 });
 
-//TODO shared
 function loadHardwareSettings() {
 	fetch(hostName + '/config/hardware')
 	.then(validateResponse)
@@ -163,15 +361,53 @@ function loadHardwareSettings() {
 			$('#PinsEMSForwarder_RX').val(settings.ems_forwarder[0]);
 			$('#PinsEMSForwarder_TX').val(settings.ems_forwarder[1]);
 		}
-		$('#PinsRelays_Boiler').val(settings.boiler_pin);
 
-		for (let i = 0; i < 8; ++i) {
-			var id = '#PinsRelays_HC' + (i + 1).toString();
-			$(id).val(settings.valve_pins[i]);
+		// Load extenders if present
+		if (settings.gpio_extenders) {
+			gpioExtenders = settings.gpio_extenders;
+			renderExtenders();
+		}
+
+		// Load boiler pin
+		if (settings.boiler_pin !== undefined && settings.boiler_pin !== null) {
+			var boilerSource = 'builtin';
+			var boilerPin = settings.boiler_pin;
+			if (typeof settings.boiler_pin === 'object') {
+				boilerSource = settings.boiler_pin.source;
+				boilerPin = settings.boiler_pin.pin;
+			}
+			$('#relayPinBoiler .relay-source').val(boilerSource);
+			$('#PinsRelays_Boiler').val(boilerPin);
+			onRelaySourceChange($('#relayPinBoiler .relay-source')[0]);
+		} else {
+			$('#relayPinBoiler .relay-source').val('none');
+			onRelaySourceChange($('#relayPinBoiler .relay-source')[0]);
+		}
+
+		// Load valve pins
+		renderValveRows();
+		if (settings.valve_pins) {
+			settings.valve_pins.forEach(function(pin, idx) {
+				var source = 'builtin';
+				var pinVal = pin;
+				var label = '';
+				if (pin === null || pin === undefined) {
+					source = 'none';
+					pinVal = undefined;
+				} else if (typeof pin === 'object') {
+					source = pin.source;
+					pinVal = pin.pin;
+					label = pin.label || '';
+				}
+				addValveRow(source, pinVal, label);
+			});
 		}
 
 		$("#loadingprogress").addClass('invisible');
 		$('#hardwareeditform').removeClass('invisible');
+
+		// Check if manual IO test is already running
+		loadIoTestValves();
 	}).catch(function(error) {
 		if (error instanceof HttpResponseException && error.status === 404) {
 			alert("Cannot load hardware settings\n" + error);
@@ -181,20 +417,48 @@ function loadHardwareSettings() {
 	});
 }
 
+function collectRelayPin(rowSelector) {
+	var el = $(rowSelector);
+	var row = el.hasClass('form-row') ? el : el.closest('.form-row');
+	var source = row.find('.relay-source').val();
+	if (source === 'none') return null;
+	var pin = parseInt(row.find('.relay-pin').val(), 10);
+	var label = row.find('.valve-label').val() || '';
+	var result = {"source": source, "pin": pin};
+	if (label) result.label = label;
+	return result;
+}
+
 function saveHardwareSettings() {
 	if (!validateForm('#hardwareeditform')) return;
+
+	// Check for duplicate valve labels
+	var labels = [];
+	var hasDuplicates = false;
+	$('.valve-label').each(function() {
+		var lbl = $(this).val().trim();
+		if (lbl && labels.indexOf(lbl) !== -1) {
+			hasDuplicates = true;
+		}
+		labels.push(lbl);
+	});
+	if (hasDuplicates) {
+		alert("Valve labels must be unique!");
+		return;
+	}
+
 	$("#SaveHardwareSettings").prop('disabled', true);
 
 	let settings = {
 		"rtci2c": [parseInt($('#PinsRTC_SDA').val(), 10), parseInt($('#PinsRTC_SCL').val(), 10)],
 		"ems": [parseInt($('#PinsEMS_RX').val(), 10), parseInt($('#PinsEMS_TX').val(), 10)],
 		"ems_forwarder": [parseInt($('#PinsEMSForwarder_RX').val(), 10), parseInt($('#PinsEMSForwarder_TX').val(), 10)],
-		"boiler_pin": parseInt($('#PinsRelays_Boiler').val(), 10),
+		"gpio_extenders": gpioExtenders,
+		"boiler_pin": collectRelayPin('#relayPinBoiler'),
 		"valve_pins": []
 	};
-	for (let i = 0; i < 8; ++i) {
-		var id = '#PinsRelays_HC' + (i + 1).toString();
-		settings.valve_pins[i] = parseInt($(id).val(), 10);
+	for (let i = 1; i <= valveCount; ++i) {
+		settings.valve_pins.push(collectRelayPin('#PinsRelays_HC' + i));
 	}
 
 	fetch(hostName + '/config/hardware', {
@@ -232,6 +496,163 @@ function reboot() {
 	mainScreen();
 }
 
+// --- Manual I/O Test ---
 
+var iotestTimer = null;
+var iotestCountdownTimer = null;
+var iotestEndTime = null;
+
+function loadIoTestValves() {
+	// Read circuit names from the pins configuration form on this page
+	var container = $('#iotestValvesList');
+	container.empty();
+
+	var labels = [];
+	$('.valve-label').each(function() {
+		labels.push($(this).val() || '');
+	});
+
+	if (labels.length === 0) {
+		container.html('<p class="text-muted">No circuits configured</p>');
+		return;
+	}
+
+	container.append('<label><strong>Circuits</strong></label>');
+	for (var i = 0; i < labels.length; i++) {
+		var label = labels[i] || ('Circuit ' + (i + 1));
+		var div = $('<div class="custom-control custom-switch mb-2"></div>');
+		div.append('<input type="checkbox" class="custom-control-input iotest-valve" id="iotestValve' + i + '" checked>');
+		div.append('<label class="custom-control-label" for="iotestValve' + i + '">' + escapeHtml(label) + '</label>');
+		container.append(div);
+	}
+
+	// Check if manual test is already running
+	fetch(hostName + '/status/boiler')
+	.then(validateResponse)
+	.then(res => res.json())
+	.then(function(status) {
+		if (status.manualTest && status.manualTest.active) {
+			setIoTestActive(status.manualTest.remainingSeconds);
+		}
+	})
+	.catch(function() {});
+}
+
+var iotestRunning = false;
+
+function getIoTestRemainingSeconds() {
+	if (!iotestEndTime) return 0;
+	return Math.max(1, Math.ceil((iotestEndTime - Date.now()) / 1000));
+}
+
+function sendIoTestState(duration) {
+	var boilerState = $('#iotestBoiler').is(':checked');
+	var valveStates = [];
+	$('.iotest-valve').each(function() {
+		valveStates.push($(this).is(':checked'));
+	});
+
+	var payload = {
+		duration: duration,
+		boiler: boilerState,
+		valves: valveStates
+	};
+
+	return fetch(hostName + '/hardware/test/gpio', {
+		method: 'POST',
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify(payload)
+	})
+	.then(validateResponse);
+}
+
+function startIoTest() {
+	var duration = parseInt($('#iotestDuration').val(), 10);
+	if (isNaN(duration) || duration < 1 || duration > 3600) {
+		alert('Duration must be between 1 and 3600 seconds');
+		return;
+	}
+
+	sendIoTestState(duration)
+	.then(function() {
+		setIoTestActive(duration);
+	})
+	.catch(function(error) {
+		alert('Failed to start test: ' + error);
+	});
+}
+
+function onIoTestSwitchChange() {
+	if (!iotestRunning) return;
+	var remaining = getIoTestRemainingSeconds();
+	if (remaining <= 0) return;
+
+	sendIoTestState(remaining)
+	.catch(function(error) {
+		console.error('Failed to update test state: ' + error);
+	});
+}
+
+function stopIoTest() {
+	fetch(hostName + '/hardware/test/gpio', {
+		method: 'DELETE'
+	})
+	.then(validateResponse)
+	.then(function() {
+		setIoTestInactive();
+	})
+	.catch(function(error) {
+		alert('Failed to stop test: ' + error);
+	});
+}
+
+function setIoTestActive(remainingSeconds) {
+	iotestRunning = true;
+	$('#iotestStartBtn').prop('disabled', true);
+	$('#iotestStopBtn').prop('disabled', false);
+	$('#iotestStatus').removeClass('badge-secondary').addClass('badge-danger').text('ACTIVE');
+
+	iotestEndTime = Date.now() + remainingSeconds * 1000;
+	updateIoTestCountdown();
+
+	if (iotestCountdownTimer) clearInterval(iotestCountdownTimer);
+	iotestCountdownTimer = setInterval(function() {
+		var remaining = Math.max(0, Math.ceil((iotestEndTime - Date.now()) / 1000));
+		if (remaining <= 0) {
+			setIoTestInactive();
+		} else {
+			$('#iotestCountdown').text('Remaining: ' + remaining + 's');
+		}
+	}, 1000);
+}
+
+function setIoTestInactive() {
+	iotestRunning = false;
+	$('#iotestStartBtn').prop('disabled', false);
+	$('#iotestStopBtn').prop('disabled', true);
+	$('#iotestStatus').removeClass('badge-danger').addClass('badge-secondary').text('Inactive');
+	$('#iotestCountdown').text('');
+	if (iotestCountdownTimer) {
+		clearInterval(iotestCountdownTimer);
+		iotestCountdownTimer = null;
+	}
+}
+
+function updateIoTestCountdown() {
+	var remaining = Math.max(0, Math.ceil((iotestEndTime - Date.now()) / 1000));
+	$('#iotestCountdown').text('Remaining: ' + remaining + 's');
+}
+
+// Live toggle handler for boiler and valve switches
+$(document).on('change', '#iotestBoiler, .iotest-valve', function() {
+	onIoTestSwitchChange();
+});
+
+// Load IO test valves when tab is shown
+$('a[data-toggle="pill"]').on('shown.bs.tab', function(e) {
+	if ($(e.target).attr('href') === '#pills-iotest') {
+		loadIoTestValves();
+	}
+});
 
 </script>

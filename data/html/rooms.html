@@ -107,8 +107,52 @@
 <script type='text/javascript'>
 	var loadedProgram = undefined;
 	var roomFound = undefined;
+	var valveCount = 0;
+	var valveLabels = [];
+
+	function populateValveSelect(selectId) {
+		var $sel = $(selectId);
+		$sel.find('option').remove();
+		for (var i = 0; i < valveCount; i++) {
+			var label = valveLabels[i] || ('Valve ' + (i + 1));
+			$sel.append($('<option>').val(label).text(label));
+		}
+	}
+
+	// Convert old numeric valve references to labels
+	function resolveValves(valves) {
+		if (!Array.isArray(valves)) return [];
+		return valves.map(function(v) {
+			if (typeof v === 'number') {
+				return valveLabels[v] || ('Valve ' + (v + 1));
+			}
+			return v;
+		});
+	}
 
 	$(document).ready(function () {
+
+		fetch(hostName + '/config/hardware')
+			.then(validateResponse)
+			.then(res => res.json())
+			.then(function(cfg) {
+				var pins = cfg.valve_pins;
+				valveCount = Array.isArray(pins) ? pins.length : 0;
+				valveLabels = [];
+				if (Array.isArray(pins)) {
+					pins.forEach(function(pin, idx) {
+						if (pin && typeof pin === 'object' && pin.label) {
+							valveLabels.push(pin.label);
+						} else {
+							valveLabels.push('Valve ' + (idx + 1));
+						}
+					});
+				}
+			})
+			.catch(function() {
+				valveCount = 8;
+				valveLabels = [];
+			});
 
 		$("#selectSensorModal").on('show.bs.modal', function (event) {
 			$('#selectSensorModalSelect').empty();
@@ -462,14 +506,6 @@
 		<div class="col-md-4 mb-2">
 			<label for="roomValvesSelect">Room valves</label><br/>
 			<select id="roomValvesSelect" multiple="multiple">
-				<option value=0>1</option>
-				<option value=1>2</option>
-				<option value=2>3</option>
-				<option value=3>4</option>
-				<option value=4>5</option>
-				<option value=5>6</option>
-				<option value=6>7</option>
-				<option value=7>8</option>
 			</select>
 		</div>
 	</div>
@@ -584,14 +620,6 @@
 					<div class="col mb-2">
 						<label for="tempOverridesValvesSelect">Override valves</label><br/>
 						<select id="tempOverridesValvesSelect" multiple="multiple">
-							<option value=0>1</option>
-							<option value=1>2</option>
-							<option value=2>3</option>
-							<option value=3>4</option>
-							<option value=4>5</option>
-							<option value=5>6</option>
-							<option value=6>7</option>
-							<option value=7>8</option>
 						</select>
 					</div>
 				</div>
@@ -612,17 +640,16 @@
 
 		$('#roomGroup').html(roomSelectorHtml);
 
+		populateValveSelect('#roomValvesSelect');
 		$('#roomValvesSelect').multiselect({
 			numberDisplayed: 0,
 			allSelectedText: false,
 			onChange: function () {
-				const toNumbers = arr => arr.map(Number);
-				var selectedOptions = toNumbers($('#roomValvesSelect').val());
-				roomFound.valves = selectedOptions;
+				roomFound.valves = $('#roomValvesSelect').val() || [];
 			}
 		});
 
-		$('#roomValvesSelect').multiselect('select', roomFound.valves);
+		$('#roomValvesSelect').multiselect('select', resolveValves(roomFound.valves));
 
 		$('#roomEnabledCheck').prop('checked', roomFound.enabled === undefined ? true : roomFound.enabled);
 		$('#roomEnabledCheck').change(function () {
@@ -673,6 +700,7 @@
 			}
 		});
 
+		populateValveSelect('#tempOverridesValvesSelect');
 		$('#tempOverridesValvesSelect').multiselect({
 			includeSelectAllOption: false,
 			allSelectedText: 'Heat on all valves',
@@ -680,8 +708,7 @@
 			numberDisplayed: 0,
 			selectAllNumber: false,
 			onChange: function () {
-				const toNumbers = arr => arr.map(Number);
-				var selectedOptions = toNumbers($('#tempOverridesValvesSelect').val());
+				var selectedOptions = $('#tempOverridesValvesSelect').val() || [];
 				if (selectedOptions.length !== 0) {
 					getSelectedTemp().valves = selectedOptions;
 				} else {
@@ -790,7 +817,7 @@
 		if (getSelectedTemp().valves === undefined || getSelectedTemp().valves.length == 0) {
 			$('#tempOverridesValvesSelect').multiselect('deselectAll', false).multiselect('refresh');
 		} else {
-			$('#tempOverridesValvesSelect').multiselect('select', getSelectedTemp().valves).multiselect('refresh');
+			$('#tempOverridesValvesSelect').multiselect('select', resolveValves(getSelectedTemp().valves)).multiselect('refresh');
 		}
 
 		$('#tempOverridesEnabled').prop('checked', getSelectedTemp().enabled === undefined ? true : getSelectedTemp().enabled);
