@@ -3,6 +3,7 @@
 #include "BeaconBleAddress.h"
 #include "BoilerController.h"
 #include "BuiltinGpioPort.h"
+#include "PcfGpioPort.h"
 #include "BeaconTemperatureReader.h"
 #include "OpenWeather.h"
 #include "PeriodicCounter.h"
@@ -26,27 +27,47 @@
 
 namespace heating {
 
-inline std::unique_ptr<gpio::GpioPort> createGpioPort(config::PinConfig const &pinCfg) {
+// Build label -> PcfDevice map from config so all pins on the same extender share one shadow register.
+using PcfDeviceMap = std::unordered_map<std::string, std::shared_ptr<gpio::PcfDevice>>;
+
+inline PcfDeviceMap buildPcfDeviceMap() {
+	PcfDeviceMap map;
+	for (auto const &ext : config::getGpioExtenders()) {
+		bool wide = (ext.type == "pcf8575" || ext.type == "mcp23017");
+		map[ext.label] = std::make_shared<gpio::PcfDevice>(ext.address, wide);
+	}
+	return map;
+}
+
+inline std::unique_ptr<gpio::GpioPort> createGpioPort(config::PinConfig const &pinCfg, PcfDeviceMap const &pcfDevices) {
 	if (pinCfg.source == "builtin") {
 		return std::make_unique<gpio::BuiltinGpioPort>(pinCfg.pin);
 	}
-	// TODO: handle "ext:<label>" — PCF8574/MCP23017 extenders
+	// source = "ext:<label>"
+	if (pinCfg.source.rfind("ext:", 0) == 0) {
+		std::string label = pinCfg.source.substr(4);
+		auto it = pcfDevices.find(label);
+		if (it != pcfDevices.end()) {
+			return std::make_unique<gpio::PcfGpioPort>(it->second, pinCfg.pin);
+		}
+		heating::logger.printf("createGpioPort: extender '%s' not found in config\n", label.c_str());
+	}
 	return std::make_unique<gpio::NullGpioPort>();
 }
 
-inline std::unique_ptr<gpio::GpioPort> createBoilerPort() {
+inline std::unique_ptr<gpio::GpioPort> createBoilerPort(PcfDeviceMap const &pcfDevices) {
 	auto pin = config::getBoilerPin();
 	if (!pin)
 		return std::make_unique<gpio::NullGpioPort>();
-	return createGpioPort(*pin);
+	return createGpioPort(*pin, pcfDevices);
 }
 
-inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts() {
+inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts(PcfDeviceMap const &pcfDevices) {
 	auto pins = config::getValvePins();
 	std::vector<std::unique_ptr<gpio::GpioPort>> ports;
 	ports.reserve(pins.size());
 	for (auto const &p : pins) {
-		ports.push_back(createGpioPort(p));
+		ports.push_back(createGpioPort(p, pcfDevices));
 	}
 	return ports;
 }
@@ -379,9 +400,10 @@ private:
 	ems::EmsController ems_;
 	config::BoilerConfig boilerConfig_{config::getBoilerConfig()};
 
+	PcfDeviceMap pcfDevices_{buildPcfDeviceMap()};
 	BoilerController boiler_{boilerConfig_, [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
 			ems.changeBoilerState(enabled, flowTempSet); }, [&ems = ems_](uint8_t heatingTemperature) {
-			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(), createValvePorts(), createValveLabels()};
+			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(pcfDevices_), createValvePorts(pcfDevices_), createValveLabels()};
 	std::string currentProgram_;
 	std::vector<std::shared_ptr<heating::Room>> rooms_;
 	std::unordered_map<std::string, uint8_t> valveLabelMap_{buildValveLabelMap()};

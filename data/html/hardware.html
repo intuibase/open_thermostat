@@ -25,16 +25,16 @@
 				<div class="form-group">
 
 					<div class="card mb-2">
-						<div class="card-header">Real Time Clock pins</div>
-						<div class="card-body" id="RTCPinsCard">
+						<div class="card-header">I2C pins</div>
+						<div class="card-body" id="I2CPinsCard">
 							<div class="form-row">
 								<div class="col-md mb-2">
-									<label for="PinsRTC_SDA">SDA</label>
-									<input type="number" class="form-control" id="PinsRTC_SDA" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<label for="Pins_SDA">SDA</label>
+									<input type="number" class="form-control" id="Pins_SDA" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 								<div class="col-md mb-2">
-									<label for="PinsRTC_SCL">SCL</label>
-									<input type="number" class="form-control" id="PinsRTC_SCL" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<label for="Pins_SCL">SCL</label>
+									<input type="number" class="form-control" id="Pins_SCL" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 							</div>
 						</div>
@@ -46,11 +46,11 @@
 							<div class="form-row">
 								<div class="col-md mb-2">
 									<label for="PinsEMS_RX">RX</label>
-									<input type="number" class="form-control" id="PinsEMS_RX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<input type="number" class="form-control" id="PinsEMS_RX" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 								<div class="col-md mb-2">
 									<label for="PinsEMS_TX">TX</label>
-									<input type="number" class="form-control" id="PinsEMS_TX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<input type="number" class="form-control" id="PinsEMS_TX" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 							</div>
 						</div>
@@ -62,11 +62,11 @@
 							<div class="form-row">
 								<div class="col-md mb-2">
 									<label for="PinsEMSForwarder_RX">RX</label>
-									<input type="number" class="form-control" id="PinsEMSForwarder_RX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<input type="number" class="form-control" id="PinsEMSForwarder_RX" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 								<div class="col-md mb-2">
 									<label for="PinsEMSForwarder_TX">TX</label>
-									<input type="number" class="form-control" id="PinsEMSForwarder_TX" min="0" max="34" step="1" placeholder="leave empty if not installed" required>
+									<input type="number" class="form-control" id="PinsEMSForwarder_TX" min="0" max="48" step="1" placeholder="leave empty if not installed" required>
 								</div>
 							</div>
 						</div>
@@ -109,7 +109,7 @@
 									</select>
 								</div>
 								<div class="col-md-3">
-									<input type="number" class="form-control form-control-sm relay-pin" id="PinsRelays_Boiler" min="0" max="34" step="1" required>
+									<input type="number" class="form-control form-control-sm relay-pin" id="PinsRelays_Boiler" min="0" max="48" step="1" required>
 								</div>
 								<div class="col-md-1"></div>
 							</div>
@@ -167,7 +167,8 @@ var gpioExtenders = []; // [{type: "pcf8574", address: 32, label: "Ext1"}, ...]
 
 function getExtenderMaxPin(type) {
 	if (type === 'mcp23017') return 15;
-	return 7; // pcf8574
+	if (type === 'pcf8575') return 15;
+	return 7; // pcf8574 / pcf8574a
 }
 
 function renderExtenders() {
@@ -179,6 +180,7 @@ function renderExtenders() {
 		var row = $('<div class="form-row mb-1 align-items-center"></div>');
 		row.append('<div class="col-md-3"><select class="form-control form-control-sm" onchange="updateExtenderType(' + idx + ', this.value);">'
 			+ '<option value="pcf8574"' + (ext.type === 'pcf8574' ? ' selected' : '') + '>PCF8574 (8 pins)</option>'
+			+ '<option value="pcf8575"' + (ext.type === 'pcf8575' ? ' selected' : '') + '>PCF8575 (16 pins)</option>'
 			+ '<option value="mcp23017"' + (ext.type === 'mcp23017' ? ' selected' : '') + '>MCP23017 (16 pins)</option>'
 			+ '</select></div>');
 		row.append('<div class="col-md-3"><div class="input-group input-group-sm">'
@@ -237,7 +239,9 @@ function scanI2CBus() {
 			alert("No I2C devices found");
 			return;
 		}
+		var extenderTypes = ['pcf8574', 'pcf8574a', 'pcf8575', 'mcp23017'];
 		devices.forEach(function(dev) {
+			if (extenderTypes.indexOf(dev.type) === -1) return; // skip RTC, EEPROM, unknown
 			var exists = gpioExtenders.some(function(e) { return e.address === dev.address; });
 			if (!exists) {
 				gpioExtenders.push({
@@ -353,8 +357,8 @@ function loadHardwareSettings() {
 	.then(validateResponse)
 	.then(res => res.json())
 	.then((settings) => {
-		$('#PinsRTC_SDA').val(settings.rtci2c[0]);
-		$('#PinsRTC_SCL').val(settings.rtci2c[1]);
+		$('#Pins_SDA').val(settings.i2c[0]);
+		$('#Pins_SCL').val(settings.i2c[1]);
 		$('#PinsEMS_RX').val(settings.ems[0]);
 		$('#PinsEMS_TX').val(settings.ems[1]);
 		if (settings.ems_forwarder) {
@@ -450,7 +454,7 @@ function saveHardwareSettings() {
 	$("#SaveHardwareSettings").prop('disabled', true);
 
 	let settings = {
-		"rtci2c": [parseInt($('#PinsRTC_SDA').val(), 10), parseInt($('#PinsRTC_SCL').val(), 10)],
+		"i2c": [parseInt($('#Pins_SDA').val(), 10), parseInt($('#Pins_SCL').val(), 10)],
 		"ems": [parseInt($('#PinsEMS_RX').val(), 10), parseInt($('#PinsEMS_TX').val(), 10)],
 		"ems_forwarder": [parseInt($('#PinsEMSForwarder_RX').val(), 10), parseInt($('#PinsEMSForwarder_TX').val(), 10)],
 		"gpio_extenders": gpioExtenders,

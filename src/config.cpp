@@ -182,9 +182,9 @@ RTCPins getRTCPins() {
 		return {};
 	}
 
-	auto rtcpins = cJSON_GetObjectItem(root.get(), "rtci2c");
+	auto rtcpins = cJSON_GetObjectItem(root.get(), "i2c");
 	if (!rtcpins || rtcpins->type != cJSON_Array || cJSON_GetArraySize(rtcpins) != 2) {
-		heating::logger.println("Error parsing json. rtci2c not an array or size!=2\n");
+		heating::logger.println("Error parsing json. i2c not an array or size!=2\n");
 		return {};
 	}
 
@@ -192,14 +192,14 @@ RTCPins getRTCPins() {
 
 	auto item = cJSON_GetArrayItem(rtcpins, 0);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("rtci2c sda NaN\n");
+		heating::logger.printf("i2c sda NaN\n");
 		return {};
 	}
 	pins.sda = item->valueint;
 
 	item = cJSON_GetArrayItem(rtcpins, 1);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("rtci2c scl NaN\n");
+		heating::logger.printf("i2c scl NaN\n");
 		return {};
 	}
 	pins.scl = item->valueint;

@@ -428,16 +428,18 @@ private:
 	void i2cScan() {
 		DBGLOGREST("i2cScan\n");
 
-		// Known GPIO extender address ranges
+		// Known I2C device address ranges (helpers for frontend labeling)
 		struct KnownRange {
 			uint8_t from;
 			uint8_t to;
 			const char *type;
 		};
 		static constexpr KnownRange ranges[] = {
-			{0x20, 0x27, "pcf8574"},  // PCF8574
-			{0x38, 0x3F, "pcf8574a"}, // PCF8574A
-			{0x20, 0x27, "mcp23017"}, // MCP23017 (same range as PCF8574)
+			{0x20, 0x27, "pcf8574"},  // PCF8574 GPIO expanders
+			{0x20, 0x27, "mcp23017"}, // MCP23017 GPIO expanders (same address range)
+			{0x38, 0x3F, "pcf8574a"}, // PCF8574A variants
+			{0x50, 0x57, "eeprom"},   // I2C EEPROMs (AT24Cx family)
+			{0x68, 0x69, "rtc"},      // RTC modules (DS1307 / DS3231 common addresses)
 		};
 
 		ib::viewable_stringbuf payloadBuf;
