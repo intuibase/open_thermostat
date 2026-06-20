@@ -30,6 +30,8 @@ public:
 
 	void start(uint8_t rxPin, uint8_t txPin) {
 		// params copied from EMS-ESP32
+		rxPin_ = rxPin;
+		txPin_ = txPin;
 
 		uart_config_t uart_config = {
 			.baud_rate  = EmsBusBaudrate,
@@ -80,6 +82,8 @@ public:
 
 	void reset() {
 		DBGLOGUART("reset\n");
+		DBGLOGUART("EMS rx: %d tx: %d\n", rxPin_, txPin_);
+
 		uart_wait_tx_done(UartSlot, (TickType_t)1000 / portTICK_PERIOD_MS); //(UART_NUM_MAX -1));
 		uart_flush(UartSlot);
 		xQueueReset(uartQueue_);
@@ -128,6 +132,8 @@ private:
 	QueueHandle_t uartQueue_;
 	std::array<uint8_t, EmsMaxTelegramSize> buffer_;
 	processTelegram_t processTelegram_;
+	uint8_t rxPin_;
+	uint8_t txPin_;
 
 	EmsBusUartForwarder forwarder_;
 
