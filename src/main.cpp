@@ -186,10 +186,12 @@ void setup() {
 
 	auto networkConfig = config::getNetworkConfig();
 
-	if (networkConfig.rtcEnabled) {
+	{
 		auto rtcpins = config::getRTCPins();
-		heating::logger.printf("Configuring i2c RTC on sda %d scl %d\n", rtcpins.sda, rtcpins.scl);
+		heating::logger.printf("Configuring i2c on sda %d scl %d\n", rtcpins.sda, rtcpins.scl);
 		Wire.begin(rtcpins.sda, rtcpins.scl);
+	}
+	if (networkConfig.rtcEnabled) {
 		heating::startRTC(networkConfig.rtcEnabled);
 	} else {
 		heating::logger.printf("RTC battery clock disabled\n");
