@@ -177,6 +177,7 @@ private:
 		publishSensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
 		publishSensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
 		publishSensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
+		publishSensor("device_status"sv, "opth_cpu_temperature"sv, "OpenThermostat ESP32 CPU temperature"sv, "cpu_temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
 		publishSensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv);
 
 		publishSensor("ems_metrics"sv, "opth_energy"sv, "Total energy consumption"sv, "totalEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv);
@@ -184,6 +185,7 @@ private:
 		publishSensor("ems_metrics"sv, "opth_energy_heating"sv, "Energy used for space heating"sv, "heatingEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv);
 		publishSensor("ems_metrics"sv, "opth_warm_water_usage"sv, "Warm water usage"sv, "warmWaterUsage"sv, ""sv, unit_litre, "measurement"sv);
 		publishSensor("ems_metrics"sv, "opth_warm_water_avg_flow"sv, "Average flow of warm water"sv, "warmWaterAvgFlow"sv, ""sv, "L/min"sv, "measurement"sv);
+		publishSensor("ems_metrics"sv, "opth_outdoor_temperature"sv, "Outdoor temperature"sv, "outdoorTemperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
 	}
 
 
@@ -200,6 +202,7 @@ private:
 		ss << "\"mem_min_free\":" << ESP.getMinFreeHeap() << ",";
 		ss << "\"mem_max_alloc\":" << ESP.getMaxAllocHeap() << ",";
 		ss << "\"temperature\":" << heating::rtcGetTemp() << ",";
+		ss << "\"cpu_temperature\":" << temperatureRead() << ",";
 		ss << "\"uptime\":" << millis()/1000 ;
 		ss << "}";
 
