@@ -1,6 +1,7 @@
 
 #include "EMS/UBAMonitorFastPlus.h"
 #include "EMS/UBAMonitorWWPlus.h"
+#include "EMS/UBAOutdoorTemp.h"
 #include "EMS/UBAFactory.h"
 #include <TimeHelpers.h>
 
@@ -57,6 +58,15 @@ public:
 			}
 		});
 
+		registerProcessor(heating::ems::UBAOutdoorTemp::predefinedTypeId, [this](heating::ems::EmsTelegram const &t) {
+			auto telegram = reinterpret_cast<heating::ems::UBAOutdoorTemp const *>(&t);
+			auto temperature = telegram->getOutdoorTemperature();
+			if (temperature.has_value()) {
+				std::lock_guard<std::mutex> lock(mutex_);
+				outdoorTemperature_ = static_cast<double>(*temperature) / 10.0;
+			}
+		});
+
 		// registerProcessor(heating::ems::UBAMonitorSlowPlus::predefinedTypeId, [this](heating::ems::EmsTelegram const &t) {
 		// 	// auto telegram = reinterpret_cast<heating::ems::UBAMonitorSlowPlus const *>(&t);
 		// });
@@ -95,6 +105,11 @@ public:
 		return std::tuple<double, double>(totalWarmWaterUsage, 0);
 	}
 
+	std::optional<double> getOutdoorTemperature() {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return outdoorTemperature_;
+	}
+
 	// clang-format off
 #define ADD_ITEM(name, value) { if (!first) { ss << ","; } else { first = false; } ss << "\""#name"\": " << value;  }
 	// clang-format on
@@ -104,6 +119,7 @@ public:
 
 		auto [totalEnergyUsedKwh, heatingEnergyUsedKwh, warmWaterEnergyUsedKwh] = getGasBurnedKwh();
 		auto [warmWaterUsage, warmWaterAvgFlow] = getWarmWaterUsage();
+		auto outdoorTemperature = getOutdoorTemperature();
 
 		ss << "{";
 		ADD_ITEM(totalEnergyUsedKwh, totalEnergyUsedKwh);
@@ -111,6 +127,9 @@ public:
 		ADD_ITEM(heatingEnergyUsedKwh, heatingEnergyUsedKwh);
 		ADD_ITEM(warmWaterUsage, warmWaterUsage);
 		ADD_ITEM(warmWaterAvgFlow, warmWaterAvgFlow);
+		if (outdoorTemperature.has_value()) {
+			ADD_ITEM(outdoorTemperature, outdoorTemperature.value());
+		}
 		ss << "}";
 	}
 
@@ -161,5 +180,6 @@ private:
 	WarmWaterState previousWarmWaterState_ = {0};
 	double totalWarmWaterUsage_ = 0.0; // liters
 	uint64_t lastWarmWaterFlowGet_ = ib::getTimeMillis();
+	std::optional<double> outdoorTemperature_;
 };
 } // namespace heating::ems

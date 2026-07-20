@@ -179,7 +179,10 @@ void Room::getStatus(std::ostream &ss) const {
 		ss << ", \"currentTemp\": " << lastSampleTemp;
 		ss << ", \"currentHumidity\": " << currentHumidity_.load();
 		ss << ", \"currentTempAgeMs\": " << std::chrono::duration_cast<std::chrono::milliseconds>(clock_t::now() - lastSampleTime).count();
-		ss << ", \"batteryLevel\": " << static_cast<int>(batteryLevel_.load());
+		auto batteryLevel = batteryLevel_.load();
+		if (batteryLevel >= 0) {
+			ss << ", \"batteryLevel\": " << static_cast<int>(batteryLevel);
+		}
 		ss << ", \"meanTemp\": " << getAverageTemperature().value_or(0);
 	}
 
