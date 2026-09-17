@@ -8,7 +8,7 @@ class UBAMonitorSlowPlus : public EmsTelegram {
 public:
 	static constexpr uint16_t predefinedTypeId = 0x00E5;
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 
 	auto getFanEnabled() const {
 		return getValue<bool, 2>(2);

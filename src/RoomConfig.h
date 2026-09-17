@@ -1,4 +1,5 @@
 #pragma once
+#include "Logging.h"
 
 #include <array>
 #include <optional>
@@ -11,6 +12,20 @@ struct RoomConfig {
 	using BleAddress_t = std::array<uint8_t, 6>;
 
 	struct TemperatureSetting {
+	private:
+		std::shared_ptr<ib::logger::LoggerInterface> log_;
+		ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	public:
+		explicit TemperatureSetting(std::shared_ptr<ib::logger::LoggerInterface> log = {}) : log_(std::move(log)) {
+			if (log_) {
+				static const auto id = [this] {
+					auto feature = log_->addFeature("Room");
+					log_->enableFeature(feature, false);
+					return feature;
+				}();
+				logFeature_ = id;
+			}
+		}
 		bool doesFit(uint16_t time, uint8_t dayOfTheWeek) const;
 		bool isEnabled() const;
 		int16_t getTemperature() const;

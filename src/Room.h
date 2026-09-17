@@ -3,7 +3,7 @@
 #include "RoomConfig.h"
 #include "BeaconBleAddress.h"
 #include "CircularBuffer.h"
-#include "Logger.h"
+#include "Logging.h"
 
 #include <atomic>
 #include <chrono>
@@ -22,7 +22,16 @@ public:
 
 	enum class TemperatureStatus : uint8_t { MISSING_TEMPERATURE, TEMPERATURE_OK, START_HEATING, CONTINUE_HEATING };
 
-	Room(RoomConfig config) : config_(std::move(config)) {}
+	Room(std::shared_ptr<ib::logger::LoggerInterface> log, RoomConfig config) : log_(std::move(log)), config_(std::move(config)) {
+		if (log_) {
+			static const auto id = [this] {
+				auto feature = log_->addFeature("Room");
+				log_->enableFeature(feature, false);
+				return feature;
+			}();
+			logFeature_ = id;
+		}
+	}
 
 	Room(Room &&r) = default;
 	Room &operator=(Room &&r) = default;
@@ -67,9 +76,12 @@ public:
 
 	std::string getStatus() const;
 	void getStatus(std::ostream &ss) const;
+	void getStatus(std::ostream &ss, bool isBeingHeated) const;
 
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	bool isTemperatureValid() const;
 	std::pair<int16_t, const RoomConfig::TemperatureSetting *> getTemperatureSet(uint16_t currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
 	int16_t getTemperatureMarginUp() const;
@@ -79,7 +91,6 @@ private:
 
 	auto getMaxSampleAgeMs() const { return std::chrono::minutes(3); }
 
-	bool debugLog_ = true;
 	RoomConfig config_;
 	std::unique_ptr<TemporaryOverride> temporaryOverride_;
 	ib::CircularBuffer<temperatureData_t, 10> temperatureData_;

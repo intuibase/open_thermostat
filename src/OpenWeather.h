@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include "Logger.h"
+#include "Logging.h"
 #include <HTTPClient.h>
 #include <cJSON.h>
 #include <memory>
@@ -16,8 +16,18 @@ static void fetchTask(void *pvParameters);
 
 class OpenWeather {
 public:
-	OpenWeather(config::OpenWeatherConfig config) : config_(std::move(config)), query_(buildQuery()), lastFetch_(0) {
-		DBGLOGOW("Configuration. Enabled: %d appid:%s lat:%s lon:%s interval: %d\n", config_.enabled, config_.appid.c_str(), config_.latitude.c_str(), config_.longitude.c_str(), config_.interval);
+	ib::logger::LoggerInterface::LogFeatureType getLogFeature() const { return logFeature_; }
+	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
+	OpenWeather(std::shared_ptr<ib::logger::LoggerInterface> log, config::OpenWeatherConfig config) : log_(std::move(log)), config_(std::move(config)), query_(buildQuery()), lastFetch_(0) {
+		if (log_) {
+			static const auto id = [this] {
+				auto feature = log_->addFeature("OpenWeather");
+				log_->enableFeature(feature, false);
+				return feature;
+			}();
+			logFeature_ = id;
+		}
+		DBGLOGFD(log_, logFeature_, "Configuration. Enabled: %d appid:%s lat:%s lon:%s interval: %d\n", config_.enabled, config_.appid.c_str(), config_.latitude.c_str(), config_.longitude.c_str(), config_.interval);
 	}
 
 	void operate() {
@@ -28,13 +38,13 @@ public:
 		auto now = millis();
 		if (lastFetch_ > 0 && now < lastFetch_ + config_.interval * 1000) {
 			unsigned long timeToWait = static_cast<unsigned long>(config_.interval * 1000);
-			DBGLOGOW("Interval: %ld\n", timeToWait);
+			DBGLOGFD(log_, logFeature_, "Interval: %ld\n", timeToWait);
 			timeToWait = timeToWait - (now - lastFetch_);
-			DBGLOGOW("Waiting for interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.interval, lastFetch_, now, timeToWait);
+			DBGLOGFD(log_, logFeature_, "Waiting for interval (%ds) last: %ld, now: %ld, still need to wait for: %ld ms \n", config_.interval, lastFetch_, now, timeToWait);
 			return;
 		}
 
-		DBGLOGOW("Requesting temperature, last: %ld, now: %ld\n", lastFetch_, now);
+		DBGLOGFD(log_, logFeature_, "Requesting temperature, last: %ld, now: %ld\n", lastFetch_, now);
 		lastFetch_ = now;
 
 		xTaskCreate(heating::openweather::fetchTask, "OWTask", 2500, this, 1, NULL);
@@ -66,13 +76,15 @@ public:
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	void parsePayload(String const &payload) {
 		outdoor_.valid = false;
 		std::unique_ptr<cJSON, decltype(&cJSON_Delete)> data(cJSON_Parse(payload.c_str()), &cJSON_Delete);
 
 		auto main = cJSON_GetObjectItem(data.get(), "main");
 		if (!main || main->type != cJSON_Object) {
-			DBGLOGOW("Error, missing main\n", nullptr);
+			DBGLOGFD(log_, logFeature_, "Error, missing main\n", nullptr);
 			return;
 		}
 
@@ -88,7 +100,7 @@ private:
 	void getData() {
 		std::unique_lock<std::mutex> lock(mutex_);
 		if (getDataInProgress_) {
-			DBGLOGOW("getData already in progress\n");
+			DBGLOGFD(log_, logFeature_, "getData already in progress\n");
 			return;
 		}
 		getDataInProgress_ = true;
@@ -101,16 +113,16 @@ private:
 
 			lock.lock();
 			payload_ = std::move(payload);
-			DBGLOGOW("Content size: %d. Response: %d\n", http_.getSize(), httpResponseCode);
+			DBGLOGFD(log_, logFeature_, "Content size: %d. Response: %d\n", http_.getSize(), httpResponseCode);
 			if (payload_.length() > 0) {
 				parsePayload(payload_);
-				DBGLOGOW("Date: %ld Temp: %f, Humidity: %d%% Pressure: %d hPa\n", static_cast<unsigned long>(outdoor_.date), static_cast<float>(outdoor_.temp) / 100, static_cast<int>(outdoor_.humidity), static_cast<int>(outdoor_.pressure));
+				DBGLOGFD(log_, logFeature_, "Date: %ld Temp: %f, Humidity: %d%% Pressure: %d hPa\n", static_cast<unsigned long>(outdoor_.date), static_cast<float>(outdoor_.temp) / 100, static_cast<int>(outdoor_.humidity), static_cast<int>(outdoor_.pressure));
 			}
 			lock.unlock();
 
 		}
 		else {
-			DBGLOGOW("Error code %d\n", httpResponseCode);
+			DBGLOGFD(log_, logFeature_, "Error code %d\n", httpResponseCode);
 		}
 		http_.end();
 		lock.lock();
@@ -138,7 +150,7 @@ namespace openweather {
 static void fetchTask(void *pvParameters) {
 	auto ow = reinterpret_cast<OpenWeather *>(pvParameters);
 	ow->getData();
-	DBGLOGOW("Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
+	DBGLOGFD(ow->getLogger(), ow->getLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
 	vTaskDelete(NULL);
 }
 }

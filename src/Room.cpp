@@ -1,3 +1,4 @@
+#include "Logging.h"
 
 
 #include "Room.h"
@@ -7,17 +8,17 @@ namespace heating {
 
 void Room::storeBattery(int8_t batteryLevel) {
 	batteryLevel_ = batteryLevel;
-	DBGLOGROOM("storeBattery %-15.15s batt: %d%%\n", config_.name_.c_str(), batteryLevel);
+	DBGLOGFD(log_, logFeature_, "storeBattery %-15.15s batt: %d%%\n", config_.name_.c_str(), batteryLevel);
 }
 
 void Room::storeHumidity(int16_t humidity) {
 	currentHumidity_ = humidity;
-	DBGLOGROOM("storeHumidity %-15.15s humidity: %d%%\n", config_.name_.c_str(), humidity);
+	DBGLOGFD(log_, logFeature_, "storeHumidity %-15.15s humidity: %d%%\n", config_.name_.c_str(), humidity);
 }
 
 void Room::storeTemperature(int16_t temperature) {
 	std::lock_guard<std::mutex> lock(mutex_);
-	DBGLOGROOM("storeTemperature %-15.15s temp: %d\n", config_.name_.c_str(), temperature);
+	DBGLOGFD(log_, logFeature_, "storeTemperature %-15.15s temp: %d\n", config_.name_.c_str(), temperature);
 	temperatureData_.push(temperatureData_t{clock_t::now(), temperature});
 }
 
@@ -32,7 +33,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 
 	// start heat boiler, continue heat, data error
 	if (!isTemperatureValid()) {
-		DBGLOGROOM("SSB  %-15.15s no samples\n", config_.name_.c_str());
+		DBGLOGFD(log_, logFeature_, "SSB  %-15.15s no samples\n", config_.name_.c_str());
 		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
@@ -47,7 +48,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 
 	auto meanTemperature = getAverageTemperature();
 	if (!meanTemperature.has_value()) {
-		DBGLOGROOM("SSB  %-15.15s %d dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", config_.name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
+		DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", config_.name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
 		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
@@ -57,7 +58,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 	stats.shouldHeat_ = shouldContinueHeating;
 	stats.shouldStartBoiler_ = shouldStartBoiler;
 
-	DBGLOGROOM("SSB  %-15.15s %d mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", config_.name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0, shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
+	DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", config_.name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0, shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
 
 	Room::TemperatureStatus status{Room::TemperatureStatus::TEMPERATURE_OK};
 	if (shouldStartBoiler) {
@@ -81,7 +82,7 @@ bool Room::isTemperatureValid() const {
 
 	auto lastSampleTime = std::get<0>(temperatureData_.newest());
 	if (lastSampleTime + std::chrono::minutes(5) < clock_t::now()) {
-		DBGLOGROOM("isTemperatureValid %-15.15s temperature too old, last read time: %ld, current: %ld\n", config_.name_.c_str(), lastSampleTime, millis());
+		DBGLOGFD(log_, logFeature_, "isTemperatureValid %-15.15s temperature too old, last read time: %ld, current: %ld\n", config_.name_.c_str(), lastSampleTime, millis());
 		return false;
 	}
 	return true;
@@ -125,7 +126,7 @@ std::pair<uint16_t, uint8_t> Room::getTimeNow() const {
 	struct tm timeinfo;
 	auto result = getLocalTime(&timeinfo);
 	if (!result) {
-		logger.printf("TIME ERROR\n");
+		DBGLOGFI(log_, logFeature_, "TIME ERROR\n");
 	}
 	uint16_t time = timeinfo.tm_hour * 100 + timeinfo.tm_min;
 	return {time, timeinfo.tm_wday};
@@ -138,9 +139,9 @@ std::optional<int16_t> Room::getAverageTemperature() const {
 	auto currentTime = clock_t::now();
 	size_t validSamples = 0;
 
-	//		logger.printf("getMeanTemperature %-15.15s size: %zu\n", config_.name_.c_str(), temperatureData_.size());
+	//		DBGLOGFI(log_, logFeature_, "getMeanTemperature %-15.15s size: %zu\n", config_.name_.c_str(), temperatureData_.size());
 	for (size_t i = 0; i < temperatureData_.size(); i++) {
-		//			logger.printf("%-15.15s idx: %d t: %f\n", config_.name_.c_str(), i, std::get<1>(temperatureData_.get(i)));
+		//			DBGLOGFI(log_, logFeature_, "%-15.15s idx: %d t: %f\n", config_.name_.c_str(), i, std::get<1>(temperatureData_.get(i)));
 		auto sampleTime = std::get<0>(temperatureData_.get(i));
 
 		if (currentTime - sampleTime <= getMaxSampleAgeMs()) {
@@ -158,7 +159,7 @@ std::optional<int16_t> Room::getAverageTemperature() const {
 
 	avgTemp /= validSamples;
 
-	DBGLOGROOM("GAT  %-15.15s samples: %zu, valid: %zu, AvgTemp: %d (%f)\n", config_.name_.c_str(), temperatureData_.size(), validSamples, avgTemp, (float)avgTemp / 100);
+	DBGLOGFD(log_, logFeature_, "GAT  %-15.15s samples: %zu, valid: %zu, AvgTemp: %d (%f)\n", config_.name_.c_str(), temperatureData_.size(), validSamples, avgTemp, (float)avgTemp / 100);
 
 	return avgTemp;
 }
@@ -170,6 +171,10 @@ std::string Room::getStatus() const {
 }
 
 void Room::getStatus(std::ostream &ss) const {
+	getStatus(ss, false);
+}
+
+void Room::getStatus(std::ostream &ss, bool isBeingHeated) const {
 	std::lock_guard<std::mutex> lock(mutex_);
 
 	ss << "{\"name\": \"" << config_.name_ << "\", \"enabled\": " << (config_.enabled_ ? "true" : "false");
@@ -210,6 +215,9 @@ void Room::getStatus(std::ostream &ss) const {
 	ss << ", \"temporaryProgramSecondsLeft\": " << temporaryProgramSecondsLeft;
 	ss << ", \"shouldContinueHeating\": " << (stats.shouldHeat_ ? "true" : "false");
 	ss << ", \"shouldStartBoiler\": " << (stats.shouldStartBoiler_ ? "true" : "false");
+	ss << ", \"enabledState\": \"" << (config_.enabled_ ? "on" : "off") << "\"";
+	ss << ", \"isBeingHeatedState\": \"" << (isBeingHeated ? "on" : "off") << "\"";
+	ss << ", \"isBeingHeated\": " << (isBeingHeated ? "true" : "false");
 	ss << ", \"valves\": [";
 
 	bool firstValve = true;

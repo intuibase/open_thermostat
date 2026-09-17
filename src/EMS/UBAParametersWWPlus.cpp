@@ -1,5 +1,5 @@
 #include "UBAParametersWWPlus.h"
-#include "Logger.h"
+#include "Logging.h"
 
 namespace heating::ems {
 
@@ -11,32 +11,32 @@ namespace heating::ems {
 // 15 ??
 // 21  - 100% ?
 
-void UBAParametersWWPlus::logData() const {
-	{ auto value = getValue<uint8_t>(0); if (value) { DBGLOGEMS("UBAParametersWWPlus sel temp off: %d\n", value.value()); } }
+void UBAParametersWWPlus::logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const {
+	{ auto value = getValue<uint8_t>(0); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus sel temp off: %d\n", value.value()); } }
 
-	{ auto value = getValue<uint8_t>(1); if (value) { DBGLOGEMS("UBAParametersWWPlus 1:  %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(2); if (value) { DBGLOGEMS("UBAParametersWWPlus 2:  %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(3); if (value) { DBGLOGEMS("UBAParametersWWPlus 3:  %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(4); if (value) { DBGLOGEMS("UBAParametersWWPlus 4:  %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(15); if (value) { DBGLOGEMS("UBAParametersWWPlus 15: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(1); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus 1:  %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(2); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus 2:  %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(3); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus 3:  %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(4); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus 4:  %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(15); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus 15: %d\n", value.value()); } }
 
 
-	{ auto value = getValue<uint8_t>(5); if (value) { DBGLOGEMS("UBAParametersWWPlus enabled: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(6); if (value) { DBGLOGEMS("UBAParametersWWPlus temp set: %d\n", value.value()); } }
-	{ auto value = getValue<int8_t>(7); if (value) { DBGLOGEMS("UBAParametersWWPlus hysteresis on: %d\n", value.value()); } }
-	{ auto value = getValue<int8_t>(8); if (value) { DBGLOGEMS("UBAParametersWWPlus hysteresis off: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(9); if (value) { DBGLOGEMS("UBAParametersWWPlus flow temp offset: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(10); if (value) { DBGLOGEMS("UBAParametersWWPlus circ pump: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(11); if (value) { DBGLOGEMS("UBAParametersWWPlus circ mode: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(12); if (value) { DBGLOGEMS("UBAParametersWWPlus disinfection temp: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(13); if (value) { DBGLOGEMS("UBAParametersWWPlus comfort: %d, 0-comfort, 216-eco - not working check in EMS-ESP\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(14); if (value) { DBGLOGEMS("UBAParametersWWPlus alternating operation: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(16); if (value) { DBGLOGEMS("UBAParametersWWPlus selected temp single: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(18); if (value) { DBGLOGEMS("UBAParametersWWPlus selected temp low: %d\n", value.value()); } } // what it means
-	{ auto value = getValue<uint8_t>(19); if (value) { DBGLOGEMS("UBAParametersWWPlus minimum temperature: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(20); if (value) { DBGLOGEMS("UBAParametersWWPlus maximum temperature: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(25); if (value) { DBGLOGEMS("UBAParametersWWPlus charge optimization: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(26); if (value) { DBGLOGEMS("UBAParametersWWPlus ECO: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(5); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus enabled: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(6); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus temp set: %d\n", value.value()); } }
+	{ auto value = getValue<int8_t>(7); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus hysteresis on: %d\n", value.value()); } }
+	{ auto value = getValue<int8_t>(8); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus hysteresis off: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(9); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus flow temp offset: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(10); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus circ pump: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(11); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus circ mode: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(12); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus disinfection temp: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(13); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus comfort: %d, 0-comfort, 216-eco - not working check in EMS-ESP\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(14); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus alternating operation: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(16); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus selected temp single: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(18); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus selected temp low: %d\n", value.value()); } } // what it means
+	{ auto value = getValue<uint8_t>(19); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus minimum temperature: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(20); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus maximum temperature: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(25); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus charge optimization: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(26); if (value) { DBGLOGFD((&log), feature, "UBAParametersWWPlus ECO: %d\n", value.value()); } }
 }
 
 }

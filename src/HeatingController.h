@@ -1,4 +1,5 @@
 #pragma once
+#include "Logging.h"
 
 #include "BeaconBleAddress.h"
 #include "BoilerController.h"
@@ -12,7 +13,7 @@
 #include "MQTT.h"
 #include "Room.h"
 
-#include "Logger.h"
+#include <logger/LoggerInterface.h>
 #include <algorithm>
 #include <atomic>
 #include <functional>
@@ -39,7 +40,7 @@ inline PcfDeviceMap buildPcfDeviceMap() {
 	return map;
 }
 
-inline std::unique_ptr<gpio::GpioPort> createGpioPort(config::PinConfig const &pinCfg, PcfDeviceMap const &pcfDevices) {
+inline std::unique_ptr<gpio::GpioPort> createGpioPort(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, config::PinConfig const &pinCfg, PcfDeviceMap const &pcfDevices) {
 	if (pinCfg.source == "builtin") {
 		return std::make_unique<gpio::BuiltinGpioPort>(pinCfg.pin);
 	}
@@ -50,24 +51,24 @@ inline std::unique_ptr<gpio::GpioPort> createGpioPort(config::PinConfig const &p
 		if (it != pcfDevices.end()) {
 			return std::make_unique<gpio::PcfGpioPort>(it->second, pinCfg.pin);
 		}
-		heating::logger.printf("createGpioPort: extender '%s' not found in config\n", label.c_str());
+		DBGLOGFI(log, feature, "createGpioPort: extender '%s' not found in config\n", label.c_str());
 	}
 	return std::make_unique<gpio::NullGpioPort>();
 }
 
-inline std::unique_ptr<gpio::GpioPort> createBoilerPort(PcfDeviceMap const &pcfDevices) {
+inline std::unique_ptr<gpio::GpioPort> createBoilerPort(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, PcfDeviceMap const &pcfDevices) {
 	auto pin = config::getBoilerPin();
 	if (!pin)
 		return std::make_unique<gpio::NullGpioPort>();
-	return createGpioPort(*pin, pcfDevices);
+	return createGpioPort(log, feature, *pin, pcfDevices);
 }
 
-inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts(PcfDeviceMap const &pcfDevices) {
+inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, PcfDeviceMap const &pcfDevices) {
 	auto pins = config::getValvePins();
 	std::vector<std::unique_ptr<gpio::GpioPort>> ports;
 	ports.reserve(pins.size());
 	for (auto const &p : pins) {
-		ports.push_back(createGpioPort(p, pcfDevices));
+		ports.push_back(createGpioPort(log, feature, p, pcfDevices));
 	}
 	return ports;
 }
@@ -98,8 +99,8 @@ class HeatingController {
 public:
 	using boilerHeatingTemperatureOverride_t = BoilerController::boilerHeatingTemperatureOverride_t;
 
-	HeatingController() : openWeather_(config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(buildRoomsFromConfig()) {
-		heating::logger.printf("HeatingController constructed\n");
+	explicit HeatingController(std::shared_ptr<ib::logger::LoggerInterface> log) : log_(std::move(log)), logFeature_(log_ ? log_->addFeature("HeatCtrl") : 0), openWeather_(log_, config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(buildRoomsFromConfig()) {
+		DBGLOGFI(log_, logFeature_, "HeatingController constructed\n");
 		bluetoothScan_ = true;
 		lastReadTemperatureCounter_.notifyNow();
 	}
@@ -129,12 +130,12 @@ public:
 				// valve should be closed only if temperature is in upper/lower margin - in case of no samples, valve should remain open but should not trigger or continue heating
 				if (roomStatus == Room::TemperatureStatus::TEMPERATURE_OK) {
 					auto valves = room->getValves();
-					if (debug::debug.debugHeatingController) {
-						DBGLOGHC("  adding valves to close for room %s valves: ", room->getName().c_str());
+					if (log_->isFeatureEnabled(logFeature_)) {
+						DBGLOGFD(log_, logFeature_, "  adding valves to close for room %s valves: ", room->getName().c_str());
 						for (auto const &valve : valves) {
-							logger.printf("'%s' ", valve.c_str());
+							DBGLOGFI(log_, logFeature_, "'%s' ", valve.c_str());
 						}
-						logger.println("");
+						DBGLOGFI(log_, logFeature_, "");
 					}
 
 					for (auto const &valve : valves) {
@@ -158,15 +159,13 @@ public:
 		boiler_.startBoilerOrContinue(shouldStartBoiler, shouldBoilerContinue, boilerHeatingTempOverride);
 
 
-		DBGLOGHC("%s\n", boiler_.getStatus().c_str());
+		DBGLOGFD(log_, logFeature_, "%s\n", boiler_.getStatus().c_str());
 
 		if (bluetoothScan_) {
 			tempReader_.triggerScan();
 		}
 
 		openWeather_.operate();
-
-		mqtt_.operate();
 	}
 
 	void loop() {
@@ -245,9 +244,20 @@ public:
 		ss << "[";
 		size_t r = 0;
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		bool boilerStarted = boiler_.isBoilerStarted();
 
 		for (auto const &room : rooms_) {
-			room->getStatus(ss);
+			bool isBeingHeated = false;
+			if (boilerStarted && room->isEnabled()) {
+				for (auto const &valve : room->getValves()) {
+					if (boiler_.isValveOpen(valve)) {
+						isBeingHeated = true;
+						break;
+					}
+				}
+			}
+
+			room->getStatus(ss, isBeingHeated);
 			r++;
 			if (r != rooms_.size()) {
 				ss << ",";
@@ -272,7 +282,7 @@ public:
 				return true;
 			}
 		}
-		DBGLOGHC("setRoomTemporaryTemperature. No room '%s' found\n", name.c_str());
+		DBGLOGFD(log_, logFeature_, "setRoomTemporaryTemperature. No room '%s' found\n", name.c_str());
 
 		return false;
 	}
@@ -284,7 +294,7 @@ public:
 	void getDevicesFound(std::ostream &ss) {
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 
-		DBGLOGHC("getDevicesFound %zu\n", devicesFound_.size());
+		DBGLOGFD(log_, logFeature_, "getDevicesFound %zu\n", devicesFound_.size());
 
 		ss << "[";
 		for (auto it = devicesFound_.begin(); it != devicesFound_.end(); ++it) {
@@ -309,13 +319,15 @@ public:
 	}
 
 	void reloadConfiguration() {
-		DBGLOGHC("reloadConfiguration%s\n", "");
+		DBGLOGFD(log_, logFeature_, "reloadConfiguration%s\n", "");
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		currentProgram_ = config::getCurrentProgram();
 		rooms_ = buildRoomsFromConfig();
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 
 	void pushTemperatureData(BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) {
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
@@ -324,11 +336,11 @@ private:
 
 		auto room = std::find_if(std::begin(rooms_), std::end(rooms_), [&adr = address](auto const &room) { return (adr == room->getSensorAddress()); });
 		if (room == std::end(rooms_)) {
-			DBGLOGHC("No room for address '" PRiBleAddress "'\n", PRaBleAddress(address));
+			DBGLOGFD(log_, logFeature_, "No room for address '" PRiBleAddress "'\n", PRaBleAddress(address));
 			return;
 		}
 
-		DBGLOGHC("push '%s', " PRiBleAddress " temp: %d battery: %d%% BTC MinPeekStack: %d\n", (*room)->getName().c_str(), PRaBleAddress(address), temperature.value_or(std::numeric_limits<decltype(temperature)::value_type>::min()), battery.value_or(std::numeric_limits<decltype(battery)::value_type>::min()), uxTaskGetStackHighWaterMark(nullptr));
+		DBGLOGFD(log_, logFeature_, "push '%s', " PRiBleAddress " temp: %d battery: %d%% BTC MinPeekStack: %d\n", (*room)->getName().c_str(), PRaBleAddress(address), temperature.value_or(std::numeric_limits<decltype(temperature)::value_type>::min()), battery.value_or(std::numeric_limits<decltype(battery)::value_type>::min()), uxTaskGetStackHighWaterMark(nullptr));
 
 		if (temperature.has_value()) {
 			(*room)->storeTemperature(temperature.value());
@@ -347,7 +359,7 @@ private:
 
 	void resetIfNoDataForLongTime() {
 		if (lastReadTemperatureCounter_.durationPassed()) {
-			logger.println("RESTARTING DUE TO NO DATA FOR OVER 5m");
+			DBGLOGFI(log_, logFeature_, "RESTARTING DUE TO NO DATA FOR OVER 5m");
 			ESP.restart();
 		}
 	}
@@ -368,7 +380,7 @@ private:
 		}
 
 		if (!temp.has_value()) { // try to get any valid temperature
-			DBGLOGHC("Outdoor temperature is invalid. Trying to get it from OpenWeather or EMS\n", "");
+			DBGLOGFD(log_, logFeature_, "Outdoor temperature is invalid. Trying to get it from OpenWeather or EMS\n", "");
 			auto owtemp = openWeather_.getTemperature();
 
 			ems::EmsBoilerState &boilerState = ems_.getBoilerState();
@@ -378,7 +390,7 @@ private:
 		}
 
 		if (!temp.has_value()) {
-			DBGLOGHC("Outdoor temperature is invalid. Setting to -20C\n", "");
+			DBGLOGFD(log_, logFeature_, "Outdoor temperature is invalid. Setting to -20C\n", "");
 			return outdoorTemperatureIfInvalidRead;
 		} else {
 			return temp.value();
@@ -389,21 +401,21 @@ private:
 		auto configs = config::getRoomsConfig(currentProgram_);
 		std::vector<std::shared_ptr<heating::Room>> rooms;
 		for (const auto config : configs) {
-			rooms.emplace_back(std::make_shared<heating::Room>(std::move(config)));
+			rooms.emplace_back(std::make_shared<heating::Room>(log_, std::move(config)));
 		}
 		return rooms;
 	}
 
 	std::atomic_bool bluetoothScan_;
-	BeaconTemperatureReader tempReader_{[this](BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) { pushTemperatureData(std::move(address), temperature, humidity, battery); }};
+	BeaconTemperatureReader tempReader_{log_, [this](BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) { pushTemperatureData(std::move(address), temperature, humidity, battery); }};
 	OpenWeather openWeather_;
-	ems::EmsController ems_;
+	ems::EmsController ems_{log_};
 	config::BoilerConfig boilerConfig_{config::getBoilerConfig()};
 
 	PcfDeviceMap pcfDevices_{buildPcfDeviceMap()};
-	BoilerController boiler_{boilerConfig_, [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
+	BoilerController boiler_{log_, boilerConfig_, [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
 			ems.changeBoilerState(enabled, flowTempSet); }, [&ems = ems_](uint8_t heatingTemperature) {
-			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(pcfDevices_), createValvePorts(pcfDevices_), createValveLabels()};
+			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(log_, logFeature_, pcfDevices_), createValvePorts(log_, logFeature_, pcfDevices_), createValveLabels()};
 	std::string currentProgram_;
 	std::vector<std::shared_ptr<heating::Room>> rooms_;
 	std::unordered_map<std::string, uint8_t> valveLabelMap_{buildValveLabelMap()};
@@ -414,6 +426,7 @@ private:
 	ems::EmsMetrics emsMetrics_{[this](uint16_t telegramId, std::function<void(heating::ems::EmsTelegram const &)> processor) { ems_.registerTelegramProcessor(telegramId, processor); }};
 
 	MQTT mqtt_{
+		log_,
 		[this]() {return getRoomsCount();},
 		[this](std::ostream &ss) { getRoomsStatus(ss);},
 		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);}

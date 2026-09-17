@@ -1,16 +1,12 @@
 // Stubs for Arduino-dependent symbols
 #include <gtest/gtest.h>
-#include "Logger.h"
-
-namespace debug {
-struct debug debug;
-}
+#include "Logging.h"
 
 namespace heating {
-Logger logger;
+std::shared_ptr<ib::logger::LoggerInterface> logger;
 }
 
-// RoomConfig method implementations (avoiding Arduino-dependent Logger.h from src/RoomConfig.cpp)
+// RoomConfig method implementations (avoiding Arduino-dependent src/RoomConfig.cpp)
 #include "RoomConfig.h"
 
 namespace heating {

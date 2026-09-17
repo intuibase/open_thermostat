@@ -1,1 +1,20 @@
-{"debugRoomTemperatures": false,"debugAutoLock": false,"debugHeatingController": false,"debugTemperatureReader": false,"debugREST": true,"debugOpenWeather": false,"debugBoilerController": true,"debugEmsBusUart": false,"debugEmsBusUartForwarder": false,"debugEmsController": true,"debugEmsVerbose": false,"debugMQTT": false,"debugFatal": true}
+{
+  "Room": false,
+  "HeatCtrl": false,
+  "TempReader": false,
+  "REST": true,
+  "OpenWeather": false,
+  "Boiler": true,
+  "EmsUart": false,
+  "EmsUartFwd": false,
+  "EmsControl": true,
+  "EmsVerbose": false,
+  "MQTT": false,
+  "MQTT rooms": false,
+  "MQTT device status": false,
+  "MQTT EMS metrics": false,
+  "App": true,
+  "Config": true,
+  "RTC": true,
+  "Fatal": true
+}

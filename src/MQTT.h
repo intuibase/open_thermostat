@@ -1,84 +1,158 @@
 #pragma once
 
-
 #include "config.h"
-#include "Logger.h"
+#include "Logging.h"
 #include "RTCTimeHelpers.h"
 
-#include <PubSubClient.h>
-#include <ESPPubSubClientWrapper.h>
+#include <mqtt/MQTT.h>
+#include <mqtt/MQTTReporterInterface.h>
+#include <mqtt/MQTTPublishInterface.h>
+
+#include <PeriodicCounter.h>
 #include <viewable_stringbuf.h>
+
 #include <functional>
+#include <memory>
 #include <ostream>
+#include <string>
 #include <string_view>
-#include "PeriodicCounter.h"
+#include <vector>
 
 namespace heating {
 
 using namespace std::string_view_literals;
 
-class MyPubSub : public ESPPubSubClientWrapper {
+class RoomsReporter final : public ib::mqtt::MQTTReporterInterface {
 public:
-	MyPubSub(const char *domain, uint16_t port = 1883) : ESPPubSubClientWrapper(domain, port) {
+	using getRoomCount_t = std::function<std::size_t()>;
+	using getRoomStatus_t = std::function<void(std::ostream &)>;
+
+	RoomsReporter(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus) : log_(std::move(log)), getRoomsCount_(std::move(getRoomsCount)), getRoomsStatus_(std::move(getRoomsStatus)) { if (log_) logFeature_ = log_->addFeature("MQTT rooms"); }
+
+	void getStatus(std::ostream &ss) const override {
+		ss << "{\"rooms\": ";
+		getRoomsStatus_(ss);
+		ss << "}";
 	}
 
-	boolean publish(std::string_view topic, std::string_view payload, boolean retained) {
-		if (!connected()) {
-			return false;
+	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &publish) override {
+		auto roomCount = getRoomsCount_();
+		for (size_t room = 0; room < roomCount; ++room) {
+			auto roomId = roomEntityId(room);
+			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_enabled", "Heating enabled"sv, "enabledState"sv, ""sv, ""sv);
+			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_heating", "Room is being heated"sv, "isBeingHeatedState"sv, ""sv, ""sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_curr_temp", "Current temperature"sv, "currentTemp"sv, "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_temp_set", "Temperature set"sv, "tempSet"sv, "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_name", "Room name"sv, "name"sv, ""sv, ""sv, ""sv, ""sv, ""sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_battery", "Battery level"sv, "batteryLevel"sv, ""sv, "%"sv, "measurement"sv, "battery"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_humidity", "Humidity"sv, "currentHumidity"sv, "/ 100"sv, "%"sv, "measurement"sv, "humidity"sv, {});
+		}
+	}
+
+	void publishStateTopic(ib::mqtt::MQTTPublishInterface &publish, uint16_t intervalSecs) override {
+		lastMqttPublishCounter_.setIntervalMs(intervalSecs * 1000);
+		if (!lastMqttPublishCounter_.durationPassed()) {
+			DBGLOGFD(log_, logFeature_, "Skipping MQTT publish, interval not passed yet. Time to wait: %ld ms\n", lastMqttPublishCounter_.getTimeToWaitMs());
+			return;
 		}
 
-		try {
-			uint32_t sizeOfPacket = 2 + topic.length() + payload.length(); // 2 bytes for topic length
-			auto variableHeaderLen = howManyBytesWeNeedToEncodeSize(sizeOfPacket);
-			uint8_t header[3 + variableHeaderLen];  // 1 byte for header, 2 bytes topic len
+		ib::viewable_stringbuf payloadBuf;
+		std::ostream ss(&payloadBuf);
+		getStatus(ss);
 
-			header[0] = MQTTPUBLISH;
-			if (retained) {
-				header[0] |= 0x01;
-			}
+		publish.publishStateTopic("room_data"sv, payloadBuf.view(), false);
+	}
 
-			// if (qos == 0) {
-			// 	header[0] |= 0x00;
-			// } else if (qos == 1) {
-			// 	header[0] |= 0x02;
-			// } else if (qos == 2) {
-			// 	header[0] |= 0x04;
-			// }
+private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	static std::string roomEntityId(size_t roomNo) { return "opth_room_" + std::to_string(roomNo); }
 
-			header[variableHeaderLen + 1] = (topic.length() >> 8);
-			header[variableHeaderLen + 2] = (topic.length() & 0xFF);
+	ib::PeriodicCounter lastMqttPublishCounter_{1000};
+	getRoomCount_t getRoomsCount_;
+	getRoomStatus_t getRoomsStatus_;
+};
 
-			uint8_t pos = 1;
-			uint16_t len = sizeOfPacket;
-			do {
-				uint8_t digit = len  & 127; //digit = len %128
-				len >>= 7; //len = len / 128
-				if (len > 0) {
-					digit |= 0x80;
-				}
-				header[pos++] = digit;
-			} while(len>0);
+class DeviceStatusReporter final : public ib::mqtt::MQTTReporterInterface {
+public:
+	explicit DeviceStatusReporter(std::shared_ptr<ib::logger::LoggerInterface> log) : log_(std::move(log)) { if (log_) logFeature_ = log_->addFeature("MQTT device status"); }
 
-			_wiFiClient.write(header, 3 + variableHeaderLen);
-			_wiFiClient.write(reinterpret_cast<const uint8_t *>(topic.data()), topic.length());
-			_wiFiClient.write(reinterpret_cast<const uint8_t *>(payload.data()), payload.length());
+	void getStatus(std::ostream &ss) const override {
+		ss << "{\"mem_free\":" << ESP.getFreeHeap() << ",";
+		ss << "\"mem_min_free\":" << ESP.getMinFreeHeap() << ",";
+		ss << "\"mem_max_alloc\":" << ESP.getMaxAllocHeap() << ",";
+		ss << "\"temperature\":" << heating::rtcGetTemp() << ",";
+		ss << "\"cpu_temperature\":" << temperatureRead() << ",";
+		ss << "\"uptime\":" << millis() / 1000;
+		ss << "}";
+	}
 
-			return true;
-		} catch (std::out_of_range const &e) {
-			DBGLOGMQTT("Unable to publish: %s\n", e.what());
-			return false;
+	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &publish) override {
+		constexpr std::string_view unit_byte = "B"sv;
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_cpu_temperature"sv, "OpenThermostat ESP32 CPU temperature"sv, "cpu_temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv, {});
+	}
+
+	void publishStateTopic(ib::mqtt::MQTTPublishInterface &publish, uint16_t intervalSecs) override {
+		lastMqttPublishCounter_.setIntervalMs(intervalSecs * 1000);
+		if (!lastMqttPublishCounter_.durationPassed()) {
+			DBGLOGFD(log_, logFeature_, "Skipping MQTT publish, interval not passed yet. Time to wait: %ld ms\n", lastMqttPublishCounter_.getTimeToWaitMs());
+			return;
 		}
-		//     HXXXX00topicpayload  -- 00 topic len H header XXXX variable header len (contains 00 + topic + payload lenghts)
+
+		ib::viewable_stringbuf payloadBuf;
+		std::ostream ss(&payloadBuf);
+		getStatus(ss);
+
+		publish.publishStateTopic("device_status"sv, payloadBuf.view(), false);
 	}
 
-protected:
-	uint8_t howManyBytesWeNeedToEncodeSize(uint32_t length) {
-		if (length < 128) { return 1; }
-		if (length < 16384) { return 2; }
-		if (length < 2097152) { return 3; }
-		if (length < 268435456) { return 4; }
-		throw std::out_of_range("payload too long");
+private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	ib::PeriodicCounter lastMqttPublishCounter_{1000};
+};
+
+class EmsMetricsReporter final : public ib::mqtt::MQTTReporterInterface {
+public:
+	using getEmsMetrics_t = std::function<void(std::ostream &)>;
+
+	EmsMetricsReporter(std::shared_ptr<ib::logger::LoggerInterface> log, getEmsMetrics_t getEmsMetrics) : log_(std::move(log)), getEmsMetrics_(std::move(getEmsMetrics)) { if (log_) logFeature_ = log_->addFeature("MQTT EMS metrics"); }
+
+	void getStatus(std::ostream &ss) const override { getEmsMetrics_(ss); }
+
+	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &publish) override {
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_energy"sv, "Total energy consumption"sv, "totalEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv, {});
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_energy_warm_water"sv, "Energy used for warm water heating"sv, "warmWaterEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv, {});
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_energy_heating"sv, "Energy used for space heating"sv, "heatingEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv, {});
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_warm_water_usage"sv, "Warm water usage"sv, "warmWaterUsage"sv, ""sv, "L"sv, "measurement"sv, ""sv, ""sv);
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_warm_water_avg_flow"sv, "Average flow of warm water"sv, "warmWaterAvgFlow"sv, ""sv, "L/min"sv, "measurement"sv, ""sv, ""sv);
+		publish.publishAutoDiscoverySensor("ems_metrics"sv, "opth_outdoor_temperature"sv, "Outdoor temperature"sv, "outdoorTemperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, {});
 	}
+
+	void publishStateTopic(ib::mqtt::MQTTPublishInterface &publish, uint16_t intervalSecs) override {
+		lastMqttPublishCounter_.setIntervalMs(intervalSecs * 1000);
+		if (!lastMqttPublishCounter_.durationPassed()) {
+			DBGLOGFD(log_, logFeature_, "Skipping MQTT publish, interval not passed yet. Time to wait: %ld ms\n", lastMqttPublishCounter_.getTimeToWaitMs());
+			return;
+		}
+
+		ib::viewable_stringbuf payloadBuf;
+		std::ostream ss(&payloadBuf);
+		getStatus(ss);
+
+		publish.publishStateTopic("ems_metrics"sv, payloadBuf.view(), false);
+	}
+
+private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	ib::PeriodicCounter lastMqttPublishCounter_{1000};
+	getEmsMetrics_t getEmsMetrics_;
 };
 
 class MQTT {
@@ -87,279 +161,55 @@ public:
 	using getRoomCount_t = std::function<std::size_t()>;
 	using getEmsMetrics_t = std::function<void(std::ostream &)>;
 
-	MQTT(getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getEmsMetrics_t getEmsMetrics) : config_(config::getMqttConfig()), client_{config_.brokerAddress.c_str(), config_.brokerPort}, getRoomsStatus_{std::move(getRoomsStatus)}, getEmsMetrics_(std::move(getEmsMetrics)) {
-		DBGLOGMQTT("Enabled: %d\n", config_.enabled);
-		DBGLOGMQTT("%s:%d\n", config_.brokerAddress.c_str(), config_.brokerPort );
-		DBGLOGMQTT("publish interval %d, keep alive inteval: %d\n", config_.interval, config_.keepAlive);
-		DBGLOGMQTT("clientId '%s', base: '%s'\n", config_.clientId.c_str(), config_.base.c_str());
+	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getEmsMetrics_t getEmsMetrics) : log_(std::move(log)) {
+		if (log_) {
+			static const auto id = log_->addFeature("MQTT");
+			logFeature_ = id;
+		}
+		auto mqttConfig = config::getMqttConfig();
+		DBGLOGFD(log_, logFeature_, "Enabled: %d\n", mqttConfig.enabled);
+		DBGLOGFD(log_, logFeature_, "%s:%d\n", mqttConfig.brokerAddress.c_str(), mqttConfig.brokerPort);
+		DBGLOGFD(log_, logFeature_, "publish interval %d, keep alive inteval: %d\n", mqttConfig.interval, mqttConfig.keepAlive);
+		DBGLOGFD(log_, logFeature_, "clientId '%s', base: '%s'\n", mqttConfig.clientId.c_str(), mqttConfig.base.c_str());
 
-		if (!config_.enabled) {
+		if (!mqttConfig.enabled) {
 			return;
 		}
 
-		client_.on("homeassistant/status", [this](char* topic, uint8_t* payload, unsigned int payloadLen) {
-			DBGLOGMQTT("HomeAssistant '%s' payload: '%s'\n", topic, payload);
-		});
+		ib::mqtt::MqttConfig libConfig;
+		libConfig.enabled = mqttConfig.enabled;
+		libConfig.brokerAddress = mqttConfig.brokerAddress;
+		libConfig.brokerPort = mqttConfig.brokerPort;
+		libConfig.username = mqttConfig.username;
+		libConfig.password = mqttConfig.password;
+		libConfig.base = mqttConfig.base.empty() ? "open_thermostat" : mqttConfig.base;
+		libConfig.clientId = mqttConfig.clientId.empty() ? libConfig.base : mqttConfig.clientId;
+		libConfig.keepAlive = mqttConfig.keepAlive;
+		libConfig.interval = mqttConfig.interval;
 
-		client_.onConnect([this, getRoomsCount](uint16_t connCount) {
-			DBGLOGMQTT("Connected to broker %d\n", connCount);
-			publishHADiscovery(getRoomsCount());
-		});
+		ib::mqtt::MQTT::HomeAssistantDeviceInfo deviceInfo;
+		deviceInfo.name = "OpenThermostat";
+		deviceInfo.model = "OpenThermostat";
+		deviceInfo.manufacturer = "intuibase";
+		deviceInfo.swVersion = "1.0.0";
 
-		client_.connect(config_.clientId.c_str(),
-			config_.username.empty() ? nullptr : config_.username.c_str(),
-			config_.password.empty() ? nullptr : config_.password.c_str(),
-			"open_thermostat/status",
-			0,
-			false,
-			"off",
-			true
-			);
-	}
+		reporters_.emplace_back(std::make_shared<RoomsReporter>(log_, std::move(getRoomsCount), std::move(getRoomsStatus)));
+		reporters_.emplace_back(std::make_shared<DeviceStatusReporter>(log_));
+		reporters_.emplace_back(std::make_shared<EmsMetricsReporter>(log_, std::move(getEmsMetrics)));
 
-	void operate() {
-		if (!config_.enabled) {
-			return;
-		}
-
-		if (client_.connected()) {
-			publishRoomData();
-			publishStatus();
-			publishDeviceStatus();
-			publishEmsMetrics();
-		}
+		mqtt_ = std::make_shared<ib::mqtt::MQTT>(log_, libConfig, deviceInfo, reporters_);
 	}
 
 	void loop() {
-		if (!config_.enabled) {
-			return;
+		if (mqtt_) {
+			mqtt_->loop();
 		}
-		client_.loop();
 	}
 
 private:
-	void publishHADiscovery(size_t roomCount) {
-		DBGLOGMQTT("publishHADiscovery\n");
-
-		auto payload = "{\
-			\"name\": \"OpenThermostat\",\
-			\"uniq_id\": \"open_thermostat\",\
-			\"object_id\": \"opth_status\",\
-			\"state_topic\": \"open_thermostat/status\",\
-			\"device_class\": \"power\",\
-			\"payload_on\": \"on\",\
-			\"payload_off\": \"off\",\
-			\"dev\": {\
-				\"name\": \"OpenThermostat\",\
-				\"sw\": \"1.0.0\",\
-				\"mf\": \"intuibase\",\
-				\"mdl\": \"OpenThermostat\",\
-				\"ids\": [\
-					\"open_thermostat\"\
-				]\
-			}\
-		}"sv;
-		client_.publish("homeassistant/binary_sensor/open_thermostat/status/config"sv, payload.data(), true);
-
-		for (auto room = 0; room < roomCount; ++room) {
-			publishRoomBinarySensor(room, "enabled"sv, "Heating enabled"sv);
-			publishRoomSensor(room, "curr_temp"sv, "Current temperature"sv, "currentTemp"sv, "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv);
-			publishRoomSensor(room, "temp_set"sv, "Temperature set"sv, "tempSet"sv, "/ 100 "sv, "°C"sv, "measurement"sv, "temperature"sv);
-			publishRoomSensor(room, "name"sv, "Room name"sv, "name"sv, ""sv, {}, {});
-			publishRoomSensor(room, "battery"sv, "Battery level"sv, "batteryLevel"sv, ""sv, "%"sv, "measurement"sv, "battery"sv);
-			publishRoomSensor(room, "humidity"sv, "Humidity"sv, "currentHumidity"sv, "/ 100"sv, "%"sv, "measurement"sv, "humidity"sv);
-		}
-
-		constexpr std::string_view unit_byte = "B"sv;
-		constexpr std::string_view unit_litre = "L"sv;
-
-		publishSensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
-		publishSensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
-		publishSensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv);
-		publishSensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
-		publishSensor("device_status"sv, "opth_cpu_temperature"sv, "OpenThermostat ESP32 CPU temperature"sv, "cpu_temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
-		publishSensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv);
-
-		publishSensor("ems_metrics"sv, "opth_energy"sv, "Total energy consumption"sv, "totalEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv);
-		publishSensor("ems_metrics"sv, "opth_energy_warm_water"sv, "Energy used for warm water heating"sv, "warmWaterEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv);
-		publishSensor("ems_metrics"sv, "opth_energy_heating"sv, "Energy used for space heating"sv, "heatingEnergyUsedKwh"sv, ""sv, "kWh"sv, "total"sv, "energy"sv);
-		publishSensor("ems_metrics"sv, "opth_warm_water_usage"sv, "Warm water usage"sv, "warmWaterUsage"sv, ""sv, unit_litre, "measurement"sv);
-		publishSensor("ems_metrics"sv, "opth_warm_water_avg_flow"sv, "Average flow of warm water"sv, "warmWaterAvgFlow"sv, ""sv, "L/min"sv, "measurement"sv);
-		publishSensor("ems_metrics"sv, "opth_outdoor_temperature"sv, "Outdoor temperature"sv, "outdoorTemperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv);
-	}
-
-
-	void publishDeviceStatus() {
-		if (!publishDeviceStatusCounter_.durationPassed()) {
-			DBGLOGMQTT("publishDeviceStatus: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishDeviceStatusCounter_.getIntervalMs() / 1000, publishDeviceStatusCounter_.getTimeToWaitMs());
-			return;
-		}
-
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-
-		ss << "{\"mem_free\":" << ESP.getFreeHeap() << ",";
-		ss << "\"mem_min_free\":" << ESP.getMinFreeHeap() << ",";
-		ss << "\"mem_max_alloc\":" << ESP.getMaxAllocHeap() << ",";
-		ss << "\"temperature\":" << heating::rtcGetTemp() << ",";
-		ss << "\"cpu_temperature\":" << temperatureRead() << ",";
-		ss << "\"uptime\":" << millis()/1000 ;
-		ss << "}";
-
-		DBGLOGMQTT("publishDeviceStatus %zu\n", payloadBuf.view().length());
-
-		client_.publish("open_thermostat/device_status"sv, payloadBuf.view(), false);
-	}
-
-	void publishEmsMetrics() {
-		if (!publishEmsMetricsCounter_.durationPassed()) {
-			DBGLOGMQTT("publishEmsMetrics: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishEmsMetricsCounter_.getIntervalMs() / 1000, publishEmsMetricsCounter_.getTimeToWaitMs());
-			return;
-		}
-
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-
-		getEmsMetrics_(ss);
-
-		DBGLOGMQTT("publishEmsMetrics %zu\n", payloadBuf.view().length());
-
-		client_.publish("open_thermostat/ems_metrics"sv, payloadBuf.view(), false);
-	}
-
-	void publishStatus() {
-		if (!publishStatusCounter_.durationPassed()) {
-			DBGLOGMQTT("publishStatus: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishStatusCounter_.getIntervalMs() / 1000, publishStatusCounter_.getTimeToWaitMs());
-			return;
-		}
-
-		DBGLOGMQTT("publishStatus\n");
-		client_.publish("open_thermostat/status"sv, "on"sv, true);
-	}
-
-	void publishRoomData() {
-		if (!publishRoomDataCounter_.durationPassed()) {
-			DBGLOGMQTT("publishRoomData: waiting for publish interval (%lds) Time to wait: %ld ms \n", publishRoomDataCounter_.getIntervalMs() / 1000, publishRoomDataCounter_.getTimeToWaitMs());
-			return;
-		}
-
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-
-		ss << "{\"rooms\": ";
-		getRoomsStatus_(ss);
-		ss << "}";
-
-		DBGLOGMQTT("publishRoomData %zu\n", payloadBuf.view().length());
-
-		client_.publish("open_thermostat/room_data"sv, payloadBuf.view(), false);
-	}
-
-	void publishRoomBinarySensor(uint16_t roomNo, std::string_view sensorName, std::string_view sensorFriendlyName) {
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-		ss << "{";
-		ss << "\"name\": \"" << sensorFriendlyName << "\",";
-		ss << "\"uniq_id\": \"opth_room_" << roomNo << "_" << sensorName << "\",";
-		ss << "\"obj_id\": \"opth_room_" << roomNo << "_" << sensorName << "\",";
-		ss << "\"stat_t\": \"open_thermostat/room_data\",";
-		ss << "\"pl_on\": true, \"pl_off\": false,";
-		ss << "\"val_tpl\": \"{{value_json.rooms[" << roomNo << "].enabled if value_json.rooms[" << roomNo << "].enabled is defined else 'false'}}\",";
- 		ss << "\"dev\": {";
-		ss << "\"ids\": [ \"open_thermostat_room_" << roomNo << "\" ],";
-		ss << "\"name\": \"OpenThermostat Room " << roomNo + 1 << "\",";
-		ss << "\"mf\": \"intuibase\",";
-		ss << "\"mdl\": \"OpenThermostat\",";
-		ss << "\"via_device\": \"open_thermostat\"";
-		ss << "},";
-		ss << "\"avty\": [";
-		ss << "{ \"t\": \"open_thermostat/room_data\", \"val_tpl\": \"{{ \\\"online\\\" if value_json.rooms[" << roomNo << "].enabled is defined else \\\"offline\\\" }}\" },";
-		ss << "{ \"t\": \"open_thermostat/status\", \"val_tpl\": \"{{ \\\"online\\\" if value == \\\"on\\\" else \\\"offline\\\" }}\" }";
-		ss << "], \"avty_mode\": \"all\"";
-		ss << "}";
-
-		ib::viewable_stringbuf topicBuf;
-		std::ostream topic(&topicBuf);
-		topic << "homeassistant/binary_sensor/open_thermostat/opth_room_"<< roomNo <<"_" << sensorName << "/config";
-
-		client_.publish(topicBuf.view(), payloadBuf.view(), true);
-	}
-
-
-	void publishRoomSensor(uint16_t roomNo, std::string_view sensorName, std::string_view sensorFriendlyName, std::string_view jsonValueName, std::string_view valueOperation, std::string_view unit, std::string_view stateClass, std::string_view devClass = {}) {
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-		ss << "{";
-		ss << "\"name\": \"" << sensorFriendlyName << "\",";
-		ss << "\"uniq_id\": \"opth_room_" << roomNo << "_" << sensorName << "\",";
-		ss << "\"obj_id\": \"opth_room_" << roomNo << "_" << sensorName << "\",";
-		ss << "\"stat_t\": \"open_thermostat/room_data\",";
-		if (!unit.empty()) {
-			ss << "\"unit_of_meas\": \"" << unit << "\",";
-		}
-		if (!stateClass.empty()) {
-			ss << "\"stat_cla\": \"" << stateClass << "\",";
-		}
-		if (!devClass.empty()) {
-			ss << "\"dev_cla\": \"" << devClass << "\",";
-		}
-		ss << "\"val_tpl\": \"{{(value_json.rooms[" << roomNo << "]." << jsonValueName << valueOperation << ") if value_json.rooms[" << roomNo << "]." << jsonValueName << " is defined else '0'}}\",";
-		ss << "\"dev\": { \"ids\": [ \"open_thermostat_room_" << roomNo << "\" ] },"; // dev
-		ss << "\"avty\": [";
-		ss << "{ \"t\": \"open_thermostat/room_data\", \"val_tpl\": \"{{ \\\"online\\\" if value_json.rooms[" << roomNo << "]." << jsonValueName << " is defined else \\\"offline\\\" }}\" },";
-		ss << "{ \"t\": \"open_thermostat/status\", \"val_tpl\": \"{{ \\\"online\\\" if value == \\\"on\\\" else \\\"offline\\\" }}\" }";
-		ss << "], \"avty_mode\": \"all\"";
-		ss << "}";
-
-		ib::viewable_stringbuf topicBuf;
-		std::ostream topic(&topicBuf);
-		topic << "homeassistant/sensor/open_thermostat/opth_room_"<< roomNo <<"_" << sensorName << "/config";
-
-		client_.publish(topicBuf.view(), payloadBuf.view(), true);
-	}
-
-	void publishSensor(std::string_view stateTopic, std::string_view sensorUniqueId, std::string_view sensorFriendlyName, std::string_view jsonValueName, std::string_view valueOperation, std::string_view unit, std::string_view stateClass, std::string_view devClass = {}) {
-		ib::viewable_stringbuf payloadBuf;
-		std::ostream ss(&payloadBuf);
-		ss << "{";
-		ss << "\"name\": \"" << sensorFriendlyName << "\",";
-		ss << "\"uniq_id\": \"" << sensorUniqueId  << "\",";
-		ss << "\"obj_id\": \"" << sensorUniqueId  << "\",";
-		ss << "\"stat_t\": \"open_thermostat/" << stateTopic << "\",";
-		if (!unit.empty()) {
-			ss << "\"unit_of_meas\": \"" << unit << "\",";
-		}
-		if (!stateClass.empty()) {
-			ss << "\"stat_cla\": \"" << stateClass << "\",";
-		}
-		if (!devClass.empty()) {
-			ss << "\"dev_cla\": \"" << devClass << "\",";
-		}
-		ss << "\"val_tpl\": \"{{(value_json." << jsonValueName << valueOperation << ") if value_json." << jsonValueName << " is defined else '0'}}\",";
-		ss << "\"dev\": { \"ids\": [ \"open_thermostat\" ] },"; // dev
-		ss << "\"avty\": [";
-		ss << "{ \"t\": \"open_thermostat/" << stateTopic << "\", \"val_tpl\": \"{{ \\\"online\\\" if value_json." << jsonValueName << " is defined else \\\"offline\\\" }}\" },";
-		ss << "{ \"t\": \"open_thermostat/status\", \"val_tpl\": \"{{ \\\"online\\\" if value == \\\"on\\\" else \\\"offline\\\" }}\" }";
-		ss << "], \"avty_mode\": \"all\"";
-		ss << "}";
-
-		ib::viewable_stringbuf topicBuf;
-		std::ostream topic(&topicBuf);
-		topic << "homeassistant/sensor/open_thermostat/" << sensorUniqueId << "/config";
-
-		client_.publish(topicBuf.view(), payloadBuf.view(), true);
-	}
-
-private:
-	config::MqttConfig config_;
-	MyPubSub client_;
-
-	ib::PeriodicCounter publishRoomDataCounter_{config_.interval * 1000u};
-	ib::PeriodicCounter publishDeviceStatusCounter_{config_.interval * 1000u};
-	ib::PeriodicCounter publishStatusCounter_{config_.interval * 1000u};
-	ib::PeriodicCounter publishEmsMetricsCounter_{config_.interval * 1000u};
-
-	getRoomStatus_t getRoomsStatus_;
-	getEmsMetrics_t getEmsMetrics_;
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	std::shared_ptr<ib::mqtt::MQTT> mqtt_;
+	std::vector<std::shared_ptr<ib::mqtt::MQTTReporterInterface>> reporters_;
 };
 }
