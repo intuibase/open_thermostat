@@ -10,7 +10,7 @@ class UBAMonitorFastPlus : public EmsTelegram {
 public:
 	static constexpr uint16_t predefinedTypeId = 0x00E4;
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 
 	auto getDisplayCode() const -> std::optional<std::array<char, 3>> {
 		if (offset_ != 0 || data_.size() < 3) {

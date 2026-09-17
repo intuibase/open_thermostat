@@ -1,17 +1,17 @@
 
-#include "Logger.h"
+#include "Logging.h"
 #include "RoomConfig.h"
 
 namespace heating {
 
 bool RoomConfig::TemperatureSetting::doesFit(uint16_t time, uint8_t dayOfTheWeek) const {
 	if (time >= 2400) {
-		DBGLOGROOM("doesFit wrong time argument '%d'\n", time);
+		DBGLOGFD(log_, logFeature_, "doesFit wrong time argument '%d'\n", time);
 		return false;
 	}
 
 	if (!days_[dayOfTheWeek]) { // not valid (enabled) for day of the week
-		DBGLOGROOM("doesFit NO FIT %s time '%d', dayOfTheWeek %d\n", name_.c_str(), time, dayOfTheWeek);
+		DBGLOGFD(log_, logFeature_, "doesFit NO FIT %s time '%d', dayOfTheWeek %d\n", name_.c_str(), time, dayOfTheWeek);
 		return false;
 	}
 

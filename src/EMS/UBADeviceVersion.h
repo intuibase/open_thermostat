@@ -20,7 +20,7 @@ public:
 		return {EmsTelegram::operation_t::WRITE, deviceId, destination, 0, predefinedTypeId, {vProdId, vMajor, vMinor, 0, 0, 0, 0, 0, 0, vVendorId}};
 	}
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 };
 
 }

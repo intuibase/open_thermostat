@@ -1,4 +1,5 @@
 #pragma once
+#include "Logging.h"
 
 #include "config.h"
 #include "EmsBusUart.h"
@@ -121,19 +122,21 @@ struct EmsBoilerParams {
 
 class EmsController {
 public:
+	ib::logger::LoggerInterface::LogFeatureType verboseFeature() const { return verboseFeature_; }
+	ib::logger::LoggerInterface::LogFeatureType fatalFeature() const { return fatalFeature_; }
 	static constexpr int maxTxNotConfirmed = 15;
 	static constexpr unsigned long boilerParametersReadRequestIntervalSecs = 119;
 	static constexpr unsigned long boilerDetailsReadRequestIntervalSecs = 179;
 	static constexpr int maxTelegramQueueSize = 59;
 
-	EmsController();
+	explicit EmsController(std::shared_ptr<ib::logger::LoggerInterface> log);
 
 	void requestStartupData();
 
 	void changeBoilerState(bool turnOnHeating, uint8_t heatingTemperature) {
-		DBGLOGEMS("changeBoilerState heating: %d temperature: %d\n", turnOnHeating, heatingTemperature);
+		DBGLOGFD(log_, logFeature_, "changeBoilerState heating: %d temperature: %d\n", turnOnHeating, heatingTemperature);
 		if (!emsConfig_.emsEnabled) {
-			DBGLOGEMS("bus disabled\n");
+			DBGLOGFD(log_, logFeature_, "bus disabled\n");
 			return;
 		}
 
@@ -155,7 +158,7 @@ public:
 		requestPeriodicData();
 
 		//TODO log stats periodicly
-		// DBGLOGEMS("requestPeriodicData. TxNotConfirmed: %zu\n", txNotConfirmed_.load());
+		// DBGLOGFD(log_, logFeature_, "requestPeriodicData. TxNotConfirmed: %zu\n", txNotConfirmed_.load());
 
 	}
 
@@ -185,25 +188,28 @@ public:
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	void requestPeriodicData();
 
 	void reset() {
-		DBGLOGFATAL("EmsController::reset\n");
+		DBGLOGFD(log_, fatalFeature(), "EmsController::reset\n");
 		uart_.reset();
 		txNotConfirmed_ = 0;
 		{
 			std::lock_guard<std::mutex> lock(telegramProcessingMutex_);
-			DBGLOGFATAL("EmsController::reset %zu dropped\n", telegramsToSend_.size());
+			DBGLOGFD(log_, fatalFeature(), "EmsController::reset %zu dropped\n", telegramsToSend_.size());
 			telegramsToSend_.clear();
 		}
 		requestStartupData();
 	}
 
 	void enqueueTelegramToSend(EmsTelegram telegram, bool front = false) {
+		if (log_) telegram.logDebug(*log_, logFeature_);
 		std::unique_lock<std::mutex> lock(telegramProcessingMutex_);
 
 		if (telegramsToSend_.size() == maxTelegramQueueSize) {
-			DBGLOGFATAL("EmsController telegramsToSend_.size() = %zu FULL\n", telegramsToSend_.size());
+			DBGLOGFD(log_, fatalFeature(), "EmsController telegramsToSend_.size() = %zu FULL\n", telegramsToSend_.size());
 			lock.unlock();
 			reset();
 			return;
@@ -214,7 +220,7 @@ private:
 		} else {
 			telegramsToSend_.push_front(std::move(telegram));
 		}
-		DBGLOGEMS("telegramsToSend_.size() = %zu\n", telegramsToSend_.size());
+		DBGLOGFD(log_, logFeature_, "telegramsToSend_.size() = %zu\n", telegramsToSend_.size());
 	}
 
 	void processTelegrams();
@@ -226,7 +232,7 @@ private:
 	bool processPoll(uint8_t deviceId);
 
 	void pong() {
-		DBGLOGEMS("pong()\n");
+		DBGLOGFD(log_, logFeature_, "pong()\n");
 		uint8_t response = deviceId_ | emsMask_.value_or(0);
 		uart_.writeToEms(&response, 1);
 	}
@@ -256,9 +262,11 @@ private:
 
 	unsigned long lastPoll_ = 0;
 
-	EmsBusUart uart_{
+	EmsBusUart uart_{log_,
 		[this](uint8_t *data, uint8_t size) { processTelegram(data, size); }
 		};
+	ib::logger::LoggerInterface::LogFeatureType verboseFeature_{};
+	ib::logger::LoggerInterface::LogFeatureType fatalFeature_{};
 
 
 	unsigned long lastBoilerParametersReadRequestMillis_ = 0;

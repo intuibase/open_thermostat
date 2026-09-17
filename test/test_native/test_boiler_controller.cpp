@@ -61,7 +61,7 @@ protected:
 	heating::BoilerController makeController() {
 		auto bp = std::make_unique<MockGpioPort>(99);
 		boilerGpio = bp.get();
-		return heating::BoilerController(cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [](uint8_t) {}, std::move(bp), valveMocks.makePorts(8), {});
+		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [](uint8_t) {}, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -225,7 +225,7 @@ protected:
 		auto bp = std::make_unique<MockGpioPort>(99);
 		boilerGpio = bp.get();
 		return heating::BoilerController(
-			cfg, [this]() { return outdoorTemp; },
+			{}, cfg, [this]() { return outdoorTemp; },
 			[this](bool enabled, uint8_t flowTemp) {
 				lastEmsEnabled = enabled;
 				lastEmsFlowTemp = flowTemp;
@@ -295,7 +295,7 @@ protected:
 	heating::BoilerController makeController() {
 		auto bp = std::make_unique<MockGpioPort>(99);
 		boilerGpio = bp.get();
-		return heating::BoilerController(cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [this](uint8_t temp) { lastSetHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
+		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [this](uint8_t temp) { lastSetHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 

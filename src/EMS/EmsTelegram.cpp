@@ -1,6 +1,5 @@
 #include "EmsTelegram.h"
-
-#include "Logger.h"
+#include <stdexcept>
 
 namespace heating::ems {
 
@@ -27,8 +26,8 @@ uint8_t EmsTelegram::getRequestedDataSize() const {
 	return data_[0];
 }
 
-void EmsTelegram::logDebug() const {
-	if (debug::debug.debugEmsController) {
+void EmsTelegram::logDebug(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const {
+	if (log.isFeatureEnabled(feature)) {
 		char opType = 'B';
 		if (operation_ == operation_t::READ) {
 			opType = 'R';
@@ -38,11 +37,11 @@ void EmsTelegram::logDebug() const {
 			opType = 'W';
 		}
 
-		DBGLOGEMS("(0x%X) -%c-> (0x%X), type: 0x%4.4X, offset: %d, dataLen: %d data: ", source_, opType, destination_, typeId_, offset_, data_.size());
+		DBGLOGFD((&log), feature, "(0x%X) -%c-> (0x%X), type: 0x%4.4X, offset: %d, dataLen: %d data: ", source_, opType, destination_, typeId_, offset_, data_.size());
 		for (size_t i = 0; i < data_.size(); ++i) {
-			logger.printf("%2.2X ", data_[i]);
+			DBGLOGFI((&log), feature, "%2.2X ", data_[i]);
 		}
-		logger.printf("\n");
+		DBGLOGFI((&log), feature, "\n");
 	}
 }
 
@@ -56,7 +55,7 @@ uint16_t EmsTelegram::getTelegramTypeFromRaw(uint8_t *data, uint8_t length) {
 	}
 }
 
-EmsTelegram EmsTelegram::getFromRawData(uint8_t *data, uint8_t length) { // decodes full raw telegram, data without tailing BRK \0, throws
+EmsTelegram EmsTelegram::getFromRawData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType verboseFeature, uint8_t *data, uint8_t length) { // decodes full raw telegram, data without tailing BRK \0, throws
 	if (data[length - 1] != calculateCRC(data, length - 1)) {
 		throw std::runtime_error("Bad CRC");
 	}
@@ -71,13 +70,13 @@ EmsTelegram EmsTelegram::getFromRawData(uint8_t *data, uint8_t length) { // deco
 	}
 
 	if (data[2] != 0xFF || length < 6) { // EMS1
-		DBGLOGEMSVB("Got EMS1.0 raw len: %d from: %d\n", length, data[0]); // might be executed on uart thread - log only in verbose mode
+		DBGLOGFD((&log), verboseFeature, "Got EMS1.0 raw len: %d from: %d\n", length, data[0]);
 		return EmsTelegram(operation, data[0], destination, data[3], data[2], data + 4, length - 5);
 	} else if (data[1] & 0x80) { // EMS2.0 read request
-		DBGLOGEMSVB("Got EMS2.0 read request raw len: %d\n", length);
+		DBGLOGFD((&log), verboseFeature, "Got EMS2.0 read request raw len: %d\n", length);
 		return EmsTelegram(destination == 0 ? EmsTelegram::operation_t::BROADCAST : EmsTelegram::operation_t::READ, data[0], destination, data[3], (data[5] << 8) + data[6] + 256, data + 4, 1);
 	} else { // EMS2.0/EMS+
-		DBGLOGEMSVB("Got EMS2.0 raw len: %d\n", length);
+		DBGLOGFD((&log), verboseFeature, "Got EMS2.0 raw len: %d\n", length);
 		return EmsTelegram(destination == 0 ? EmsTelegram::operation_t::BROADCAST : EmsTelegram::operation_t::WRITE, data[0], destination, data[3], (data[4] << 8) + data[5] + 256, data + 6, length - 7);
 	}
 }

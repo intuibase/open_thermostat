@@ -1,3 +1,4 @@
+#include "Logging.h"
 #include "EmsBusUartForwarder.h"
 
 
@@ -24,7 +25,7 @@ void EmsBusUartForwarder::start(uint8_t rxPin, uint8_t txPin) {
 	xTaskCreate(heating::uart_detail::uart_forwarder_event_task, "EmsBusUartForwarder", 2048, this, configMAX_PRIORITIES - 1, NULL);
 	uart_enable_intr_mask(UartSlot, UART_BRK_DET_INT_ENA | UART_RXFIFO_FULL_INT_ENA);
 
-	DBGLOGUARTFW("Started rx: %d tx: %d\n", rxPin, txPin);
+	DBGLOGFD(log_, logFeature_, "Started rx: %d tx: %d\n", rxPin, txPin);
 
 	enabled_ = true;
 }

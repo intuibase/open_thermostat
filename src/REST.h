@@ -1,4 +1,5 @@
 #pragma once
+#include "Logging.h"
 
 #include <esp_ota_ops.h>
 #include <SPIFFS.h>
@@ -49,12 +50,16 @@ public:
 
 class REST {
 public:
-	REST(HeatingController &controller, uint16_t listenPort) : controller_(controller), server_(listenPort) {
+	REST(std::shared_ptr<ib::logger::LoggerInterface> log, HeatingController &controller, uint16_t listenPort) : log_(std::move(log)), controller_(controller), server_(listenPort) {
+		if (log_) {
+			static const auto id = log_->addFeature("REST");
+			logFeature_ = id;
+		}
 		server_.enableCORS(true);
 		server_.enableCrossOrigin(true);
 
 		server_.on("/status/wifi", [this]() {
-			DBGLOGREST("REST:wifiNetworks\n");
+			DBGLOGFD(log_, logFeature_, "REST:wifiNetworks\n");
 
 			ib::viewable_stringbuf payloadBuf;
 			std::ostream payload(&payloadBuf);
@@ -108,6 +113,8 @@ public:
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	// bool auth() {
 	// 	if (!server_.authenticate("admin", "admin")) {
 	// 		server_.requestAuthentication(DIGEST_AUTH);
@@ -117,7 +124,7 @@ private:
 	// }
 
 	void showPrograms() {
-		DBGLOGREST("showPrograms\n");
+		DBGLOGFD(log_, logFeature_, "showPrograms\n");
 
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
@@ -133,17 +140,17 @@ private:
 			if (!file) {
 				break;
 			}
-			DBGLOGREST("showPrograms '%s'\n", file.name());
+			DBGLOGFD(log_, logFeature_, "showPrograms '%s'\n", file.name());
 
 			if (file.isDirectory()) {
-				DBGLOGREST("showPrograms skip directory: %s\n", file.name());
+				DBGLOGFD(log_, logFeature_, "showPrograms skip directory: %s\n", file.name());
 				continue;
 			}
 
 			std::string name = file.name();
 			auto pos = name.find(jsonExtension);
 			if (pos == std::string::npos) {
-				DBGLOGREST("showPrograms skip non-json: %s\n", file.name());
+				DBGLOGFD(log_, logFeature_, "showPrograms skip non-json: %s\n", file.name());
 				continue;
 			}
 			name = name.substr(0, name.length() - jsonExtension.length());
@@ -162,13 +169,13 @@ private:
 	}
 
 	void configProgramCurrent() {
-		DBGLOGREST("configProgramCurrent method: %d\n", server_.method());
+		DBGLOGFD(log_, logFeature_, "configProgramCurrent method: %d\n", server_.method());
 
 		switch (server_.method()) {
 			case HTTP_GET: {
 				File file = SPIFFS.open("/cfg/cfgprogram.json", FILE_READ);
 				if (!file) {
-					DBGLOGREST("configProgramCurrent missing config");
+					DBGLOGFD(log_, logFeature_, "configProgramCurrent missing config");
 					server_.send(500, "text/plain", "Missing config");
 					return;
 				}
@@ -185,7 +192,7 @@ private:
 
 				auto program = config::parseProgram(body.c_str());
 				if (program.empty()) {
-					DBGLOGREST("configProgramCurrent error parsing program\n");
+					DBGLOGFD(log_, logFeature_, "configProgramCurrent error parsing program\n");
 					server_.send(400, "text/html", "Program parsing failure. Config not modified");
 					return;
 				}
@@ -193,12 +200,12 @@ private:
 				std::string filename = "/programs/" + program + ".json";
 
 				if (!SPIFFS.exists(filename.c_str())) {
-					DBGLOGREST("Received new program configuration: '%s'. Program does not exists!\n", program.c_str());
+					DBGLOGFD(log_, logFeature_, "Received new program configuration: '%s'. Program does not exists!\n", program.c_str());
 					server_.send(400, "text/html", "Program does not exists. Config not modified");
 					return;
 				}
 
-				DBGLOGREST("Received new program configuration: '%s'\n", program.c_str());
+				DBGLOGFD(log_, logFeature_, "Received new program configuration: '%s'\n", program.c_str());
 				File file = SPIFFS.open("/cfg/cfgprogram.json", FILE_WRITE);
 				if (!file) {
 					server_.send(500, "text/html", "Filesystem failure. Unable to write program.");
@@ -221,14 +228,14 @@ private:
 	}
 
 	void configReboot() {
-		DBGLOGREST("configReboot\n");
+		DBGLOGFD(log_, logFeature_, "configReboot\n");
 		server_.send(200);
 		server_.stop();
 		ESP.restart();
 	}
 
 	void boilerStatus() {
-		DBGLOGREST("boilerStatus\n");
+		DBGLOGFD(log_, logFeature_, "boilerStatus\n");
 
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
@@ -239,7 +246,7 @@ private:
 	}
 
 	void emsStatus() {
-		DBGLOGREST("emsStatus\n");
+		DBGLOGFD(log_, logFeature_, "emsStatus\n");
 
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
@@ -249,7 +256,7 @@ private:
 	}
 
 	void emsParams() {
-		DBGLOGREST("emsParams\n");
+		DBGLOGFD(log_, logFeature_, "emsParams\n");
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getEMSBoilerParams(payload);
@@ -258,7 +265,7 @@ private:
 	}
 
 	void status() {
-		DBGLOGREST("status\n");
+		DBGLOGFD(log_, logFeature_, "status\n");
 		server_.enableCORS(true);
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
@@ -268,7 +275,7 @@ private:
 	}
 
 	void version() {
-		DBGLOGREST("version\n");
+		DBGLOGFD(log_, logFeature_, "version\n");
 
 		const esp_app_desc_t *app = esp_ota_get_app_description();
 
@@ -290,7 +297,7 @@ private:
 	}
 
 	void roomsStatus() {
-		DBGLOGREST("roomsStatus\n");
+		DBGLOGFD(log_, logFeature_, "roomsStatus\n");
 		server_.enableCORS(true);
 
 		ib::viewable_stringbuf payloadBuf;
@@ -301,7 +308,7 @@ private:
 	}
 
 	void devicesFound() {
-		DBGLOGREST("devicesFound\n");
+		DBGLOGFD(log_, logFeature_, "devicesFound\n");
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream payload(&payloadBuf);
 		controller_.getDevicesFound(payload);
@@ -309,7 +316,7 @@ private:
 	}
 
 	void configWiFi() {
-		DBGLOGREST("configWiFi METHOD %d\n", server_.method());
+		DBGLOGFD(log_, logFeature_, "configWiFi METHOD %d\n", server_.method());
 
 		switch (server_.method()) {
 			default:
@@ -346,7 +353,7 @@ private:
 	}
 
 	void configDevice() {
-		DBGLOGREST("configDevice METHOD %d\n", server_.method());
+		DBGLOGFD(log_, logFeature_, "configDevice METHOD %d\n", server_.method());
 
 		switch (server_.method()) {
 			default:
@@ -373,7 +380,7 @@ private:
 
 				File file = SPIFFS.open("/cfg/cfgnetwork.json", FILE_WRITE);
 				if (!file) {
-					DBGLOGREST("configDevice. Can't open config file for write.\n");
+					DBGLOGFD(log_, logFeature_, "configDevice. Can't open config file for write.\n");
 					server_.send(500, "text/plain", "Internal server error. Can't save device settings.");
 					break;
 				}
@@ -386,7 +393,7 @@ private:
 	}
 
 	void configHardware() {
-		DBGLOGREST("configHardware METHOD %d\n", server_.method());
+		DBGLOGFD(log_, logFeature_, "configHardware METHOD %d\n", server_.method());
 
 		switch (server_.method()) {
 			default:
@@ -413,7 +420,7 @@ private:
 
 				File file = SPIFFS.open("/cfg/cfgpins.json", FILE_WRITE);
 				if (!file) {
-					DBGLOGREST("configHardware. Can't open config file for write.\n");
+					DBGLOGFD(log_, logFeature_, "configHardware. Can't open config file for write.\n");
 					server_.send(500, "text/plain", "Internal server error. Can't save hardware settings.");
 					break;
 				}
@@ -426,7 +433,7 @@ private:
 	}
 
 	void i2cScan() {
-		DBGLOGREST("i2cScan\n");
+		DBGLOGFD(log_, logFeature_, "i2cScan\n");
 
 		// Known I2C device address ranges (helpers for frontend labeling)
 		struct KnownRange {
@@ -469,7 +476,7 @@ private:
 	}
 
 	void gpioTestStart() {
-		DBGLOGREST("gpioTestStart\n");
+		DBGLOGFD(log_, logFeature_, "gpioTestStart\n");
 
 		if (!server_.hasArg("plain")) {
 			server_.send(400, "text/plain", "Missing body");
@@ -507,42 +514,31 @@ private:
 			}
 		}
 
-		DBGLOGREST("gpioTestStart boiler: %d, valves: %zu, duration: %ds\n", boilerState, valveStates.size(), duration);
+		DBGLOGFD(log_, logFeature_, "gpioTestStart boiler: %d, valves: %zu, duration: %ds\n", boilerState, valveStates.size(), duration);
 		controller_.startManualGpioTest(boilerState, valveStates, duration);
 		server_.send(200, "text/plain", "OK");
 	}
 
 	void gpioTestStop() {
-		DBGLOGREST("gpioTestStop\n");
+		DBGLOGFD(log_, logFeature_, "gpioTestStop\n");
 		controller_.stopManualGpioTest();
 		server_.send(200, "text/plain", "OK");
 	}
 
 	void configDebug() {
-		DBGLOGREST("configDebug METHOD %d\n", server_.method());
-
-		#define DEBUG_OPTION_TO_STREAM(name) "\""#name"\": " << (debug::debug.name ? "true" : "false")
+		DBGLOGFD(log_, logFeature_, "configDebug METHOD %d\n", server_.method());
 
 		switch (server_.method()) {
 			default:
 			case HTTP_GET: {
-				ib::viewable_stringbuf payloadBuf;
-				std::ostream ss(&payloadBuf);
-				ss << "{";
-				ss << DEBUG_OPTION_TO_STREAM(debugRoomTemperatures) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugHeatingController) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugTemperatureReader) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugREST) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugOpenWeather) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugBoilerController) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugEmsBusUart) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugEmsBusUartForwarder) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugEmsController) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugEmsVerbose) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugMQTT) << ",";
-				ss << DEBUG_OPTION_TO_STREAM(debugFatal);
-				ss << "}";
-				server_.sendView(200, "application/json"sv, payloadBuf.view());
+				std::unique_ptr<cJSON, decltype(&cJSON_Delete)> features(cJSON_CreateObject(), &cJSON_Delete);
+				for (auto const &[id, name] : log_->getRegisteredFeatures()) {
+					if (!cJSON_HasObjectItem(features.get(), name.c_str())) {
+						cJSON_AddBoolToObject(features.get(), name.c_str(), log_->isFeatureEnabled(id));
+					}
+				}
+				std::unique_ptr<char, decltype(&cJSON_free)> payload(cJSON_PrintUnformatted(features.get()), &cJSON_free);
+				server_.send(200, "application/json", payload.get());
 				break;
 			}
 			case HTTP_POST: {
@@ -557,18 +553,18 @@ private:
 				}
 
 				config::setDebugOptionsFromJson(body.c_str());
-				DBGLOGREST("configDebug. Flags set.\n");
+				DBGLOGFD(log_, logFeature_, "configDebug. Flags set.\n");
 
 				File file = SPIFFS.open("/cfg/cfgdebug.json", FILE_WRITE);
 				if (!file) {
-					DBGLOGREST("configDebug. Can't open config file for write.\n");
+					DBGLOGFD(log_, logFeature_, "configDebug. Can't open config file for write.\n");
 					server_.send(500, "text/plain", "Internal server error. Can't save hardware settings.");
 					break;
 				}
 				file.write((uint8_t *)body.c_str(), body.length());
 				file.close();
 
-				DBGLOGREST("configDebug. Flags stored.\n");
+				DBGLOGFD(log_, logFeature_, "configDebug. Flags stored.\n");
 				server_.send(201);
 				break;
 			}
@@ -578,7 +574,7 @@ private:
 
 
 	void configBoiler() {
-		DBGLOGREST("configBoiler METHOD %d\n", server_.method());
+		DBGLOGFD(log_, logFeature_, "configBoiler METHOD %d\n", server_.method());
 
 		switch (server_.method()) {
 			default:
@@ -605,7 +601,7 @@ private:
 
 				File file = SPIFFS.open("/cfg/cfgboiler.json", FILE_WRITE);
 				if (!file) {
-					DBGLOGREST("configBoiler. Can't open config file for write.\n");
+					DBGLOGFD(log_, logFeature_, "configBoiler. Can't open config file for write.\n");
 					server_.send(500, "text/plain", "Internal server error. Can't save boiler settings.");
 					break;
 				}
@@ -632,7 +628,7 @@ private:
 
 		auto obj = cJSON_GetObjectItem(root.get(), "temperature");
 		if (!obj || obj->type != cJSON_Number) {
-			DBGLOGREST("temporaryOverride bad request: '%s'\n", body.c_str())
+			DBGLOGFD(log_, logFeature_, "temporaryOverride bad request: '%s'\n", body.c_str());
 			server_.send(400, "text/html", "Bad request. Missing temperature.");
 			return;
 		}
@@ -640,7 +636,7 @@ private:
 
 		obj = cJSON_GetObjectItem(root.get(), "validSeconds");
 		if (!obj || obj->type != cJSON_Number) {
-			DBGLOGREST("temporaryOverride bad request: '%s'\n", body.c_str())
+			DBGLOGFD(log_, logFeature_, "temporaryOverride bad request: '%s'\n", body.c_str());
 			server_.send(400, "text/html", "Bad request. Missing time.");
 			return;
 		}
@@ -648,13 +644,13 @@ private:
 
 		obj = cJSON_GetObjectItem(root.get(), "roomName");
 		if (!obj || obj->type != cJSON_String) {
-			DBGLOGREST("temporaryOverride bad request: '%s'\n", body.c_str())
+			DBGLOGFD(log_, logFeature_, "temporaryOverride bad request: '%s'\n", body.c_str());
 			server_.send(400, "text/html", "Bad request. Missing room name.");
 			return;
 		}
 		auto roomName = obj->valuestring;
 
-		DBGLOGREST("temporaryOverride '%s' temp: %d secs: %d\n", roomName, temperature, validSeconds);
+		DBGLOGFD(log_, logFeature_, "temporaryOverride '%s' temp: %d secs: %d\n", roomName, temperature, validSeconds);
 
 		if (!controller_.setRoomTemporaryTemperature(roomName, temperature, validSeconds)) {
 			std::stringstream error;
@@ -674,7 +670,7 @@ private:
 		}
 		String filename = "/programs/" + programName + ".json";
 
-		DBGLOGREST("configPrograms for '%s' METHOD %d\n", filename.c_str(), server_.method());
+		DBGLOGFD(log_, logFeature_, "configPrograms for '%s' METHOD %d\n", filename.c_str(), server_.method());
 
 		switch (server_.method()) {
 			case HTTP_GET: {
@@ -683,7 +679,7 @@ private:
 					break;
 				}
 
-				DBGLOGREST("Reading config for '%s'\n", filename.c_str());
+				DBGLOGFD(log_, logFeature_, "Reading config for '%s'\n", filename.c_str());
 				File file = SPIFFS.open(filename, FILE_READ);
 				server_.streamFile(file, "application/json");
 				file.close();
@@ -701,7 +697,7 @@ private:
 				}
 
 				//TODO parse/validate json
-				DBGLOGREST("Received program: '%s'\n", filename.c_str());
+				DBGLOGFD(log_, logFeature_, "Received program: '%s'\n", filename.c_str());
 				File file = SPIFFS.open(filename, FILE_WRITE);
 				if (!file) {
 					server_.send(500, "text/plain", "Failed to open file for writing");
@@ -712,7 +708,7 @@ private:
 
 				auto currentProgram = config::getCurrentProgram();
 				if (currentProgram == server_.pathArg(0).c_str()) {
-					DBGLOGREST("Program reloaded: '%s'\n", filename.c_str());
+					DBGLOGFD(log_, logFeature_, "Program reloaded: '%s'\n", filename.c_str());
 					controller_.reloadConfiguration();
 					server_.send(205);
 					return;
@@ -750,7 +746,7 @@ private:
 	}
 
 	void serveFile(const char *serverPath) {
-		DBGLOGREST("Request for: '%s'\n", serverPath);
+		DBGLOGFD(log_, logFeature_, "Request for: '%s'\n", serverPath);
 
 		String path = "/html";
 		path += serverPath;
@@ -809,88 +805,88 @@ private:
 			auto size = server_.arg("size");
 			long fileSize = atol(size.c_str());
 
-			DBGLOGREST("handleOTA START '%s', totalSize: '%zu'\n", upload.filename.c_str(), fileSize);
+			DBGLOGFD(log_, logFeature_, "handleOTA START '%s', totalSize: '%zu'\n", upload.filename.c_str(), fileSize);
 
 			ota_ = OTAUpload{};
 
 			ota_.partition = esp_ota_get_next_update_partition(NULL);
 			if (!ota_.partition) {
-				DBGLOGREST("OTA partition not found\n");
+				DBGLOGFD(log_, logFeature_, "OTA partition not found\n");
 				ota_.errorMessage = "OTA partition not found"sv;
 				ota_.error = -1;
 				return;
 			}
 
 			if (fileSize > 0 && fileSize > ota_.partition->size) {
-				DBGLOGREST("handleOTAFFSUpdate Partition size %zu smaller than binary file %zu!\n", ota_.partition->size, fileSize);
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Partition size %zu smaller than binary file %zu!\n", ota_.partition->size, fileSize);
 				ota_.errorMessage = "Partition smaller than file"sv;
 				ota_.error = -1;
 				return;
 			}
 
 
-			DBGLOGREST("handleOTA Found partition '%s', size: %d, encrypted: %d\n", ota_.partition->label, ota_.partition->size, ota_.partition->encrypted);
+			DBGLOGFD(log_, logFeature_, "handleOTA Found partition '%s', size: %d, encrypted: %d\n", ota_.partition->label, ota_.partition->size, ota_.partition->encrypted);
 
-			DBGLOGREST("Beginning OTA\n");
+			DBGLOGFD(log_, logFeature_, "Beginning OTA\n");
 
 			if (esp_ota_mark_app_valid_cancel_rollback() != ESP_OK) {
-				DBGLOGREST("Beginning OTA: esp_ota_mark_app_valid_cancel_rollback failed\n");
+				DBGLOGFD(log_, logFeature_, "Beginning OTA: esp_ota_mark_app_valid_cancel_rollback failed\n");
 			}
 
 			ota_.error = esp_ota_begin(ota_.partition, OTA_SIZE_UNKNOWN, &ota_.handle);
 			if (ota_.error != ESP_OK) {
-				DBGLOGREST("Beginning OTA failed!\n");
+				DBGLOGFD(log_, logFeature_, "Beginning OTA failed!\n");
 				return;
 			}
 			ota_.started = true;
 
-			DBGLOGREST("Beginning OTA handle: %d\n", ota_.handle);
+			DBGLOGFD(log_, logFeature_, "Beginning OTA handle: %d\n", ota_.handle);
 		} else if (upload.status == UPLOAD_FILE_WRITE) {
 			if (!ota_.started || ota_.error != ESP_OK) {
 				if (!ota_.writeErrorReported) {
-					DBGLOGREST("handleOTA writing skipped, OTA error: %d\n", ota_.error);
+					DBGLOGFD(log_, logFeature_, "handleOTA writing skipped, OTA error: %d\n", ota_.error);
 					ota_.writeErrorReported = true;
 				}
 				return;
 			}
 
-			DBGLOGREST("handleOTA writing to OTA handle %d, size: %zu\n", ota_.handle, upload.currentSize);
+			DBGLOGFD(log_, logFeature_, "handleOTA writing to OTA handle %d, size: %zu\n", ota_.handle, upload.currentSize);
 
 			ota_.error = esp_ota_write(ota_.handle, upload.buf, upload.currentSize);
 			if (ota_.error != ESP_OK) {
-				DBGLOGREST("handleOTA writing to OTA handle %d, size: %zu FAILED, error: %d\n", ota_.handle, upload.currentSize, ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTA writing to OTA handle %d, size: %zu FAILED, error: %d\n", ota_.handle, upload.currentSize, ota_.error);
 				esp_ota_abort(ota_.handle);
 				return;
 			}
 		} else if (upload.status == UPLOAD_FILE_END) {
 			if (!ota_.started || ota_.error != ESP_OK) {
-				DBGLOGREST("handleOTA upload end, error: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTA upload end, error: %d\n", ota_.error);
 				return;
 			}
 
-			DBGLOGREST("handleOTA ending OTA\n");
+			DBGLOGFD(log_, logFeature_, "handleOTA ending OTA\n");
 
 			ota_.error = esp_ota_end(ota_.handle);
 			if (ota_.error != ESP_OK) {
-				DBGLOGREST("handleOTA finalizing OTA handle %d, FAILED, error: %d\n", ota_.handle, ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTA finalizing OTA handle %d, FAILED, error: %d\n", ota_.handle, ota_.error);
 				return;
 			}
 
-			DBGLOGREST("handleOTA setting boot partition\n");
+			DBGLOGFD(log_, logFeature_, "handleOTA setting boot partition\n");
 
 			ota_.error = esp_ota_set_boot_partition(ota_.partition);
 			if (ota_.error != ESP_OK) {
-				DBGLOGREST("handleOTA setting boot partition FAILED, error: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTA setting boot partition FAILED, error: %d\n", ota_.error);
 				return;
 			}
 			ota_.success = true;
 
 		} else if (upload.status == UPLOAD_FILE_ABORTED) {
 			if (!ota_.started) {
-				DBGLOGREST("handleOTA upload aborted, OTA not started. Error: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTA upload aborted, OTA not started. Error: %d\n", ota_.error);
 				return;
 			}
-			DBGLOGREST("handleOTA ABORTED\n");
+			DBGLOGFD(log_, logFeature_, "handleOTA ABORTED\n");
 			esp_ota_abort(ota_.handle);
 		}
 	}
@@ -915,21 +911,21 @@ private:
 			auto size = server_.arg("size");
 			long fileSize = atol(size.c_str());
 
-			DBGLOGREST("handleOTAFFSUpdate START '%s', totalSize: '%zu'\n", upload.filename.c_str(), fileSize);
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate START '%s', totalSize: '%zu'\n", upload.filename.c_str(), fileSize);
 
 			ota_ = OTAUpload{};
 			ota_.partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
 			if (!ota_.partition) {
-				DBGLOGREST("handleOTAFFSUpdate partition not found\n");
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate partition not found\n");
 				ota_.errorMessage = "FS partition not found"sv;
 				ota_.error = -1;
 				return;
 			}
 
-			DBGLOGREST("handleOTAFFSUpdate Found partition '%s', size: %d, encrypted: %d\n", ota_.partition->label, ota_.partition->size, ota_.partition->encrypted);
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Found partition '%s', size: %d, encrypted: %d\n", ota_.partition->label, ota_.partition->size, ota_.partition->encrypted);
 
 			if (fileSize > 0 && fileSize > ota_.partition->size) {
-				DBGLOGREST("handleOTAFFSUpdate Partition size %zu smaller than binary file %zu!\n", ota_.partition->size, fileSize);
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Partition size %zu smaller than binary file %zu!\n", ota_.partition->size, fileSize);
 				ota_.errorMessage = "FS partition smaller than file"sv;
 				ota_.error = -1;
 				return;
@@ -937,11 +933,11 @@ private:
 
 			SPIFFS.end();
 
-			DBGLOGREST("handleOTAFFSUpdate Erasing partition\n");
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Erasing partition\n");
 			ota_.error = esp_partition_erase_range(ota_.partition, 0, ota_.partition->size);
 			if (ota_.error != ESP_OK) {
 				ota_.errorMessage = "FS partition erase failure"sv;
-				DBGLOGREST("handleOTAFFSUpdate Failed to erase SPIFFS partition!\n");
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Failed to erase SPIFFS partition!\n");
 				return;
 			}
 
@@ -949,33 +945,33 @@ private:
 		} else if (upload.status == UPLOAD_FILE_WRITE) {
 			if (!ota_.started || ota_.error != ESP_OK) {
 				if (!ota_.writeErrorReported) {
-					DBGLOGREST("handleOTAFFSUpdate writing skipped, OTA error: %d\n", ota_.error);
+					DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate writing skipped, OTA error: %d\n", ota_.error);
 					ota_.writeErrorReported = true;
 				}
 				return;
 			}
-			DBGLOGREST("handleOTAFFSUpdate writing SPIFFS offset: %zu, size: %zu\n", ota_.offset, upload.currentSize);
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate writing SPIFFS offset: %zu, size: %zu\n", ota_.offset, upload.currentSize);
 
 			ota_.error = esp_partition_write(ota_.partition, ota_.offset, upload.buf, upload.currentSize);
 			if (ota_.error != ESP_OK) {
 				ota_.errorMessage = "FS partition write error"sv;
-				DBGLOGREST("handleOTAFFSUpdate Failed to write SPIFFS partition: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Failed to write SPIFFS partition: %d\n", ota_.error);
 				return;
 			}
 			ota_.offset += upload.currentSize;
 		} else if (upload.status == UPLOAD_FILE_END) {
 			if (!ota_.started || ota_.error != ESP_OK) {
-				DBGLOGREST("handleOTAFFSUpdate upload end, error: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate upload end, error: %d\n", ota_.error);
 				return;
 			}
-			DBGLOGREST("handleOTAFFSUpdate finished\n");
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate finished\n");
 			ota_.success = true;
 		} else if (upload.status == UPLOAD_FILE_ABORTED) {
 			if (!ota_.started) {
-				DBGLOGREST("handleOTAFFSUpdate upload aborted. Not started. Error: %d\n", ota_.error);
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate upload aborted. Not started. Error: %d\n", ota_.error);
 				return;
 			}
-			DBGLOGREST("handleOTAFFSUpdate ABORTED\n");
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate ABORTED\n");
 		}
 	}
 

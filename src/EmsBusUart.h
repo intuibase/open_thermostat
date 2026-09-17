@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Logger.h"
+#include "Logging.h"
 
 #include <driver/uart.h>
 #include <hal/uart_types.h>
@@ -20,12 +20,22 @@ static void uart_event_task(void *pvParameters);
 
 class EmsBusUart {
 public:
+	ib::logger::LoggerInterface::LogFeatureType getLogFeature() const { return logFeature_; }
+	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
 	using processTelegram_t = std::function<void(uint8_t *, uint8_t)>;
 	static constexpr int EmsBusBaudrate = 9600;
 	static constexpr int UartSlot = 2;
 	static constexpr size_t EmsMaxTelegramSize = 33;
 
-	EmsBusUart(processTelegram_t processTelegram) : processTelegram_(processTelegram) {
+	EmsBusUart(std::shared_ptr<ib::logger::LoggerInterface> log, processTelegram_t processTelegram) : log_(log), processTelegram_(processTelegram), forwarder_(std::move(log)) {
+		if (log_) {
+			static const auto id = [this] {
+				auto feature = log_->addFeature("EmsUart");
+				log_->enableFeature(feature, false);
+				return feature;
+			}();
+			logFeature_ = id;
+		}
 	}
 
 	void start(uint8_t rxPin, uint8_t txPin) {
@@ -51,7 +61,7 @@ public:
 		xTaskCreate(heating::uart_detail::uart_event_task, "EmsBusUart", 2560, this, configMAX_PRIORITIES - 1, NULL);
 		uart_enable_intr_mask(UartSlot, UART_BRK_DET_INT_ENA | UART_RXFIFO_FULL_INT_ENA);
 
-		DBGLOGUART("Started rx: %d tx: %d\n", rxPin, txPin);
+		DBGLOGFD(log_, logFeature_, "Started rx: %d tx: %d\n", rxPin, txPin);
 	}
 
 	void startForwarder(uint8_t rxPin, uint8_t txPin) {
@@ -81,8 +91,8 @@ public:
 	}
 
 	void reset() {
-		DBGLOGUART("reset\n");
-		DBGLOGUART("EMS rx: %d tx: %d\n", rxPin_, txPin_);
+		DBGLOGFD(log_, logFeature_, "reset\n");
+		DBGLOGFD(log_, logFeature_, "EMS rx: %d tx: %d\n", rxPin_, txPin_);
 
 		uart_wait_tx_done(UartSlot, (TickType_t)1000 / portTICK_PERIOD_MS); //(UART_NUM_MAX -1));
 		uart_flush(UartSlot);
@@ -91,6 +101,8 @@ public:
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	QueueHandle_t getQueueHandle() {
 		return uartQueue_;
 	}
@@ -103,10 +115,10 @@ private:
 		bool performProcess = true;
 
 		if (forwarder_.isEnabled() && size == 2 && !(buffer_[0] & 0x80) ) { // polling if 0 byte is not masked, if masked then it is poll response
-			// DBGLOGUART("Polling device %d\n", buffer_[0]);
+			// DBGLOGFD(log_, logFeature_, "Polling device %d\n", buffer_[0]);
 			auto data = forwarder_.getDataToWriteToEmsBus(buffer_[0]); // we have data from that id, send
 			if (data) {
-				DBGLOGUART("We have data forwarded from device 0x%2.2X. Size %d. Sending to EMSBUS\n", buffer_[0], data->size());
+				DBGLOGFD(log_, logFeature_, "We have data forwarded from device 0x%2.2X. Size %d. Sending to EMSBUS\n", buffer_[0], data->size());
 				writeToEms(data->data(), data->size());
 				performProcess = false; // it was a poll to forwarded device, we responded, so this poll is definitely not for us
 			}
@@ -165,7 +177,7 @@ static void uart_event_task(void *pvParameters) {
 				if (length > bus->getDataBufferSize()) {
 					// read trash data
 					while(length > 0) {
-						DBGLOGUART("Message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
+						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
 						uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), std::min(length, bus->getDataBufferSize()), portMAX_DELAY);
 						length -= std::min(length, bus->getDataBufferSize());
 					}
@@ -173,13 +185,13 @@ static void uart_event_task(void *pvParameters) {
 					if (uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), length, portMAX_DELAY) != -1) {
 						bus->processTelegram(length);
 					} else {
-						DBGLOGUARTFW("read failed\n");
+						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "read failed\n");
 					}
 				}
 				length = 0;
 				break;
 			case UART_FIFO_OVF:
-				DBGLOGUART("Event fifo overflow\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event fifo overflow\n", "");
 				// If fifo overflow happened, you should consider adding flow control for your application.
 				// The ISR has already reset the rx FIFO,
 				// As an example, we directly flush the rx buffer here in order to read more data.
@@ -189,7 +201,7 @@ static void uart_event_task(void *pvParameters) {
 				break;
 			//Event of UART ring buffer full
 			case UART_BUFFER_FULL:
-				DBGLOGUART("Event buffer full\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event buffer full\n", "");
 				// If buffer full happened, you should consider increasing your buffer size
 				// As an example, we directly flush the rx buffer here in order to read more data.
 				uart_flush_input(bus->getUartSlot());
@@ -197,18 +209,18 @@ static void uart_event_task(void *pvParameters) {
 				length = 0;
 				break;
 			case UART_PARITY_ERR:
-				DBGLOGUART("parity check error\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "parity check error\n", "");
 				break;
 			case UART_FRAME_ERR:
-				DBGLOGUART("frame error\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "frame error\n", "");
 				break;
 			//Others
 			default:
-				DBGLOGUART("Event %d\n", event.type);
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event %d\n", event.type);
 				break;
 			}
 		} else {
-			DBGLOGUART("Read queue timeout\n");
+			DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Read queue timeout\n");
 			bus->reset();
 		}
 	}
