@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Logger.h"
+#include "Logging.h"
 
 #include <driver/uart.h>
 #include <hal/uart_types.h>
@@ -19,6 +19,18 @@ static void uart_forwarder_event_task(void *pvParameters);
 
 class EmsBusUartForwarder {
 public:
+	ib::logger::LoggerInterface::LogFeatureType getLogFeature() const { return logFeature_; }
+	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
+	explicit EmsBusUartForwarder(std::shared_ptr<ib::logger::LoggerInterface> log) : log_(std::move(log)) {
+		if (log_) {
+			static const auto id = [this] {
+				auto feature = log_->addFeature("EmsUartFwd");
+				log_->enableFeature(feature, false);
+				return feature;
+			}();
+			logFeature_ = id;
+		}
+	}
 	static constexpr int EmsBusBaudrate = 9600;
 	static constexpr int UartSlot = 1;
 	static constexpr size_t EmsMaxTelegramSize = 33;
@@ -69,12 +81,14 @@ public:
 		auto data = std::move(found->second.front());
 		found->second.pop();
 
-		DBGLOGUARTFW("Found telegram in 0x%2.2X queue, %d telegrams left\n", id, found->second.size());
+		DBGLOGFD(log_, logFeature_, "Found telegram in 0x%2.2X queue, %d telegrams left\n", id, found->second.size());
 
 		return data;
 	}
 
 private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	QueueHandle_t getQueueHandle() {
 		return uartQueue_;
 	}
@@ -94,12 +108,12 @@ private:
 	void enqueueWriteToEmsBus(std::shared_ptr<std::vector<uint8_t>> data) {
 		std::lock_guard<std::mutex> m(sendToEmsBusQueueMutex_);
 		uint8_t id = data->at(0) & 0x7F;
-		DBGLOGUARTFW("Enqueued telegram from 0x%2.2X. Size: %d\n", id, data->size());
-		DBGLOGUARTFW("sendToEmsBusQueue Id's: %d. Queue for id 0x%2.2X: %d\n", sendToEmsBusQueue_.size(), id, sendToEmsBusQueue_[id].size());
+		DBGLOGFD(log_, logFeature_, "Enqueued telegram from 0x%2.2X. Size: %d\n", id, data->size());
+		DBGLOGFD(log_, logFeature_, "sendToEmsBusQueue Id's: %d. Queue for id 0x%2.2X: %d\n", sendToEmsBusQueue_.size(), id, sendToEmsBusQueue_[id].size());
 
 		if (sendToEmsBusQueue_[id].size() == MaxForwarderQueueSize) {
-			DBGLOGUARTFW("Can't enqueue telegram from 0x%2.2X. Size: %d. Queue full (%d)\n", id, data->size(), sendToEmsBusQueue_[id].size());
-			heating::logger.printf("EmsBus Free memory %d/%d (minimum was: %d) MaxAlloc: %d Stack remaining: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
+			DBGLOGFD(log_, logFeature_, "Can't enqueue telegram from 0x%2.2X. Size: %d. Queue full (%d)\n", id, data->size(), sendToEmsBusQueue_[id].size());
+			DBGLOGFI(log_, logFeature_, "EmsBus Free memory %d/%d (minimum was: %d) MaxAlloc: %d Stack remaining: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
 			return;
 		}
 
@@ -135,7 +149,7 @@ static void uart_forwarder_event_task(void *pvParameters) {
 				if (length > bus->getDataBufferSize()) {
 					// read trash data
 					while(length > 0) {
-						DBGLOGUARTFW("Forwarder message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
+						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Forwarder message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
 						uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), std::min(length, bus->getDataBufferSize()), portMAX_DELAY);
 						length -= std::min(length, bus->getDataBufferSize());
 					}
@@ -144,20 +158,20 @@ static void uart_forwarder_event_task(void *pvParameters) {
 						auto dataToEnqueue = std::make_shared<std::vector<uint8_t>>(bus->getDataBuffer(), bus->getDataBuffer() + length - 1);
 						bus->enqueueWriteToEmsBus(std::move(dataToEnqueue));
 					} else {
-						DBGLOGUARTFW("read failed\n");
+						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "read failed\n");
 					}
 				}
 				length = 0;
 				break;
 			case UART_FIFO_OVF:
-				DBGLOGUARTFW("forwarder event fifo overflow\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "forwarder event fifo overflow\n", "");
 				uart_flush_input(bus->getUartSlot());
 				xQueueReset(bus->getQueueHandle());
 				length = 0;
 				break;
 			//Event of UART ring buffer full
 			case UART_BUFFER_FULL:
-				DBGLOGUARTFW("forwarder event buffer full\n", "");
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "forwarder event buffer full\n", "");
 				// If buffer full happened, you should consider increasing your buffer size
 				// As an example, we directly flush the rx buffer here in order to read more data.
 				uart_flush_input(bus->getUartSlot());
@@ -165,7 +179,7 @@ static void uart_forwarder_event_task(void *pvParameters) {
 				length = 0;
 				break;
 			default:
-				DBGLOGUARTFW("Forwarder event %d\n", event.type);
+				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Forwarder event %d\n", event.type);
 				break;
 			}
 		}

@@ -8,7 +8,7 @@ class UBAMonitorWWPlus : public EmsTelegram {
 public:
 	static constexpr uint16_t predefinedTypeId = 0x00E9;
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 
 	auto getFlow() const {
 		return getValue<uint8_t>(11);

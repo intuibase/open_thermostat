@@ -1,3 +1,4 @@
+#include "Logging.h"
 #include "EmsController.h"
 
 #include "EMS/UBADeviceVersion.h"
@@ -16,8 +17,14 @@
 
 namespace heating::ems {
 
-EmsController::EmsController() {
-	DBGLOGEMS("emsEnabled: %d emsForwarderEnabled: %d\n", emsConfig_.emsEnabled, emsConfig_.emsForwarderEnabled);
+EmsController::EmsController(std::shared_ptr<ib::logger::LoggerInterface> log) : log_(std::move(log)) {
+	if (log_) {
+		logFeature_ = log_->addFeature("EmsControl");
+		verboseFeature_ = log_->addFeature("EmsVerbose");
+		log_->enableFeature(verboseFeature_, false);
+		fatalFeature_ = log_->addFeature("Fatal");
+	}
+	DBGLOGFD(log_, logFeature_, "emsEnabled: %d emsForwarderEnabled: %d\n", emsConfig_.emsEnabled, emsConfig_.emsForwarderEnabled);
 
 	if (!emsConfig_.emsEnabled) {
 		return;
@@ -35,9 +42,9 @@ EmsController::EmsController() {
 
 	#define UPDATE_IF_SET(field, func) { auto _uis__val = telegram->func(); if (_uis__val.has_value()) { field = _uis__val.value();  } }
 
-	registerTelegramProcessor(UBAMonitorFastPlus::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAMonitorFastPlus::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		UBAMonitorFastPlus const *telegram = reinterpret_cast<UBAMonitorFastPlus const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.selectedFlowTemperature, getSelectedFlowTemperature)
 		UPDATE_IF_SET(s.currentFlowTemperature, getCurrentFlowTemperature)
@@ -52,23 +59,23 @@ EmsController::EmsController() {
 		UPDATE_IF_SET(s.displayCode, getDisplayCode);
 	});
 
-	registerTelegramProcessor(UBAMonitorSlowPlus::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAMonitorSlowPlus::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		UBAMonitorSlowPlus const *telegram = reinterpret_cast<UBAMonitorSlowPlus const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.fanEnabled, getFanEnabled)
 	});
 
-	registerTelegramProcessor(UBAMonitorSlowPlus2::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAMonitorSlowPlus2::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAMonitorSlowPlus2 const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.pumpVenting, getPumpVenting)
 	});
 
-	registerTelegramProcessor(UBAParametersWWPlus::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAParametersWWPlus::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAParametersWWPlus const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 
 		auto enabled = telegram->getWarmWaterEnabled();
 		std::lock_guard<std::mutex> lock(s.mutex);
@@ -78,9 +85,9 @@ EmsController::EmsController() {
 		UPDATE_IF_SET(s.selectedWarmWaterTemperature, getSelectedWarmWaterTemperature)
 	});
 
-	registerTelegramProcessor(UBAParametersPlus::predefinedTypeId, [&s = boilerState_, &p = boilerParams_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAParametersPlus::predefinedTypeId, [this, &s = boilerState_, &p = boilerParams_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAParametersPlus const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 
 		{
 		std::lock_guard<std::mutex> lock(s.mutex);
@@ -95,9 +102,9 @@ EmsController::EmsController() {
 		UPDATE_IF_SET(p.heatingTemperature, getHeatingTemperature);
 	});
 
-	registerTelegramProcessor(UBAOutdoorTemp::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAOutdoorTemp::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAOutdoorTemp const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		s.outdoorTemperature = telegram->getOutdoorTemperature();
 		if (s.outdoorTemperature.has_value()) {
@@ -105,35 +112,35 @@ EmsController::EmsController() {
 		}
 	});
 
-	registerTelegramProcessor(UBAMonitorWWPlus::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAMonitorWWPlus::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAMonitorWWPlus const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.warmWaterFlow, getFlow)
 		UPDATE_IF_SET(s.currentWarmWaterTemperature, getCurrentTemperature)
 	});
 
-	registerTelegramProcessor(UBAProtocolVersion::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAProtocolVersion::predefinedTypeId, [this, &s = boilerState_](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAProtocolVersion const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.protocolVersion, getProtocolVersion)
 	});
 
 
-	registerTelegramProcessor(UBAInternalWeatherCompensatedMode::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBAInternalWeatherCompensatedMode::predefinedTypeId, [this](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBAInternalWeatherCompensatedMode const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 	});
 
-	registerTelegramProcessor(UBADeviceVersion::predefinedTypeId, [&s = boilerState_](EmsTelegram const &t) {
+	registerTelegramProcessor(UBADeviceVersion::predefinedTypeId, [this](EmsTelegram const &t) {
 		auto telegram = reinterpret_cast<UBADeviceVersion const *>(&t);
-		telegram->logData();
+		telegram->logData(*log_, logFeature_);
 	});
 
-	registerTelegramProcessor(UBAFactory::predefinedTypeId, [](EmsTelegram const &t) {
-		auto telegram = reinterpret_cast<UBAMonitorSlowPlus2 const *>(&t);
-		telegram->logData();
+	registerTelegramProcessor(UBAFactory::predefinedTypeId, [this](EmsTelegram const &t) {
+		auto telegram = reinterpret_cast<UBAFactory const *>(&t);
+		telegram->logData(*log_, logFeature_);
 	});
 
 	requestStartupData();
@@ -156,13 +163,13 @@ void EmsController::requestPeriodicData() {
 
 	auto now = millis();
 	if (lastBoilerParametersReadRequestMillis_ == 0 || ib::millisDurationPassed(now, lastBoilerParametersReadRequestMillis_, 1000ul * boilerParametersReadRequestIntervalSecs)) {
-		DBGLOGEMS("requestPeriodicData - outdoor temp and external EMS\n");
+		DBGLOGFD(log_, logFeature_, "requestPeriodicData - outdoor temp and external EMS\n");
 		enqueueTelegramToSend(EmsTelegram(EmsTelegram::operation_t::WRITE, deviceId_, 0x08, 0, 0x00E7, {0x00, 0x02, 0x00}), true); // enable external EMS controller
 		lastBoilerParametersReadRequestMillis_ = now;
 	}
 
 	if (lastBoilerDetailsReadRequestMillis_ == 0 || ib::millisDurationPassed(now, lastBoilerDetailsReadRequestMillis_, 1000ul * boilerDetailsReadRequestIntervalSecs)) {
-		DBGLOGEMS("requestPeriodicData - heating and ww params\n");
+		DBGLOGFD(log_, logFeature_, "requestPeriodicData - heating and ww params\n");
 		enqueueTelegramToSend(UBAParametersWWPlus::getRequest(deviceId_, boilerId_));
 		enqueueTelegramToSend(UBAParametersPlus::getRequest(deviceId_, boilerId_));
 		enqueueTelegramToSend(UBAOutdoorTemp::getRequest(deviceId_, boilerId_));
@@ -173,10 +180,10 @@ void EmsController::requestPeriodicData() {
 }
 
 bool EmsController::processPoll(uint8_t deviceId) {
-	// logger.printf("poll: 0x%X\n", deviceId);
+	// DBGLOGFI(log_, verboseFeature(), "poll: 0x%X\n", deviceId);
 
 	if (txNotConfirmed_ > maxTxNotConfirmed) {
-		DBGLOGFATAL("We have %zu TX not confirmed! Last poll millis: %ld, current millis: %ld\n--- Resetting UART ---\n", txNotConfirmed_.load(), lastPoll_, millis());
+		DBGLOGFD(log_, fatalFeature(), "We have %zu TX not confirmed! Last poll millis: %ld, current millis: %ld\n--- Resetting UART ---\n", txNotConfirmed_.load(), lastPoll_, millis());
 		reset();
 	}
 
@@ -191,7 +198,7 @@ bool EmsController::processPoll(uint8_t deviceId) {
 		lock.unlock();
 		pong();
 	} else {
-		DBGLOGEMSVB("poll(), telegrams left in queue: %zu\n", telegramsToSend_.size());
+		DBGLOGFD(log_, verboseFeature(), "poll(), telegrams left in queue: %zu\n", telegramsToSend_.size());
 
 		EmsTelegram telegram = std::move(telegramsToSend_.front());
 		telegramsToSend_.pop_front();
@@ -212,45 +219,46 @@ void EmsController::processTelegram(uint8_t *data, uint8_t length) { // runs on 
 		return;
 	}
 
-	if (debug::debug.debugEmsVerbose) {
-		DBGLOGEMSVB("processTelegram (%ld): ", length);
+	if (log_->isFeatureEnabled(verboseFeature())) {
+		DBGLOGFD(log_, verboseFeature(), "processTelegram (%ld): ", length);
 		for (size_t i = 0; i < length; ++i) {
-			logger.printf("%2.2X ", data[i]);
+			DBGLOGFI(log_, verboseFeature(), "%2.2X ", data[i]);
 		}
-		logger.printf("\n");
+		DBGLOGFI(log_, verboseFeature(), "\n");
 	}
 
 	if (data[1] != 0 && ((data[1] & 0x7F) != deviceId_)) {
 		if ((data[0] & 0x7F) == deviceId_) {
-			DBGLOGEMSVB("Telegram sent from us. Debug follows:\n");
+			DBGLOGFD(log_, verboseFeature(), "Telegram sent from us. Debug follows:\n");
 			if (txNotConfirmed_ > 0) {
 				txNotConfirmed_--;
 			}
 			// TODO validate sent telegrams by ID?
 		} else {
-			DBGLOGEMSVB("Telegram not for us. Src: 0x%2.2X Dest: 0x%2.2X, debug follows:\n", data[0] & 0x7F, data[1] & 0x7F);
+			DBGLOGFD(log_, verboseFeature(), "Telegram not for us. Src: 0x%2.2X Dest: 0x%2.2X, debug follows:\n", data[0] & 0x7F, data[1] & 0x7F);
 		}
 
-		if (debug::debug.debugEmsVerbose) {
+		if (log_->isFeatureEnabled(verboseFeature())) {
 			try {
-				EmsTelegram::getFromRawData(data, length - 1);
+				EmsTelegram::getFromRawData(*log_, verboseFeature_, data, length - 1).logDebug(*log_, logFeature_);
 			} catch (std::exception const &e) {
-				DBGLOGFATAL("processTelegram for debug. Error decoding telegram: %s\n", e.what());
+				DBGLOGFD(log_, fatalFeature(), "processTelegram for debug. Error decoding telegram: %s\n", e.what());
 			}
 		}
 		return;
 	}
 
 	if ((data[1] & 0x7F) == deviceId_) {
-		DBGLOGEMSVB("We have got an telegram!\n");
+		DBGLOGFD(log_, verboseFeature(), "We have got an telegram!\n");
 	}
 
 	try {
-		EmsTelegram telegram = EmsTelegram::getFromRawData(data, length - 1);
+		EmsTelegram telegram = EmsTelegram::getFromRawData(*log_, verboseFeature_, data, length - 1);
+		telegram.logDebug(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(telegramProcessingMutex_);
 		telegramsToProcess_.push(std::move(telegram));
 	} catch (std::exception const &e) {
-		DBGLOGFATAL("EmsController: error decoding telegram: %s\n", e.what());
+		DBGLOGFD(log_, fatalFeature(), "EmsController: error decoding telegram: %s\n", e.what());
 	}
 
 }
@@ -260,7 +268,7 @@ void EmsController::processTelegrams() {
 	if (telegramsToProcess_.empty()) {
 		return;
 	} else {
-		DBGLOGEMS("EmsController::processTelegrams size: %zu\n", telegramsToProcess_.size());
+		DBGLOGFD(log_, logFeature_, "EmsController::processTelegrams size: %zu\n", telegramsToProcess_.size());
 
 		do {
 			EmsTelegram telegram = std::move(telegramsToProcess_.front());
@@ -277,7 +285,7 @@ void EmsController::processTelegrams() {
 						processor(telegram);
 					}
 				} else {
-					DBGLOGEMS("Unknown telegram ID: 0x%4.4X\n", telegram.getTypeId());
+					DBGLOGFD(log_, logFeature_, "Unknown telegram ID: 0x%4.4X\n", telegram.getTypeId());
 				}
 			}
 
@@ -287,13 +295,13 @@ void EmsController::processTelegrams() {
 }
 
 void EmsController::processReadRequest(EmsTelegram const &telegram) {
-	DBGLOGEMS("processReadRequest, from: 0x%2.2X\n", telegram.getSenderId());
+	DBGLOGFD(log_, logFeature_, "processReadRequest, from: 0x%2.2X\n", telegram.getSenderId());
 
 	if (telegram.getTypeId() == UBADeviceVersion::predefinedTypeId) {
-		reinterpret_cast<UBADeviceVersion const *>(&telegram)->logData();
+		reinterpret_cast<UBADeviceVersion const *>(&telegram)->logData(*log_, logFeature_);
 		enqueueTelegramToSend(UBADeviceVersion::getResponse(deviceId_, telegram.getSenderId(), telegram.getOffset(), telegram.getRequestedDataSize()));
 	} else { // reply empty message
-		DBGLOGEMS("processReadRequest, unknown telegram 0x%4.4X from: 0x%2.2X. Replying with empty msg\n", telegram.getTypeId(), telegram.getSenderId());
+		DBGLOGFD(log_, logFeature_, "processReadRequest, unknown telegram 0x%4.4X from: 0x%2.2X. Replying with empty msg\n", telegram.getTypeId(), telegram.getSenderId());
 		enqueueTelegramToSend(EmsTelegram{EmsTelegram::operation_t::WRITE, deviceId_, telegram.getSenderId(), 0, telegram.getTypeId(), {}});
 	}
 }
@@ -307,22 +315,22 @@ void EmsController::startHeating(uint8_t heatingTemperature) {
 	// disable heating if:
 	// [EmsControl] (0x88) -W-> (0x18), type: 0x02E0, offset: 0, dataLen: 5 data: 01 FF 00 01 01
 
-	DBGLOGEMS("startHeating, temp: %d\n", heatingTemperature);
+	DBGLOGFD(log_, logFeature_, "startHeating, temp: %d\n", heatingTemperature);
 
 	enqueueTelegramToSend(EmsTelegram(EmsTelegram::operation_t::WRITE, deviceId_, 0x08, 0, 0x02e0, {0x01, heatingTemperature, 0x64, 0x00, 0x01}), true); // 0x64 - burner power 100%
 }
 
 void EmsController::stopHeating() {
-	DBGLOGEMS("stopHeating\n");
+	DBGLOGFD(log_, logFeature_, "stopHeating\n");
 	enqueueTelegramToSend(EmsTelegram(EmsTelegram::operation_t::WRITE, deviceId_, 0x08, 0, 0x02e0, {0x01, 0x00, 0x00, 0x00, 0x01}), true); // stop heating
 }
 
 void EmsController::setHeatingTemperature(uint8_t temperature) {
 	auto currentHeatingTemp = boilerParams_.getHeatingTemperature();
-	DBGLOGEMS("setHeatingTemperature, temp: %d, current: %d\n", temperature, currentHeatingTemp.value_or(0));
+	DBGLOGFD(log_, logFeature_, "setHeatingTemperature, temp: %d, current: %d\n", temperature, currentHeatingTemp.value_or(0));
 
 	if (currentHeatingTemp.has_value() && currentHeatingTemp.value() == temperature) {
-		DBGLOGEMS("setHeatingTemperature already set, skipping\n");
+		DBGLOGFD(log_, logFeature_, "setHeatingTemperature already set, skipping\n");
 		return;
 	}
 

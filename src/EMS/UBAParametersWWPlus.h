@@ -12,7 +12,7 @@ public:
 		return {EmsTelegram::operation_t::READ, deviceId, destination, 0, predefinedTypeId, {maxEmsDataLength}};
 	}
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 
 	auto getWarmWaterEnabled() const {
 		return getValue<uint8_t>(5);

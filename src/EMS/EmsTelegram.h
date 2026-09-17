@@ -1,7 +1,9 @@
 #pragma once
+#include <logger/LoggerInterface.h>
 
 #include <array>
 #include <optional>
+#include <type_traits>
 #include <vector>
 #include <stdint.h>
 
@@ -21,9 +23,6 @@ public:
 	};
 	static constexpr uint8_t maxEmsDataLength = 27; // EMS1.0
 
-	virtual ~EmsTelegram() {
-	}
-
 	EmsTelegram(operation_t operation, uint8_t source, uint8_t destination, uint8_t offset, uint16_t typeId, std::vector<uint8_t> data) :
 		EmsTelegram(operation, source, destination, offset, typeId, data.data(), data.size()) {
 	}
@@ -39,7 +38,6 @@ public:
 		for (uint8_t i = 0; i < dataLength; ++i) {
 			data_.push_back(data[i]);
 		}
-		logDebug();
 	}
 
 	uint16_t getTypeId() const;
@@ -49,10 +47,10 @@ public:
 
 	uint8_t getRequestedDataSize() const;
 
-	void logDebug() const;
+	void logDebug(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 
 	static uint16_t getTelegramTypeFromRaw(uint8_t *data, uint8_t length);
-	static EmsTelegram getFromRawData(uint8_t *data, uint8_t length); // decodes full raw telegram, data without tailing BRK \0 THROWS
+	static EmsTelegram getFromRawData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType verboseFeature, uint8_t *data, uint8_t length); // decodes full raw telegram, data without tailing BRK \0 THROWS
 
 	std::vector<uint8_t> encodeToRawDataWithCRC() const;
 
@@ -66,7 +64,6 @@ public:
 	}
 
 protected:
-
 	int8_t getDataOffset(uint8_t dataStart, uint8_t dataLen = 1) const;
 
 	template<typename T, uint8_t bitPos = 0>

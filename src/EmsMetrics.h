@@ -73,7 +73,6 @@ public:
 
 		registerProcessor(heating::ems::UBAFactory::predefinedTypeId, [this](heating::ems::EmsTelegram const &t) {
 			auto telegram = reinterpret_cast<heating::ems::UBAFactory const *>(&t);
-			telegram->logData();
 			boilerNominalPower_ = telegram->getBoilerNominalPower().value_or(0);
 		});
 	}

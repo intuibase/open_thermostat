@@ -1,10 +1,10 @@
 
 #include "UBAMonitorSlowPlus2.h"
-#include "Logger.h"
+#include "Logging.h"
 
 namespace heating::ems {
 
-void UBAMonitorSlowPlus2::logData() const {
+void UBAMonitorSlowPlus2::logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const {
 
 	// data[0]: 01 if heating and burning gas
 	//			04 if heating and not burning gas (pump active, valve off)
@@ -20,17 +20,17 @@ void UBAMonitorSlowPlus2::logData() const {
 	// data[5] 01 if warm water active else 00
 	// data[6] 01 if venting else 00
 
-	{ auto value = getValue<bool, 0>(0); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 heating active, burning %d\n", value.value()); } } // data[0] == 0x01
-	{ auto value = getValue<bool, 2>(4); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 heating active %d\n", value.value()); } } // data[4]==0x04
-	{ auto value = getValue<uint8_t>(5); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 warm water active %d\n", value.value()); } } // data[5] == 0x01
+	{ auto value = getValue<bool, 0>(0); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 heating active, burning %d\n", value.value()); } } // data[0] == 0x01
+	{ auto value = getValue<bool, 2>(4); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 heating active %d\n", value.value()); } } // data[4]==0x04
+	{ auto value = getValue<uint8_t>(5); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 warm water active %d\n", value.value()); } } // data[5] == 0x01
 
-	{ auto value = getValue<uint8_t>(6); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 pump venting %d\n", value.value()); } }
-	{ auto value = getValue<uint16_t>(11); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 actual flow temp: %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(13); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 actual burner power %d %%\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(14); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 maximum burner power?? %d %%\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(15); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 heating temperature %d\n", value.value()); } }
-	{ auto value = getValue<uint8_t>(19); if (value) { DBGLOGEMS("UBAMonitorSlowPlus2 warm water temperature set %d\n", value.value()); } } // 0 if disabled
-	{ auto value = getValue<uint8_t>(19); if (value && value.value() == 0) { DBGLOGEMS("UBAMonitorSlowPlus2 warm water disabled\n"); } }
+	{ auto value = getValue<uint8_t>(6); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 pump venting %d\n", value.value()); } }
+	{ auto value = getValue<uint16_t>(11); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 actual flow temp: %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(13); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 actual burner power %d %%\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(14); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 maximum burner power?? %d %%\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(15); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 heating temperature %d\n", value.value()); } }
+	{ auto value = getValue<uint8_t>(19); if (value) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 warm water temperature set %d\n", value.value()); } } // 0 if disabled
+	{ auto value = getValue<uint8_t>(19); if (value && value.value() == 0) { DBGLOGFD((&log), feature, "UBAMonitorSlowPlus2 warm water disabled\n"); } }
 }
 
 }

@@ -16,7 +16,7 @@ public:
 		return getValue<uint8_t>(0);
 	}
 
-	void logData() const;
+	void logData(ib::logger::LoggerInterface &log, ib::logger::LoggerInterface::LogFeatureType feature) const;
 };
 
 }

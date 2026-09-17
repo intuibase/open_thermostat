@@ -1,3 +1,4 @@
+#include "Logging.h"
 #include <Arduino.h>
 #include <Wire.h>
 #include <time.h>
@@ -6,6 +7,9 @@
 #include <SPIFFS.h>
 #include <ESPmDNS.h>
 #include <TimeHelpers.h>
+#include <logger/Logger.h>
+#include <logger/LoggerSerialSink.h>
+#include <logger/LoggerSocketSink.h>
 
 #include "config.h"
 #include "HeatingController.h"
@@ -14,15 +18,18 @@
 
 #define ONBOARD_LED 2
 
-
-namespace debug {
-	struct debug debug;
+namespace {
+ib::logger::LoggerInterface::LogFeatureType appLogFeature() {
+	static const auto id = heating::logger->addFeature("App");
+	return id;
 }
+}
+
 
 namespace heating {
 
 HeatingController *controller = nullptr;
-Logger logger;
+std::shared_ptr<ib::logger::LoggerInterface> logger;
 
 std::unique_ptr<REST> rest;
 
@@ -30,7 +37,7 @@ bool wifiAPMode = false;
 }
 
 void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
-	heating::logger.printf("WiFI IP address %s hostname: %s\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str(), WiFi.getHostname());
+	DBGLOGFI(heating::logger, appLogFeature(), "WiFI IP address %s hostname: %s\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str(), WiFi.getHostname());
 
 	if (WiFi.isConnected()) {
 		if (heating::rest) {
@@ -40,27 +47,27 @@ void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
 		auto networkConfig = config::getNetworkConfig();
 		if (networkConfig.ntpEnabled) {
 			if (!networkConfig.timeZone.empty()) {
-				heating::logger.printf("Configuring timezone time '%s' server: '%s' ", networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
+				DBGLOGFI(heating::logger, appLogFeature(), "Configuring timezone time '%s' server: '%s' ", networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
 				configTzTime(networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
 			} else {
 				configTime(networkConfig.ntpUtcOffset, networkConfig.ntpDaylightUtcOffset, networkConfig.ntpHost.c_str());
 			}
 		} else {
-			heating::logger.printf("NTP disabled\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "NTP disabled\n");
 		}
 
 		struct tm timeinfo;
 		if (!getLocalTime(&timeinfo)) {
-			heating::logger.println("Failed to obtain network time. Setting up from RTC\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "Failed to obtain network time. Setting up from RTC\n");
 			heating::setLocalTimeFromRTC(networkConfig.timeZone, networkConfig.ntpUtcOffset, networkConfig.ntpDaylightUtcOffset);
 		} else if (networkConfig.ntpEnabled) {
-			heating::logger.println(&timeinfo);
-			heating::logger.println("\nObtained network time, setting up RTC\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "%s", asctime(&timeinfo));
+			DBGLOGFI(heating::logger, appLogFeature(), "\nObtained network time, setting up RTC\n");
 			heating::setRTCfromLocalTime();
 		}
 
 		if (!MDNS.begin(WiFi.getHostname())) { //CONFIG_MDNS_TASK_STACK_SIZE 4096
-			heating::logger.printf("Error starting mDNS\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "Error starting mDNS\n");
 		} else {
 			MDNS.addService(networkConfig.hostname.c_str(), "http", networkConfig.listenPort);
 		}
@@ -70,11 +77,11 @@ void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
 
 void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const &networkConfig, config::APConfig const &apConfig, bool startAP) {
 	if (startAP) {
-		heating::logger.printf("Starting Access Point\n");
+		DBGLOGFI(heating::logger, appLogFeature(), "Starting Access Point\n");
 		if (heating::controller) {
 			heating::controller->stopBluetoothScan();
 			heating::controller->waitUntilBluetoothScanFinishAndDeinitBLE();
-			heating::logger.printf("Starting Access Point. Stopped bluetooth scan\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "Starting Access Point. Stopped bluetooth scan\n");
 		}
 
 		WiFi.mode(WIFI_AP);
@@ -82,7 +89,7 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 
 		bool softAPResult = WiFi.softAP(apConfig.ssid.c_str(), apConfig.password.c_str(), apConfig.channel);
 
-		heating::logger.printf("Soft AP start: %d\n", softAPResult);
+		DBGLOGFI(heating::logger, appLogFeature(), "Soft AP start: %d\n", softAPResult);
 
 		WiFi.onEvent(
 			[apConfig](arduino_event_id_t event, arduino_event_info_t info) {
@@ -94,18 +101,18 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 				bool configResult = WiFi.softAPConfig(ip, gateway, subnetMask);
 				WiFi.softAPsetHostname(apConfig.hostname.c_str());
 
-				heating::logger.printf("Started Access Point. Hostname: '%s'. IP address: %s. config: %d\n", WiFi.softAPgetHostname(), WiFi.softAPIP().toString().c_str(), configResult);
+				DBGLOGFI(heating::logger, appLogFeature(), "Started Access Point. Hostname: '%s'. IP address: %s. config: %d\n", WiFi.softAPgetHostname(), WiFi.softAPIP().toString().c_str(), configResult);
 
 				heating::setLocalTimeFromRTC(apConfig.timeZone, apConfig.ntpUtcOffset, apConfig.ntpDaylightUtcOffset);
 
 				if (heating::rest) {
-					heating::logger.printf("Restarting REST service\n");
+					DBGLOGFI(heating::logger, appLogFeature(), "Restarting REST service\n");
 					heating::rest->restart();
 				}
 				heating::wifiAPMode = true;
 
 				if (!MDNS.begin("heating")) {
-					heating::logger.printf("Error starting mDNS\n");
+					DBGLOGFI(heating::logger, appLogFeature(), "Error starting mDNS\n");
 				} else {
 					MDNS.addService(apConfig.hostname.c_str(), "http", apConfig.listenPort);
 				}
@@ -113,12 +120,12 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 
 
 
-		WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) { heating::logger.printf("AccessPoint client IP assigned: '%s'\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str()); }, arduino_event_id_t::ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED);
+		WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) { DBGLOGFI(heating::logger, appLogFeature(), "AccessPoint client IP assigned: '%s'\n", IPAddress(info.got_ip.ip_info.ip.addr).toString().c_str()); }, arduino_event_id_t::ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED);
 
-		WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) { heating::logger.printf("AccessPoint client connected MAC: " MACSTR "\n",MAC2STR(info.wifi_ap_staconnected.mac)); }, arduino_event_id_t::ARDUINO_EVENT_WIFI_AP_STACONNECTED);
+		WiFi.onEvent([](arduino_event_id_t event, arduino_event_info_t info) { DBGLOGFI(heating::logger, appLogFeature(), "AccessPoint client connected MAC: " MACSTR "\n",MAC2STR(info.wifi_ap_staconnected.mac)); }, arduino_event_id_t::ARDUINO_EVENT_WIFI_AP_STACONNECTED);
 
 	} else {
-		heating::logger.printf("networkConfig\n"
+		DBGLOGFI(heating::logger, appLogFeature(), "networkConfig\n"
 							   "  host: %s\n"
 							   "  ssid: %s\n", networkConfig.hostname.c_str(), wifiConfig.ssid.c_str());
 
@@ -139,78 +146,84 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 		WiFi.onEvent(WiFiGotIP, arduino_event_id_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);
 	}
 
-	heating::logger.initialize(networkConfig.loggerEnabled, networkConfig.loggerHost, networkConfig.loggerPort);
+	if (networkConfig.loggerEnabled && !networkConfig.loggerHost.empty()) {
+		heating::logger->attachSink(std::make_shared<ib::logger::LoggerSocketSink>(
+		ib::logger::LoggerInterface::LogLevel::TRACE, networkConfig.loggerHost, networkConfig.loggerPort));
+	}
 }
 
 void setup() {
 	delay(2500); // wait for monitor
-
-	heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d STARTUP\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	Serial.begin(115200);
+	heating::logger = std::make_shared<ib::logger::Logger>(
+		std::vector<std::shared_ptr<ib::logger::LoggerSinkInterface>>{
+			std::make_shared<ib::logger::LoggerSerialSink>(ib::logger::LoggerInterface::LogLevel::TRACE)});
+	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d STARTUP\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 
 	pinMode(ONBOARD_LED, OUTPUT);
 	digitalWrite(ONBOARD_LED, HIGH);
 	digitalWrite(ONBOARD_LED, LOW);
 
 	delay(500);
-	Serial.begin(115200);
 
 	const esp_app_desc_t *app = esp_ota_get_app_description();
 	const esp_partition_t *partition = esp_ota_get_running_partition();
 
-	heating::logger.printf("Project: %s, version: %s\n", app->project_name, app->version);
-	heating::logger.printf("Build: %s %s\n", app->date, app->time);
-	heating::logger.printf("IDF: %s\n", app->idf_ver);
-	heating::logger.printf("Firmware sha256: %s\n", app->app_elf_sha256);
-	heating::logger.printf("Partition: %s, size: %d, encrypted: %d\n", partition->label, partition->size, partition->encrypted);
-	heating::logger.printf("-----------------------");
-	heating::logger.println("Starting up");
+	DBGLOGFI(heating::logger, appLogFeature(), "Project: %s, version: %s\n", app->project_name, app->version);
+	DBGLOGFI(heating::logger, appLogFeature(), "Build: %s %s\n", app->date, app->time);
+	DBGLOGFI(heating::logger, appLogFeature(), "IDF: %s\n", app->idf_ver);
+	DBGLOGFI(heating::logger, appLogFeature(), "Firmware sha256: %s\n", app->app_elf_sha256);
+	DBGLOGFI(heating::logger, appLogFeature(), "Partition: %s, size: %d, encrypted: %d\n", partition->label, partition->size, partition->encrypted);
+	DBGLOGFI(heating::logger, appLogFeature(), "-----------------------");
+	DBGLOGFI(heating::logger, appLogFeature(), "Starting up");
 
 #ifdef CONFIG_BT_CLASSIC_ENABLED
-	heating::logger.printf("CLASSIC BT ENABLED\n");
+	DBGLOGFI(heating::logger, appLogFeature(), "CLASSIC BT ENABLED\n");
 #else
-	heating::logger.printf("BLE BT ENABLED\n");
+	DBGLOGFI(heating::logger, appLogFeature(), "BLE BT ENABLED\n");
 #endif
 
 
 #if SOC_UART_NUM > 1
-	heating::logger.printf("SERIAL 1 ENABLED\n");
+	DBGLOGFI(heating::logger, appLogFeature(), "SERIAL 1 ENABLED\n");
 #endif
 
 	if (!SPIFFS.begin(false)) {
-		heating::logger.println("An Error has occurred while mounting SPIFFS");
+		DBGLOGFI(heating::logger, appLogFeature(), "An Error has occurred while mounting SPIFFS");
 	}
 
 	config::readDebugOptions();
 
-	heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d SPIFFS\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d SPIFFS\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 
 	auto networkConfig = config::getNetworkConfig();
 
 	{
 		auto rtcpins = config::getRTCPins();
-		heating::logger.printf("Configuring i2c on sda %d scl %d\n", rtcpins.sda, rtcpins.scl);
+		DBGLOGFI(heating::logger, appLogFeature(), "Configuring i2c on sda %d scl %d\n", rtcpins.sda, rtcpins.scl);
 		Wire.begin(rtcpins.sda, rtcpins.scl);
 	}
 	if (networkConfig.rtcEnabled) {
 		heating::startRTC(networkConfig.rtcEnabled);
 	} else {
-		heating::logger.printf("RTC battery clock disabled\n");
+		DBGLOGFI(heating::logger, appLogFeature(), "RTC battery clock disabled\n");
 	}
 
-	heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d RTC\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d RTC\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 
 	auto wifiConfig = config::getWiFiConfig();
 	auto apConfig = config::getAPConfig();
 
 	bool startAP = wifiConfig.ssid.empty() /*|| TODO PUSHBUTTON PRESSED */;
 
-	heating::controller = new heating:: HeatingController();
-	heating::rest = std::make_unique<heating::REST>(*heating::controller, startAP ? apConfig.listenPort : networkConfig.listenPort);
+	heating::controller = new heating::HeatingController(heating::logger);
+	heating::rest = std::make_unique<heating::REST>(heating::logger, *heating::controller, startAP ? apConfig.listenPort : networkConfig.listenPort);
+	config::readDebugOptions();
 
-	heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d STUFF\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d STUFF\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 
 	WifiSetUp(wifiConfig, networkConfig, apConfig, startAP);
-	heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d WIFI\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d WIFI\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
 }
 
 void loop() {
@@ -221,13 +234,13 @@ void loop() {
 		lastMillis = now;
 
 		heating::controller->operate();
-		heating::logger.printf("Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %lds SPIFFS: %zu/%zu\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), esp_timer_get_time()/1000000, SPIFFS.usedBytes(), SPIFFS.totalBytes());
+		DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %lds SPIFFS: %zu/%zu\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), esp_timer_get_time()/1000000, SPIFFS.usedBytes(), SPIFFS.totalBytes());
 
 		if (!WiFi.isConnected()) {
-			heating::logger.printf("WiFi not connected. Reconnecting.\n");
+			DBGLOGFI(heating::logger, appLogFeature(), "WiFi not connected. Reconnecting.\n");
 			WiFi.reconnect();
 		} else {
-			heating::logger.printf("WiFi IP Address: %s\n", WiFi.localIP().toString().c_str());
+			DBGLOGFI(heating::logger, appLogFeature(), "WiFi IP Address: %s\n", WiFi.localIP().toString().c_str());
 		}
 	}
 

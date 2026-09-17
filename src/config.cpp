@@ -1,10 +1,18 @@
 #include "config.h"
 #include "BeaconBleAddress.h"
-#include "Logger.h"
+#include "Logging.h"
 #include "TimeUtils.h"
 
 #include <SPIFFS.h>
 #include <memory>
+#include <unordered_map>
+
+namespace {
+ib::logger::LoggerInterface::LogFeatureType configLogFeature() {
+	static const auto id = heating::logger->addFeature("Config");
+	return id;
+}
+}
 
 namespace json {
 std::string getString(cJSON *root, const char *name) {
@@ -63,13 +71,13 @@ std::vector<std::string> parseValves(cJSON *root) {
 }
 
 heating::RoomConfig::TemperatureSetting parseTemperature(cJSON *obj) {
-	heating::RoomConfig::TemperatureSetting temp;
+	heating::RoomConfig::TemperatureSetting temp{heating::logger};
 	temp.name_ = json::getString(obj, "name");
 	try {
 		temp.timeFrom_ = ib::timeutils::parseTimeHHMM(json::getString(obj, "time_from"));
 		temp.timeTo_ = ib::timeutils::parseTimeHHMM(json::getString(obj, "time_to"));
 	} catch (std::exception const &e) {
-		heating::logger.printf("Exception parsing temperature '%s' time ranges: %s\n", temp.name_.c_str(), e.what());
+		DBGLOGFI(heating::logger, configLogFeature(), "Exception parsing temperature '%s' time ranges: %s\n", temp.name_.c_str(), e.what());
 	}
 	temp.temperature_ = json::getInt(obj, "temp");
 	temp.heatingTemperatureOverride_ = json::getOptInt<uint8_t>(obj, "boiler_temp");
@@ -127,12 +135,12 @@ heating::RoomConfig parseRoom(cJSON *obj) {
 		}
 	}
 
-	heating::logger.printf("Room '%s' sensor: '" PRiBleAddress "' baseTemp: %d enabled: %d valves: %zu temperatures: %zu valves: ", room.name_.c_str(), PRaBleAddress(room.sensorAddress_), room.baseTemperature_, room.enabled_, room.valves_.size(), room.temperatures_.size());
+	DBGLOGFI(heating::logger, configLogFeature(), "Room '%s' sensor: '" PRiBleAddress "' baseTemp: %d enabled: %d valves: %zu temperatures: %zu valves: ", room.name_.c_str(), PRaBleAddress(room.sensorAddress_), room.baseTemperature_, room.enabled_, room.valves_.size(), room.temperatures_.size());
 
 	for (auto const &valve : room.valves_) {
-		heating::logger.printf("'%s' ", valve.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "'%s' ", valve.c_str());
 	}
-	heating::logger.println("");
+	DBGLOGFI(heating::logger, configLogFeature(), "");
 
 	return room;
 }
@@ -178,13 +186,13 @@ RTCPins getRTCPins() {
 	file.close();
 
 	if (!root) {
-		heating::logger.println("Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
 		return {};
 	}
 
 	auto rtcpins = cJSON_GetObjectItem(root.get(), "i2c");
 	if (!rtcpins || rtcpins->type != cJSON_Array || cJSON_GetArraySize(rtcpins) != 2) {
-		heating::logger.println("Error parsing json. i2c not an array or size!=2\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. i2c not an array or size!=2\n");
 		return {};
 	}
 
@@ -192,14 +200,14 @@ RTCPins getRTCPins() {
 
 	auto item = cJSON_GetArrayItem(rtcpins, 0);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("i2c sda NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "i2c sda NaN\n");
 		return {};
 	}
 	pins.sda = item->valueint;
 
 	item = cJSON_GetArrayItem(rtcpins, 1);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("i2c scl NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "i2c scl NaN\n");
 		return {};
 	}
 	pins.scl = item->valueint;
@@ -215,13 +223,13 @@ EmsPins getEmsPins() {
 	file.close();
 
 	if (!root) {
-		heating::logger.println("Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
 		return {};
 	}
 
 	auto emspins = cJSON_GetObjectItem(root.get(), "ems");
 	if (!emspins || emspins->type != cJSON_Array || cJSON_GetArraySize(emspins) != 2) {
-		heating::logger.println("Error parsing json. ems not an array or size!=2\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. ems not an array or size!=2\n");
 		return {};
 	}
 
@@ -229,14 +237,14 @@ EmsPins getEmsPins() {
 
 	auto item = cJSON_GetArrayItem(emspins, 0);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("ems rx NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "ems rx NaN\n");
 		return {};
 	}
 	pins.rx = item->valueint;
 
 	item = cJSON_GetArrayItem(emspins, 1);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("ems tx NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "ems tx NaN\n");
 		return {};
 	}
 	pins.tx = item->valueint;
@@ -252,13 +260,13 @@ std::optional<EmsForwarderPins> getEmsForwarderPins() {
 	file.close();
 
 	if (!root) {
-		heating::logger.println("Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
 		return {};
 	}
 
 	auto emspins = cJSON_GetObjectItem(root.get(), "ems_forwarder");
 	if (!emspins || emspins->type != cJSON_Array || cJSON_GetArraySize(emspins) != 2) {
-		heating::logger.println("Error parsing json. ems forwarder not an array or size!=2\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. ems forwarder not an array or size!=2\n");
 		return {};
 	}
 
@@ -266,14 +274,14 @@ std::optional<EmsForwarderPins> getEmsForwarderPins() {
 
 	auto item = cJSON_GetArrayItem(emspins, 0);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("ems_forwarder rx NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "ems_forwarder rx NaN\n");
 		return {};
 	}
 	pins.rx = item->valueint;
 
 	item = cJSON_GetArrayItem(emspins, 1);
 	if (!cJSON_IsNumber(item)) {
-		heating::logger.printf("ems_forwarder tx NaN\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "ems_forwarder tx NaN\n");
 		return {};
 	}
 	pins.tx = item->valueint;
@@ -287,13 +295,13 @@ std::vector<PinConfig> getValvePins() {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
 	file.close();
 	if (!root) {
-		heating::logger.println("Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
 		return {};
 	}
 
 	auto valve_pins = cJSON_GetObjectItem(root.get(), "valve_pins");
 	if (!valve_pins || valve_pins->type != cJSON_Array) {
-		heating::logger.println("Error parsing json. valve_pins");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. valve_pins");
 		return {};
 	}
 
@@ -371,7 +379,7 @@ APConfig getAPConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing AP config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing AP config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -400,7 +408,7 @@ WiFiConfig getWiFiConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.println("Error parsing wifi config");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing wifi config");
 		return {};
 	}
 
@@ -421,7 +429,7 @@ EmsConfig getEmsConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing device config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing device config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -443,7 +451,7 @@ NetworkConfig getNetworkConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing network config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing network config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -479,13 +487,13 @@ BluetoothConfig getBluetoothConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing bluetooth config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing bluetooth config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
 	auto bt = cJSON_GetObjectItem(network.get(), "bt");
 	if (!bt || bt->type != cJSON_Object) {
-		heating::logger.printf("Bluetooth scan config not found\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "Bluetooth scan config not found\n");
 		return {};
 	}
 
@@ -508,7 +516,7 @@ MqttConfig getMqttConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing Mqtt config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing Mqtt config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -542,7 +550,7 @@ OpenWeatherConfig getOpenWeatherConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		heating::logger.printf("Error parsing openweather config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing openweather config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -572,7 +580,7 @@ BoilerConfig getBoilerConfig() {
 	file.close();
 
 	if (!root.get() || root->type != cJSON_Object) {
-		heating::logger.printf("Error parsing boiler config\n'%s'\n", cfg.c_str());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing boiler config\n'%s'\n", cfg.c_str());
 		return {};
 	}
 
@@ -627,7 +635,7 @@ BoilerConfig getBoilerConfig() {
 std::string parseProgram(std::string const &data) {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(data.c_str()), &cJSON_Delete);
 	if (!root) {
-		heating::logger.println("Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
 		return {};
 	}
 	return json::getString(root.get(), "program");
@@ -646,11 +654,11 @@ std::string getCurrentProgram() {
 std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	std::string filename = "/programs/" + program + ".json";
 
-	heating::logger.printf("Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
+	DBGLOGFI(heating::logger, configLogFeature(), "Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
 
 	if (!SPIFFS.exists(filename.c_str())) {
 		filename = "/programs/default.json";
-		heating::logger.printf("Program not found. Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
+		DBGLOGFI(heating::logger, configLogFeature(), "Program not found. Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
 	}
 
 	File file = SPIFFS.open(filename.c_str(), FILE_READ);
@@ -658,7 +666,7 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	file.close();
 
 	if (!rooms) {
-		heating::logger.printf("Error parsing json. No rooms: '%s'\n", cJSON_GetErrorPtr());
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. No rooms: '%s'\n", cJSON_GetErrorPtr());
 		return {};
 	}
 
@@ -681,10 +689,10 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 void readDebugOptions() {
 	File file = SPIFFS.open("/cfg/cfgdebug.json", FILE_READ);
 	if (!file) {
-		heating::logger.printf("Debug options not found. Using defaults\n");
+		DBGLOGFI(heating::logger, configLogFeature(), "Debug options not found. Using defaults\n");
 		return;
 	}
-	heating::logger.printf("Reading debug options from file\n");
+	DBGLOGFI(heating::logger, configLogFeature(), "Reading debug options from file\n");
 	String cfg = file.readString();
 	setDebugOptionsFromJson(cfg.c_str());
 	file.close();
@@ -692,19 +700,18 @@ void readDebugOptions() {
 
 void setDebugOptionsFromJson(const char *json) {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(json), &cJSON_Delete);
-	#define READ_JSON_DEBUG_OPTION(name) debug::debug.name = json::getBool(root.get(), #name)
-	READ_JSON_DEBUG_OPTION(debugRoomTemperatures);
-	READ_JSON_DEBUG_OPTION(debugHeatingController);
-	READ_JSON_DEBUG_OPTION(debugTemperatureReader);
-	READ_JSON_DEBUG_OPTION(debugREST);
-	READ_JSON_DEBUG_OPTION(debugOpenWeather);
-	READ_JSON_DEBUG_OPTION(debugBoilerController);
-	READ_JSON_DEBUG_OPTION(debugEmsBusUart);
-	READ_JSON_DEBUG_OPTION(debugEmsBusUartForwarder);
-	READ_JSON_DEBUG_OPTION(debugEmsController);
-	READ_JSON_DEBUG_OPTION(debugEmsVerbose);
-	READ_JSON_DEBUG_OPTION(debugMQTT);
-	READ_JSON_DEBUG_OPTION(debugFatal);
+	if (!cJSON_IsObject(root.get())) return;
+	std::unordered_map<std::string, bool> settings;
+	for (auto *item = root->child; item; item = item->next) {
+		if (item->string && cJSON_IsBool(item)) {
+			settings.emplace(item->string, cJSON_IsTrue(item));
+		}
+	}
+	if (!heating::logger) return;
+	for (auto const &[id, name] : heating::logger->getRegisteredFeatures()) {
+		auto setting = settings.find(name);
+		if (setting != settings.end()) heating::logger->enableFeature(id, setting->second);
+	}
 }
 
 }
