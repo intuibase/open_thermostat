@@ -116,6 +116,7 @@ heating::RoomConfig parseRoom(cJSON *obj) {
 	room.temperatureMarginUp_ = json::getInt(obj, "temp_margin_up");
 	room.temperatureMarginDown_ = json::getInt(obj, "temp_margin_down");
 	room.name_ = json::getString(obj, "name");
+	room.id_ = json::getString(obj, "id");
 	room.sensorAddress_ = heating::BLEAddresFromString(json::getString(obj, "sensor"));
 
 	if (cJSON_HasObjectItem(obj, "enabled")) {

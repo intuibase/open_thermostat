@@ -177,7 +177,7 @@ void Room::getStatus(std::ostream &ss) const {
 void Room::getStatus(std::ostream &ss, bool isBeingHeated) const {
 	std::lock_guard<std::mutex> lock(mutex_);
 
-	ss << "{\"name\": \"" << config_.name_ << "\", \"enabled\": " << (config_.enabled_ ? "true" : "false");
+	ss << "{\"name\": \"" << config_.name_ << "\", \"id\": \"" << config_.id_ << "\", \"enabled\": " << (config_.enabled_ ? "true" : "false");
 
 	if (!temperatureData_.empty()) {
 		auto [lastSampleTime, lastSampleTemp] = temperatureData_.newest();

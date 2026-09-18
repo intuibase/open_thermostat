@@ -26,6 +26,30 @@ OpenThermostat can control the boiler using an ON/OFF relay or directly via the 
 - Ability to forward EMS2 packets (allows connection of a second EMS32 board with EMS-ESP32)
 - REST API
 
+## Home Assistant climate panels
+
+The MQTT connection already provides room sensors. To also get one `climate` entity per room, copy `ha/config/custom_components/open_thermostat` to the `custom_components` directory in your Home Assistant configuration and restart Home Assistant. With the MQTT integration enabled, Home Assistant should discover **OpenThermostat Rooms** from the existing `<MQTT base>/room_data` messages. Confirm the discovered integration once; it will then add climate entities as rooms appear. You can also add the integration manually and enter the MQTT base configured in the thermostat (`ib-therm` in this project's configuration).
+
+The **OpenThermostat Rooms** integration contains a main OpenThermostat device with memory, uptime, boiler energy, water usage, and outdoor temperature sensors, plus one device per room. Each room device contains a climate entity and sensors for current temperature, temperature set by the program, humidity, battery, program name, heating enabled, and heating activity when the thermostat reports those values. Temperature set, battery level, and program name are also available as attributes of the climate entity. The existing OpenThermostat MQTT device page continues to show its sensors, so some readings appear in both integrations. Room entities use the permanent ID from program files; older firmware without IDs still uses room positions.
+
+The integration includes light and dark brand images in `brand/`. Home Assistant 2026.3 or newer loads them directly from the custom integration directory, so copy the complete `open_thermostat` directory when updating it.
+
+During setup, you can choose to create a separate **OpenThermostat** dashboard in the HA sidebar. For an integration already installed, open **Settings → Devices & services → OpenThermostat Rooms → Configure** and enable **Create an OpenThermostat room dashboard**. The integration fills this dashboard with a standard thermostat card for each room reported over MQTT, updates the cards when rooms or entity IDs change, and removes the sidebar panel when the option is disabled. It manages the contents of this dashboard, so edits to its cards can be replaced by the next room update. Other HA dashboards are untouched.
+
+Changing the target temperature in an HA climate panel creates a temporary override on the thermostat. Each room has a **Temperature override duration** number entity (10–720 minutes, default 120) that controls the next change. HA sends a non-retained JSON command to `<MQTT base>/command/temporary` with `requestId`, `roomName`, `temperature` in hundredths of a degree Celsius, and `validSeconds`. New firmware validates the command, applies the override, replies on `<MQTT base>/response/temporary`, and immediately publishes updated `room_data`. HA reports an error if the thermostat rejects the command or does not reply within 10 seconds. The thermostat's program configuration remains unchanged. Upload the new firmware before using this control from HA.
+
+The climate `hvac_action` uses the same condition as the thermostat web UI's flame icon: `shouldContinueHeating` for that room and `boilerStarted` for the boiler. New firmware publishes `boilerStarted` in `room_data`; with older firmware the climate entity falls back to `isBeingHeated`. The separate **Heating** binary sensor keeps the thermostat's original `isBeingHeatedState` value, based on the boiler and the room valve. The optional dashboard shows the current temperature below the target temperature on each thermostat card. For a manually created dashboard, use this card configuration (the climate details popup uses a different layout):
+
+```yaml
+type: thermostat
+entity: climate.biuro
+show_current_as_primary: false
+```
+
+The `room_data` MQTT message includes each room's `currentProgram` and `temporaryProgramSecondsLeft`. New firmware also publishes `activeProgram` at the top level. The integration displays a temporary override first, then a room-specific program, then the active main program. Upload the new firmware to make the main program available for rooms without a room-specific program.
+
+Room program files now contain a short, permanent `id` for each room. The same room must keep the same `id` in every program; changing its name, sensor, or position does not change its identity. The web UI generates an eight-character random hexadecimal ID for a newly added room. The firmware publishes the ID in each `room_data.rooms` object, and the custom Home Assistant integration uses it for room devices and entities. Existing index-based entities are migrated in the Home Assistant registry when status with IDs first arrives. Upload both the updated firmware and the updated program files to the device; firmware alone cannot add IDs to program files already stored on its filesystem. For older program files without IDs, the integration temporarily falls back to the room index.
+
 ## Disclaimer
 
 This project is provided "as is" without any guarantees or warranty. In association with the product, the developer makes no warranties of any kind, either express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, of title, or of noninfringement of third party rights. Use of the product by a user is at the user’s risk. In no event shall the developer be liable for any damages, including but not limited to direct, indirect, special, incidental, or consequential damages, losses, or expenses arising in connection with the use of this project.

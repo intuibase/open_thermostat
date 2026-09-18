@@ -459,6 +459,12 @@
 	function addNewRoom(name) {
 		var newRoom = {};
 		newRoom.name = name;
+		var existingIds = new Set((loadedProgram || []).map(room => room.id));
+		do {
+			var bytes = new Uint8Array(4);
+			window.crypto.getRandomValues(bytes);
+			newRoom.id = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+		} while (existingIds.has(newRoom.id));
 		newRoom.base_temp = 1900;
 		newRoom.temp_margin_up = 5;
 		newRoom.temp_margin_down = 15;
