@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "OpenThermostat Rooms",
+        "description": "Enter the MQTT topic prefix configured in the thermostat.",
+        "data": {
+          "topic_prefix": "MQTT topic prefix",
+          "create_dashboard": "Create an OpenThermostat room dashboard"
+        }
+      },
+      "confirm": {
+        "title": "OpenThermostat detected",
+        "description": "Add climate entities for rooms from MQTT prefix {prefix}?",
+        "data": {"create_dashboard": "Create an OpenThermostat room dashboard"}
+      }
+    },
+    "abort": {
+      "already_configured": "This thermostat is already configured.",
+      "invalid_status": "The MQTT room status is invalid.",
+      "invalid_topic": "The MQTT topic prefix is invalid."
+    },
+    "error": {
+      "invalid_topic": "Enter a single MQTT topic level without /, +, or #."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "OpenThermostat dashboard",
+        "data": {"create_dashboard": "Create an OpenThermostat room dashboard"}
+      }
+    }
+  }
+}

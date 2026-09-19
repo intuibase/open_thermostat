@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 180">
+  <g transform="scale(.7)">
+    <rect x="4" y="4" width="248" height="248" rx="50" fill="#153846"/>
+    <path d="M60 167a75 75 0 0 1 75-112" fill="none" stroke="#5bd3ce" stroke-width="13" stroke-linecap="round"/>
+    <path d="M180 78a75 75 0 0 1 12 95" fill="none" stroke="#ff9266" stroke-width="13" stroke-linecap="round"/>
+    <path d="M111 83a19 19 0 0 1 38 0v58a36 36 0 1 1-38 0z" fill="none" stroke="#fff" stroke-width="11" stroke-linejoin="round"/>
+    <path d="M130 99v69" fill="none" stroke="#ff9266" stroke-width="12" stroke-linecap="round"/>
+    <circle cx="130" cy="170" r="21" fill="#ff9266"/>
+  </g>
+  <text x="202" y="101" font-family="DejaVu Sans, sans-serif" font-size="55" font-weight="700" fill="#153846">OpenThermostat</text>
+  <text x="205" y="139" font-family="DejaVu Sans, sans-serif" font-size="25" font-weight="700" letter-spacing="6" fill="#df7148">ROOMS</text>
+</svg>

@@ -4,7 +4,9 @@
 #include "TimeUtils.h"
 
 #include <SPIFFS.h>
+#include <algorithm>
 #include <memory>
+#include <set>
 #include <unordered_map>
 
 namespace {
@@ -110,20 +112,24 @@ heating::RoomConfig::TemperatureSetting parseTemperature(cJSON *obj) {
 	return temp;
 }
 
-heating::RoomConfig parseRoom(cJSON *obj) {
+heating::RoomConfig parseRoomDefinition(cJSON *obj) {
 	heating::RoomConfig room;
+	room.name_ = json::getString(obj, "name");
+	room.id_ = json::getString(obj, "id");
+	room.sensorAddress_ = heating::BLEAddresFromString(json::getString(obj, "sensor"));
+	room.valves_ = parseValves(obj);
+	return room;
+}
+
+void applyRoomProgram(heating::RoomConfig &room, cJSON *obj) {
 	room.baseTemperature_ = json::getInt(obj, "base_temp");
 	room.temperatureMarginUp_ = json::getInt(obj, "temp_margin_up");
 	room.temperatureMarginDown_ = json::getInt(obj, "temp_margin_down");
-	room.name_ = json::getString(obj, "name");
-	room.sensorAddress_ = heating::BLEAddresFromString(json::getString(obj, "sensor"));
 
 	if (cJSON_HasObjectItem(obj, "enabled")) {
 		auto item = cJSON_GetObjectItem(obj, "enabled");
 		room.enabled_ = cJSON_IsTrue(item);
 	}
-
-	room.valves_ = parseValves(obj);
 
 	auto temperatures = cJSON_GetObjectItem(obj, "temperatures");
 	if (temperatures && temperatures->type == cJSON_Array) {
@@ -135,14 +141,6 @@ heating::RoomConfig parseRoom(cJSON *obj) {
 		}
 	}
 
-	DBGLOGFI(heating::logger, configLogFeature(), "Room '%s' sensor: '" PRiBleAddress "' baseTemp: %d enabled: %d valves: %zu temperatures: %zu valves: ", room.name_.c_str(), PRaBleAddress(room.sensorAddress_), room.baseTemperature_, room.enabled_, room.valves_.size(), room.temperatures_.size());
-
-	for (auto const &valve : room.valves_) {
-		DBGLOGFI(heating::logger, configLogFeature(), "'%s' ", valve.c_str());
-	}
-	DBGLOGFI(heating::logger, configLogFeature(), "");
-
-	return room;
 }
 }
 
@@ -652,6 +650,51 @@ std::string getCurrentProgram() {
 }
 
 std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
+	File roomFile = SPIFFS.open("/cfg/rooms.json", FILE_READ);
+	if (!roomFile) {
+		DBGLOGFI(heating::logger, configLogFeature(), "Room catalog /cfg/rooms.json missing; heating disabled\n");
+		return {};
+	}
+	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> catalog(cJSON_Parse(roomFile.readString().c_str()), &cJSON_Delete);
+	roomFile.close();
+	if (!catalog || !cJSON_IsArray(catalog.get())) {
+		DBGLOGFI(heating::logger, configLogFeature(), "Invalid room catalog; heating disabled\n");
+		return {};
+	}
+	std::vector<heating::RoomConfig> rooms;
+	std::unordered_map<std::string, size_t> roomPositions;
+	std::set<std::string> roomNames;
+	std::set<std::string> availableValves;
+	auto pins = getValvePins();
+	for (size_t i = 0; i < pins.size(); ++i) {
+		availableValves.insert(std::to_string(i));
+		if (!pins[i].label.empty()) availableValves.insert(pins[i].label);
+	}
+	for (auto i = 0; i < cJSON_GetArraySize(catalog.get()); ++i) {
+		auto item = cJSON_GetArrayItem(catalog.get(), i);
+		if (!cJSON_IsObject(item)) return {};
+		auto id = json::getString(item, "id");
+		auto name = json::getString(item, "name");
+		if (id.size() != 8 || id.find_first_not_of("0123456789abcdef") != std::string::npos || roomPositions.count(id) || name.empty() || !roomNames.insert(name).second || !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(item, "sensor")) || !cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(item, "valves"))) {
+			DBGLOGFI(heating::logger, configLogFeature(), "Invalid or duplicate room ID in catalog; heating disabled\n");
+			return {};
+		}
+		std::set<std::string> usedValves;
+		auto valves = cJSON_GetObjectItemCaseSensitive(item, "valves");
+		for (auto valve = valves->child; valve; valve = valve->next) {
+			std::string value;
+			if (cJSON_IsString(valve)) value = valve->valuestring;
+			else if (cJSON_IsNumber(valve) && valve->valuedouble == valve->valueint && valve->valueint >= 0) value = std::to_string(valve->valueint);
+			else return {};
+			if (!availableValves.count(value) || !usedValves.insert(value).second) {
+				DBGLOGFI(heating::logger, configLogFeature(), "Unknown or duplicate valve in room '%s'; heating disabled\n", name.c_str());
+				return {};
+			}
+		}
+		roomPositions.emplace(id, rooms.size());
+		rooms.emplace_back(helper::parseRoomDefinition(item));
+	}
+
 	std::string filename = "/programs/" + program + ".json";
 
 	DBGLOGFI(heating::logger, configLogFeature(), "Reading config for '%s', exists: %d\n", filename.c_str(), SPIFFS.exists(filename.c_str()));
@@ -662,28 +705,40 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	}
 
 	File file = SPIFFS.open(filename.c_str(), FILE_READ);
-	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> rooms(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
+	if (!file) return rooms;
+	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> programRooms(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
 	file.close();
 
-	if (!rooms) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. No rooms: '%s'\n", cJSON_GetErrorPtr());
-		return {};
+	if (!programRooms || !cJSON_IsArray(programRooms.get())) {
+		DBGLOGFI(heating::logger, configLogFeature(), "Invalid program '%s'; rooms disabled\n", filename.c_str());
+		return rooms;
 	}
 
-	if (rooms->type != cJSON_Array) {
-		return {};
-	}
-
-	std::vector<heating::RoomConfig> retVal;
-
-	auto noRooms = cJSON_GetArraySize(rooms.get());
-	for (auto room = 0; room < noRooms; ++room) {
-		auto item = cJSON_GetArrayItem(rooms.get(), room);
-		if (cJSON_IsObject(item)) {
-			retVal.emplace_back(helper::parseRoom(item));
+	std::vector<heating::RoomConfig> configuredRooms = rooms;
+	std::unordered_map<std::string, bool> usedRooms;
+	for (auto i = 0; i < cJSON_GetArraySize(programRooms.get()); ++i) {
+		auto item = cJSON_GetArrayItem(programRooms.get(), i);
+		if (!cJSON_IsObject(item)) return rooms;
+		if (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(item, "base_temp")) || !cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(item, "temp_margin_up")) || !cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(item, "temp_margin_down"))) return rooms;
+		auto id = json::getString(item, "room_id");
+		auto found = roomPositions.find(id);
+		if (found == roomPositions.end() || usedRooms.count(id)) {
+			DBGLOGFI(heating::logger, configLogFeature(), "Unknown or duplicate room ID in program '%s'; rooms disabled\n", filename.c_str());
+			return rooms;
+		}
+		usedRooms.emplace(id, true);
+		auto &room = configuredRooms[found->second];
+		helper::applyRoomProgram(room, item);
+		for (auto const &setting : room.temperatures_) {
+			for (auto const &valve : setting.valves_) {
+				if (std::find(room.valves_.begin(), room.valves_.end(), valve) == room.valves_.end()) {
+					DBGLOGFI(heating::logger, configLogFeature(), "Override valve outside room '%s'; rooms disabled\n", room.name_.c_str());
+					return rooms;
+				}
+			}
 		}
 	}
-	return retVal;
+	return configuredRooms;
 }
 
 void readDebugOptions() {
