@@ -1,0 +1,69 @@
+blueprint:
+  name: OpenThermostat - low room battery
+  description: >-
+    Notify when a selected room battery reports a valid level below the chosen
+    threshold. The value -1 means no reading and never sends an alert. A new
+    alert is sent if a valid low reading returns after -1 or unavailability.
+  domain: automation
+  input:
+    batteries:
+      name: Room battery sensors
+      description: Select the OpenThermostat battery level sensors to watch.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: sensor
+            device_class: battery
+    threshold:
+      name: Low battery threshold
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+          mode: box
+    notification:
+      name: Notification action
+      description: >-
+        The default creates a persistent notification in Home Assistant.
+        You can replace it with a mobile notification action. Templates may
+        use battery_name, battery_level and threshold.
+      default:
+        - action: persistent_notification.create
+          data:
+            title: OpenThermostat - low battery
+            message: "{{ battery_name }}: {{ battery_level }}% (threshold: {{ threshold }}%)."
+      selector:
+        action: {}
+
+variables:
+  threshold: !input threshold
+
+triggers:
+  - trigger: state
+    entity_id: !input batteries
+    to: null
+
+conditions:
+  - condition: template
+    value_template: >-
+      {% set current = trigger.to_state.state if trigger.to_state is not none else none %}
+      {% set previous = trigger.from_state.state if trigger.from_state is not none else none %}
+      {{ is_number(current)
+         and 0 <= (current | float) < (threshold | float)
+         and (not is_number(previous)
+              or (previous | float) < 0
+              or (previous | float) >= (threshold | float)) }}
+
+actions:
+  - variables:
+      battery_name: "{{ trigger.to_state.name }}"
+      battery_level: "{{ trigger.to_state.state }}"
+  - choose: []
+    default: !input notification
+
+mode: queued
+max: 20

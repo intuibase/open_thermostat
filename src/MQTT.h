@@ -10,10 +10,14 @@
 
 #include <PeriodicCounter.h>
 #include <viewable_stringbuf.h>
+#include <cJSON.h>
 
+#include <cmath>
 #include <functional>
+#include <iomanip>
 #include <memory>
 #include <ostream>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,26 +30,30 @@ class RoomsReporter final : public ib::mqtt::MQTTReporterInterface {
 public:
 	using getRoomCount_t = std::function<std::size_t()>;
 	using getRoomStatus_t = std::function<void(std::ostream &)>;
+	using getActiveProgram_t = std::function<std::string()>;
+	using getBoilerStarted_t = std::function<bool()>;
 
-	RoomsReporter(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus) : log_(std::move(log)), getRoomsCount_(std::move(getRoomsCount)), getRoomsStatus_(std::move(getRoomsStatus)) { if (log_) logFeature_ = log_->addFeature("MQTT rooms"); }
+	RoomsReporter(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getActiveProgram_t getActiveProgram, getBoilerStarted_t getBoilerStarted) : log_(std::move(log)), getRoomsCount_(std::move(getRoomsCount)), getRoomsStatus_(std::move(getRoomsStatus)), getActiveProgram_(std::move(getActiveProgram)), getBoilerStarted_(std::move(getBoilerStarted)) { if (log_) logFeature_ = log_->addFeature("MQTT rooms"); }
 
 	void getStatus(std::ostream &ss) const override {
 		ss << "{\"rooms\": ";
 		getRoomsStatus_(ss);
-		ss << "}";
+		ss << ",\"activeProgram\":" << std::quoted(getActiveProgram_())
+			<< ",\"boilerStarted\":" << (getBoilerStarted_() ? "true" : "false") << "}";
 	}
 
 	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &publish) override {
 		auto roomCount = getRoomsCount_();
 		for (size_t room = 0; room < roomCount; ++room) {
 			auto roomId = roomEntityId(room);
-			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_enabled", "Heating enabled"sv, "enabledState"sv, ""sv, ""sv);
-			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_heating", "Room is being heated"sv, "isBeingHeatedState"sv, ""sv, ""sv);
-			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_curr_temp", "Current temperature"sv, "currentTemp"sv, "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
-			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_temp_set", "Temperature set"sv, "tempSet"sv, "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
-			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_name", "Room name"sv, "name"sv, ""sv, ""sv, ""sv, ""sv, ""sv);
-			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_battery", "Battery level"sv, "batteryLevel"sv, ""sv, "%"sv, "measurement"sv, "battery"sv, {});
-			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_humidity", "Humidity"sv, "currentHumidity"sv, "/ 100"sv, "%"sv, "measurement"sv, "humidity"sv, {});
+			const auto field = "rooms[" + std::to_string(room) + "].";
+			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_enabled", "Heating enabled"sv, field + "enabledState", ""sv, ""sv);
+			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_heating", "Room is being heated"sv, field + "isBeingHeatedState", ""sv, ""sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_curr_temp", "Current temperature"sv, field + "currentTemp", "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_temp_set", "Temperature set"sv, field + "tempSet", "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_name", "Room name"sv, field + "name", ""sv, ""sv, ""sv, ""sv, ""sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_battery", "Battery level"sv, field + "batteryLevel", ""sv, "%"sv, "measurement"sv, "battery"sv, {});
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_humidity", "Humidity"sv, field + "currentHumidity", "/ 100"sv, "%"sv, "measurement"sv, "humidity"sv, {});
 		}
 	}
 
@@ -56,10 +64,13 @@ public:
 			return;
 		}
 
+		publishSnapshot(publish);
+	}
+
+	void publishSnapshot(ib::mqtt::MQTTPublishInterface &publish) const {
 		ib::viewable_stringbuf payloadBuf;
 		std::ostream ss(&payloadBuf);
 		getStatus(ss);
-
 		publish.publishStateTopic("room_data"sv, payloadBuf.view(), false);
 	}
 
@@ -71,6 +82,8 @@ private:
 	ib::PeriodicCounter lastMqttPublishCounter_{1000};
 	getRoomCount_t getRoomsCount_;
 	getRoomStatus_t getRoomsStatus_;
+	getActiveProgram_t getActiveProgram_;
+	getBoilerStarted_t getBoilerStarted_;
 };
 
 class DeviceStatusReporter final : public ib::mqtt::MQTTReporterInterface {
@@ -89,12 +102,12 @@ public:
 
 	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &publish) override {
 		constexpr std::string_view unit_byte = "B"sv;
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, {});
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, {});
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_cpu_temperature"sv, "OpenThermostat ESP32 CPU temperature"sv, "cpu_temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, {});
-		publish.publishAutoDiscoverySensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv, {});
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_free"sv, "OpenThermostat free memory"sv, "mem_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, "diagnostic"sv);
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_min_free"sv, "OpenThermostat minimum free memory"sv, "mem_min_free"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, "diagnostic"sv);
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_memory_max_alloc"sv, "OpenThermostat max allocable memory block"sv, "mem_max_alloc"sv, ""sv, unit_byte, "measurement"sv, "data_size"sv, "diagnostic"sv);
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_temperature"sv, "OpenThermostat RTC temperature inside box"sv, "temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, "diagnostic"sv);
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_cpu_temperature"sv, "OpenThermostat ESP32 CPU temperature"sv, "cpu_temperature"sv, ""sv, "°C"sv, "measurement"sv, "temperature"sv, "diagnostic"sv);
+		publish.publishAutoDiscoverySensor("device_status"sv, "opth_uptime"sv, "OpenThermostat device uptime"sv, "uptime"sv, ""sv, "s"sv, "total_increasing"sv, "duration"sv, "diagnostic"sv);
 	}
 
 	void publishStateTopic(ib::mqtt::MQTTPublishInterface &publish, uint16_t intervalSecs) override {
@@ -159,9 +172,12 @@ class MQTT {
 public:
 	using getRoomStatus_t = std::function<void(std::ostream &)>;
 	using getRoomCount_t = std::function<std::size_t()>;
+	using getActiveProgram_t = std::function<std::string()>;
+	using getBoilerStarted_t = std::function<bool()>;
 	using getEmsMetrics_t = std::function<void(std::ostream &)>;
+	using setTemporaryTemperature_t = std::function<bool(std::string const &, int16_t, uint32_t)>;
 
-	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getEmsMetrics_t getEmsMetrics) : log_(std::move(log)) {
+	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getActiveProgram_t getActiveProgram, getBoilerStarted_t getBoilerStarted, getEmsMetrics_t getEmsMetrics, setTemporaryTemperature_t setTemporaryTemperature) : log_(std::move(log)), setTemporaryTemperature_(std::move(setTemporaryTemperature)) {
 		if (log_) {
 			static const auto id = log_->addFeature("MQTT");
 			logFeature_ = id;
@@ -193,11 +209,15 @@ public:
 		deviceInfo.manufacturer = "intuibase";
 		deviceInfo.swVersion = "1.0.0";
 
-		reporters_.emplace_back(std::make_shared<RoomsReporter>(log_, std::move(getRoomsCount), std::move(getRoomsStatus)));
+		roomsReporter_ = std::make_shared<RoomsReporter>(log_, std::move(getRoomsCount), std::move(getRoomsStatus), std::move(getActiveProgram), std::move(getBoilerStarted));
+		reporters_.emplace_back(roomsReporter_);
 		reporters_.emplace_back(std::make_shared<DeviceStatusReporter>(log_));
 		reporters_.emplace_back(std::make_shared<EmsMetricsReporter>(log_, std::move(getEmsMetrics)));
 
 		mqtt_ = std::make_shared<ib::mqtt::MQTT>(log_, libConfig, deviceInfo, reporters_);
+		mqtt_->subscribe("command/temporary", [this](char *, uint8_t *payload, unsigned int length) {
+			handleTemporaryCommand(payload, length);
+		});
 	}
 
 	void loop() {
@@ -207,9 +227,44 @@ public:
 	}
 
 private:
+	void handleTemporaryCommand(uint8_t const *payload, unsigned int length) {
+		if (length == 0 || length > 512) return;
+		std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(
+			cJSON_ParseWithLength(reinterpret_cast<char const *>(payload), length), &cJSON_Delete);
+		if (!root || !cJSON_IsObject(root.get())) return;
+
+		auto id = cJSON_GetObjectItemCaseSensitive(root.get(), "requestId");
+		if (!cJSON_IsString(id) || !id->valuestring) return;
+		std::string requestId = id->valuestring;
+		if (requestId.size() != 32 || requestId.find_first_not_of("0123456789abcdef") != std::string::npos) return;
+
+		bool success = false;
+		auto room = cJSON_GetObjectItemCaseSensitive(root.get(), "roomName");
+		auto temperature = cJSON_GetObjectItemCaseSensitive(root.get(), "temperature");
+		auto seconds = cJSON_GetObjectItemCaseSensitive(root.get(), "validSeconds");
+		if (cJSON_IsString(room) && room->valuestring &&
+			cJSON_IsNumber(temperature) && std::isfinite(temperature->valuedouble) &&
+			temperature->valuedouble == temperature->valueint &&
+			temperature->valueint >= 1000 && temperature->valueint <= 4000 &&
+			cJSON_IsNumber(seconds) && std::isfinite(seconds->valuedouble) &&
+			seconds->valuedouble == seconds->valueint &&
+			seconds->valueint >= 600 && seconds->valueint <= 43200) {
+			success = setTemporaryTemperature_(room->valuestring,
+				static_cast<int16_t>(temperature->valueint), static_cast<uint32_t>(seconds->valueint));
+		}
+
+		std::ostringstream ack;
+		ack << "{\"requestId\":" << std::quoted(requestId)
+			<< ",\"success\":" << (success ? "true" : "false") << "}";
+		mqtt_->publishStateTopic("response/temporary", ack.str(), false);
+		if (success) roomsReporter_->publishSnapshot(*mqtt_);
+	}
+
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
 	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
 	std::shared_ptr<ib::mqtt::MQTT> mqtt_;
+	std::shared_ptr<RoomsReporter> roomsReporter_;
 	std::vector<std::shared_ptr<ib::mqtt::MQTTReporterInterface>> reporters_;
+	setTemporaryTemperature_t setTemporaryTemperature_;
 };
 }

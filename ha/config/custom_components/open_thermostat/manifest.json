@@ -1,0 +1,12 @@
+{
+  "domain": "open_thermostat",
+  "name": "OpenThermostat Rooms",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["lovelace", "mqtt"],
+  "documentation": "https://github.com/intuibase/open_thermostat",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "mqtt": ["+/room_data"],
+  "version": "0.1.0"
+}

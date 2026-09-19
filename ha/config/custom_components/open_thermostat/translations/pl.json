@@ -1,0 +1,35 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pokoje OpenThermostat",
+        "description": "Podaj prefiks tematu MQTT ustawiony w termostacie.",
+        "data": {
+          "topic_prefix": "Prefiks tematu MQTT",
+          "create_dashboard": "Utwórz dashboard pokojów OpenThermostat"
+        }
+      },
+      "confirm": {
+        "title": "Wykryto OpenThermostat",
+        "description": "Dodać encje pokojów z prefiksu MQTT {prefix}?",
+        "data": {"create_dashboard": "Utwórz dashboard pokojów OpenThermostat"}
+      }
+    },
+    "abort": {
+      "already_configured": "Ten termostat jest już skonfigurowany.",
+      "invalid_status": "Dane pokojów MQTT są niepoprawne.",
+      "invalid_topic": "Prefiks tematu MQTT jest niepoprawny."
+    },
+    "error": {
+      "invalid_topic": "Podaj jeden poziom tematu MQTT bez /, + ani #."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dashboard OpenThermostat",
+        "data": {"create_dashboard": "Utwórz dashboard pokojów OpenThermostat"}
+      }
+    }
+  }
+}

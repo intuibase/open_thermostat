@@ -273,6 +273,11 @@ public:
 		return rooms_.size();
 	}
 
+	std::string getActiveProgram() const {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		return currentProgram_;
+	}
+
 	bool setRoomTemporaryTemperature(std::string const &name, int16_t temperature, uint32_t validSeconds) {
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 
@@ -429,7 +434,12 @@ private:
 		log_,
 		[this]() {return getRoomsCount();},
 		[this](std::ostream &ss) { getRoomsStatus(ss);},
-		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);}
+		[this]() { return getActiveProgram(); },
+		[this]() { return boiler_.isBoilerStarted(); },
+		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);},
+		[this](std::string const &name, int16_t temperature, uint32_t seconds) {
+			return setRoomTemporaryTemperature(name, temperature, seconds);
+		}
 		};
 };
 

@@ -14,6 +14,8 @@
 #include "Network.h"
 #include <iomanip>
 #include <memory>
+#include <map>
+#include <set>
 #include <sstream>
 #include <string_view>
 
@@ -81,6 +83,7 @@ public:
 		server_.on("/config/temporary", HTTP_POST, [this]() { temporaryOverride(); }); // GET/POST/DELETE name without .json, case sensitive
 
 		server_.on(UriBraces("/config/programs/{}"), [this]() { configPrograms(); }); // GET/POST/DELETE name without .json, case sensitive
+		server_.on("/config/rooms", [this]() { configRooms(); });
 		server_.on("/config/wifi", [this]() { configWiFi(); });
 		server_.on("/config/device", [this]() { configDevice(); });
 		server_.on("/config/boiler", [this]() { configBoiler(); });
@@ -662,6 +665,123 @@ private:
 		server_.send(201);
 	}
 
+	static bool validRoomId(std::string const &id) {
+		return id.size() == 8 && id.find_first_not_of("0123456789abcdef") == std::string::npos;
+	}
+
+	using RoomValves = std::map<std::string, std::set<std::string>>;
+
+	static bool parseRoomCatalog(cJSON *root, RoomValves &rooms) {
+		if (!cJSON_IsArray(root)) return false;
+		std::set<std::string> names;
+		std::set<std::string> availableValves;
+		auto pins = config::getValvePins();
+		for (size_t i = 0; i < pins.size(); ++i) {
+			availableValves.insert(std::to_string(i));
+			if (!pins[i].label.empty()) availableValves.insert(pins[i].label);
+		}
+		for (auto item = root->child; item; item = item->next) {
+			auto id = cJSON_GetObjectItemCaseSensitive(item, "id");
+			auto name = cJSON_GetObjectItemCaseSensitive(item, "name");
+			auto sensor = cJSON_GetObjectItemCaseSensitive(item, "sensor");
+			auto valves = cJSON_GetObjectItemCaseSensitive(item, "valves");
+			if (!cJSON_IsObject(item) || !cJSON_IsString(id) || !validRoomId(id->valuestring) || !cJSON_IsString(name) || !name->valuestring[0] || !names.insert(name->valuestring).second || !cJSON_IsString(sensor) || !cJSON_IsArray(valves)) return false;
+			std::set<std::string> roomValves;
+			for (auto valve = valves->child; valve; valve = valve->next) {
+				std::string value;
+				if (cJSON_IsString(valve)) value = valve->valuestring;
+				else if (cJSON_IsNumber(valve) && valve->valuedouble == valve->valueint && valve->valueint >= 0) value = std::to_string(valve->valueint);
+				else return false;
+				if (!availableValves.count(value) || !roomValves.emplace(value).second) return false;
+			}
+			if (!rooms.emplace(id->valuestring, std::move(roomValves)).second) return false;
+		}
+		return true;
+	}
+
+	static bool readRoomCatalog(RoomValves &rooms) {
+		File file = SPIFFS.open("/cfg/rooms.json", FILE_READ);
+		if (!file) return false;
+		std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
+		file.close();
+		return root && parseRoomCatalog(root.get(), rooms);
+	}
+
+	static bool validProgram(cJSON *root, RoomValves const &rooms) {
+		if (!cJSON_IsArray(root)) return false;
+		std::set<std::string> used;
+		for (auto item = root->child; item; item = item->next) {
+			auto id = cJSON_GetObjectItemCaseSensitive(item, "room_id");
+			if (!cJSON_IsObject(item) || !cJSON_IsString(id) || !rooms.count(id->valuestring) || !used.insert(id->valuestring).second) return false;
+			for (auto field : {"base_temp", "temp_margin_up", "temp_margin_down"}) {
+				if (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(item, field))) return false;
+			}
+			auto enabled = cJSON_GetObjectItemCaseSensitive(item, "enabled");
+			if (!cJSON_IsTrue(enabled) && !cJSON_IsFalse(enabled)) return false;
+			auto temperatures = cJSON_GetObjectItemCaseSensitive(item, "temperatures");
+			if (temperatures && !cJSON_IsArray(temperatures)) return false;
+			for (auto temp = temperatures ? temperatures->child : nullptr; temp; temp = temp->next) {
+				if (!cJSON_IsObject(temp)) return false;
+				auto overrideValves = cJSON_GetObjectItemCaseSensitive(temp, "valves");
+				if (overrideValves && !cJSON_IsArray(overrideValves)) return false;
+				for (auto valve = overrideValves ? overrideValves->child : nullptr; valve; valve = valve->next) {
+					std::string value;
+					if (cJSON_IsString(valve)) value = valve->valuestring;
+					else if (cJSON_IsNumber(valve) && valve->valuedouble == valve->valueint && valve->valueint >= 0) value = std::to_string(valve->valueint);
+					else return false;
+					if (!rooms.at(id->valuestring).count(value)) return false;
+				}
+			}
+		}
+		return true;
+	}
+
+	void configRooms() {
+		switch (server_.method()) {
+			case HTTP_GET: {
+				File file = SPIFFS.open("/cfg/rooms.json", FILE_READ);
+				if (!file) { server_.send(404, "text/plain", "Room catalog not found"); return; }
+				server_.streamFile(file, "application/json");
+				file.close();
+				return;
+			}
+			case HTTP_POST: {
+				if (!server_.hasArg("plain")) { server_.send(400, "text/plain", "Missing room catalog"); return; }
+				auto body = server_.arg("plain");
+				std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(body.c_str()), &cJSON_Delete);
+				if (!root || !cJSON_IsArray(root.get())) { server_.send(400, "text/plain", "Invalid room catalog"); return; }
+				RoomValves rooms;
+				if (!parseRoomCatalog(root.get(), rooms)) { server_.send(400, "text/plain", "Invalid room catalog"); return; }
+				File dir = SPIFFS.open("/programs");
+				while (dir) {
+					File file = dir.openNextFile();
+					if (!file) break;
+					if (file.isDirectory()) continue;
+					std::string filename = file.name();
+					if (filename.size() < 5 || filename.substr(filename.size() - 5) != ".json") continue;
+					std::unique_ptr<cJSON, decltype(&cJSON_Delete)> program(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
+					if (!program || !validProgram(program.get(), rooms)) {
+						server_.send(409, "text/plain", "Room catalog conflicts with a program"); return;
+					}
+				}
+				File file = SPIFFS.open("/cfg/rooms.json", FILE_WRITE);
+				if (!file || file.write(reinterpret_cast<uint8_t const *>(body.c_str()), body.length()) != body.length()) { server_.send(500, "text/plain", "Could not save room catalog"); return; }
+				file.close();
+				controller_.reloadConfiguration();
+				server_.send(205);
+				return;
+			}
+			case HTTP_OPTIONS:
+				server_.sendHeader("Allow", "OPTIONS, GET, POST");
+				server_.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+				server_.send(204);
+				return;
+			default:
+				server_.send(405, "text/plain", "Method not allowed");
+				return;
+		}
+	}
+
 	void configPrograms() {
 		auto programName = server_.pathArg(0);
 		if (programName.indexOf("..") >= 0 || programName.indexOf('/') >= 0 || programName.indexOf('\\') >= 0) {
@@ -696,7 +816,12 @@ private:
 					break;
 				}
 
-				//TODO parse/validate json
+				RoomValves rooms;
+				std::unique_ptr<cJSON, decltype(&cJSON_Delete)> program(cJSON_Parse(body.c_str()), &cJSON_Delete);
+				if (!readRoomCatalog(rooms) || !validProgram(program.get(), rooms)) {
+					server_.send(400, "text/plain", "Invalid program or unknown room ID");
+					break;
+				}
 				DBGLOGFD(log_, logFeature_, "Received program: '%s'\n", filename.c_str());
 				File file = SPIFFS.open(filename, FILE_WRITE);
 				if (!file) {
