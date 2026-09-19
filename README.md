@@ -30,7 +30,7 @@ OpenThermostat can control the boiler using an ON/OFF relay or directly via the 
 
 The MQTT connection already provides room sensors. To also get one `climate` entity per room, copy `ha/config/custom_components/open_thermostat` to the `custom_components` directory in your Home Assistant configuration and restart Home Assistant. With the MQTT integration enabled, Home Assistant should discover **OpenThermostat Rooms** from the existing `<MQTT base>/room_data` messages. Confirm the discovered integration once; it will then add climate entities as rooms appear. You can also add the integration manually and enter the MQTT base configured in the thermostat (`ib-therm` in this project's configuration).
 
-The **OpenThermostat Rooms** integration contains a main OpenThermostat device with memory, uptime, boiler energy, water usage, and outdoor temperature sensors, plus one device per room. Each room device contains a climate entity and sensors for current temperature, temperature set by the program, humidity, battery, program name, heating enabled, and heating activity when the thermostat reports those values. Temperature set, battery level, and program name are also available as attributes of the climate entity. The existing OpenThermostat MQTT device page continues to show its sensors, so some readings appear in both integrations. Room entities use the permanent ID from program files; older firmware without IDs still uses room positions.
+The **OpenThermostat Rooms** integration contains a main OpenThermostat device with memory, uptime, boiler energy, water usage, and outdoor temperature sensors, plus one device per room. Each room device contains a climate entity and sensors for current temperature, temperature set by the program, humidity, battery, program name, heating enabled, and heating activity when the thermostat reports those values. Temperature set, battery level, and program name are also available as attributes of the climate entity. The existing OpenThermostat MQTT device page continues to show its sensors, so some readings appear in both integrations. Room entities use the permanent ID from `rooms.json`; messages without room IDs are ignored.
 
 The integration includes light and dark brand images in `brand/`. Home Assistant 2026.3 or newer loads them directly from the custom integration directory, so copy the complete `open_thermostat` directory when updating it.
 
@@ -48,7 +48,17 @@ show_current_as_primary: false
 
 The `room_data` MQTT message includes each room's `currentProgram` and `temporaryProgramSecondsLeft`. New firmware also publishes `activeProgram` at the top level. The integration displays a temporary override first, then a room-specific program, then the active main program. Upload the new firmware to make the main program available for rooms without a room-specific program.
 
-Room program files now contain a short, permanent `id` for each room. The same room must keep the same `id` in every program; changing its name, sensor, or position does not change its identity. The web UI generates an eight-character random hexadecimal ID for a newly added room. The firmware publishes the ID in each `room_data.rooms` object, and the custom Home Assistant integration uses it for room devices and entities. Existing index-based entities are migrated in the Home Assistant registry when status with IDs first arrives. Upload both the updated firmware and the updated program files to the device; firmware alone cannot add IDs to program files already stored on its filesystem. For older program files without IDs, the integration temporarily falls back to the room index.
+For low battery alerts, copy `ha/config/custom_components/open_thermostat/blueprints/low_battery.yaml` to `<HA config>/blueprints/automation/open_thermostat/low_battery.yaml`. In **Settings → Automations & scenes → Blueprints**, create an automation from **OpenThermostat - low room battery**. Select the room battery sensors, set the percentage threshold, and choose the notification action. The default action creates a persistent HA notification; it can be replaced with a mobile notification action. The blueprint ignores `-1` (no battery reading) and alerts when a valid level first falls below the threshold or returns low after an unavailable reading. Home Assistant does not load blueprints directly from `custom_components`.
+
+## Room and program configuration
+
+Rooms and heating programs are stored separately. `data/cfg/rooms.json` contains each room's permanent eight-character ID, name, temperature sensor and valves. Files in `data/programs` refer to rooms by `room_id` and contain only heating settings. Programs do not share room settings with one another.
+
+The web interface provides separate **Rooms** and **Programs** tabs and separate save buttons. Creating a room generates its permanent ID. Renaming or reordering the room does not change that ID. A program can only add settings for a room that already exists in the room catalog.
+
+This firmware only supports the separated format. Build and upload the filesystem from the versioned `data` directory together with the firmware. For PlatformIO, use `pio run -e <environment> -t buildfs` followed by the matching filesystem upload command. Uploading the firmware without the new filesystem leaves heating disabled because `/cfg/rooms.json` is required.
+
+The firmware publishes room IDs in `room_data`, and the custom Home Assistant integration uses them as stable device and entity identities.
 
 ## Disclaimer
 

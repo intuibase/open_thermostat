@@ -18,3 +18,5 @@ __pycache__/
 /logs/
 /out/
 /data_priv/
+/data_test_s3/
+/apache_*

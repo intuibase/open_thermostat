@@ -1,0 +1,59 @@
+[
+	{
+		"id": "409afa7c",
+		"name": "Pokoj Janka",
+		"sensor": "58:2d:34:31:12:64",
+		"valves": [
+			0
+		]
+	},
+	{
+		"id": "bed0953c",
+		"name": "Sypialnia",
+		"sensor": "a4:c1:38:61:34:a3",
+		"valves": [
+			1
+		]
+	},
+	{
+		"id": "d2aeb35a",
+		"name": "Salon",
+		"sensor": "58:2d:34:31:11:bd",
+		"valves": [
+			2
+		]
+	},
+	{
+		"id": "fc17b026",
+		"name": "Przedpokoj",
+		"sensor": "a4:c1:38:cd:45:10",
+		"valves": [
+			3
+		]
+	},
+	{
+		"id": "d29a8f11",
+		"name": "Kuchnia",
+		"sensor": "a4:c1:38:70:3a:7a",
+		"valves": [
+			4
+		]
+	},
+	{
+		"id": "4bbccb1b",
+		"name": "Lazienka",
+		"sensor": "58:2d:34:3a:71:56",
+		"valves": [
+			5,
+			7
+		]
+	},
+	{
+		"id": "e5cc68c6",
+		"name": "Biuro",
+		"sensor": "a4:c1:38:91:aa:7b",
+		"valves": [
+			6
+		]
+	}
+]

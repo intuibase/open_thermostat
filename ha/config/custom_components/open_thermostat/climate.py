@@ -18,7 +18,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .room_identity import migrate_room_registry, room_key
+from .room_identity import room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
 
@@ -91,8 +91,9 @@ async def async_setup_entry(
         for index, room_data in enumerate(data):
             if not isinstance(room_data, dict):
                 continue
-            key = room_key(room_data, index)
-            migrate_room_registry(hass, prefix, index, key)
+            key = room_key(room_data)
+            if key is None:
+                continue
             entity = rooms.get(key)
             if entity is None:
                 entity = OpenThermostatRoom(
@@ -103,7 +104,7 @@ async def async_setup_entry(
             entity.update_room(
                 room_data, online, payload.get("activeProgram"), payload.get("boilerStarted")
             )
-        active_keys = {room_key(room, index) for index, room in enumerate(data) if isinstance(room, dict)}
+        active_keys = {key for room in data if isinstance(room, dict) if (key := room_key(room)) is not None}
         for key, entity in rooms.items():
             if key not in active_keys:
                 entity.set_online(False)

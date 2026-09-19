@@ -13,7 +13,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .room_identity import migrate_room_registry, room_key
+from .room_identity import room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
 
@@ -119,8 +119,9 @@ async def async_setup_entry(
         for index, room in enumerate(rooms):
             if not isinstance(room, dict):
                 continue
-            key = room_key(room, index)
-            migrate_room_registry(hass, prefix, index, key)
+            key = room_key(room)
+            if key is None:
+                continue
             for metric, (field, _device_class, _divisor, _unit, _name) in METRICS.items():
                 metric_key = (key, metric)
                 entity = sensors.get(metric_key)
@@ -148,7 +149,7 @@ async def async_setup_entry(
                 added.append(name_entity)
             if name_entity is not None:
                 name_entity.update_value(room_name, online)
-        active_keys = {room_key(room, index) for index, room in enumerate(rooms) if isinstance(room, dict)}
+        active_keys = {key for room in rooms if isinstance(room, dict) if (key := room_key(room)) is not None}
         for (key, _metric), entity in sensors.items():
             if key not in active_keys:
                 entity.set_online(False)

@@ -47,7 +47,7 @@ struct RoomConfig {
 	uint8_t temperatureMarginUp_ = 20; // 0.2deg
 	uint8_t temperatureMarginDown_ = 20;
 	std::string name_; // TODO memory limit to 15 to avoid allocation?
-	std::string id_; // Stable identity shared by all programs for this room.
+	std::string id_; // Stable ID from /cfg/rooms.json, referenced by programs.
 
 	BleAddress_t sensorAddress_;
 

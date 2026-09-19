@@ -1,0 +1,231 @@
+<div class="d-flex justify-content-center" id="physicalRoomLoading" role="status">
+  <div class="spinner-border"><span class="sr-only">Loading rooms</span></div>
+</div>
+<div class="text-center text-muted mt-2" id="physicalRoomLoadingMessage" aria-live="polite"></div>
+
+<div class="card d-none" id="physicalRoomCard">
+  <div class="card-header">Room configuration</div>
+  <div class="card-body">
+    <p class="text-muted">Names, sensors and valves belong to rooms. Heating schedules are edited separately for each program.</p>
+    <div class="form-row align-items-end mb-3">
+      <div class="col mb-2">
+        <label for="physicalRoomSelect">Room</label>
+        <select class="form-control" id="physicalRoomSelect" data-no-validation></select>
+      </div>
+      <div class="col-md-2 mb-2"><button type="button" class="btn btn-success form-control" id="addPhysicalRoom">Add room</button></div>
+      <div class="col-md-2 mb-2"><button type="button" class="btn btn-dark form-control" id="deletePhysicalRoom">Delete room</button></div>
+    </div>
+    <div id="physicalRoomDetails" style="display:none">
+      <div class="form-row">
+        <div class="col-md-4 mb-2">
+          <label for="physicalRoomName">Name</label>
+          <input class="form-control" id="physicalRoomName" required>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label for="physicalRoomSensor">Temperature sensor</label>
+          <div class="input-group">
+            <input class="form-control" id="physicalRoomSensor" list="knownRoomSensors" placeholder="BLE address">
+            <div class="input-group-append">
+              <button type="button" class="btn btn-outline-secondary" id="choosePhysicalRoomSensor">Choose</button>
+            </div>
+          </div>
+          <datalist id="knownRoomSensors"></datalist>
+        </div>
+        <div class="col-md-4 mb-2">
+          <label for="physicalRoomValves">Valves</label>
+          <select id="physicalRoomValves" multiple="multiple"></select>
+        </div>
+      </div>
+      <small class="text-muted">Room ID: <span id="physicalRoomId"></span>. This ID remains unchanged when you rename the room.</small>
+    </div>
+  </div>
+  <div class="card-footer"><button type="button" class="btn btn-primary" id="savePhysicalRooms">Save rooms</button></div>
+</div>
+
+<script type="text/javascript">
+  (function () {
+    let rooms = [];
+    const select = document.getElementById('physicalRoomSelect');
+    const details = document.getElementById('physicalRoomDetails');
+    const name = document.getElementById('physicalRoomName');
+    const sensor = document.getElementById('physicalRoomSensor');
+    const valves = document.getElementById('physicalRoomValves');
+
+    function currentRoom() {
+      return rooms.find(room => room.id === select.value);
+    }
+
+    function showRoom() {
+      const room = currentRoom();
+      details.style.display = room ? '' : 'none';
+      if (!room) return;
+      name.value = room.name;
+      sensor.value = room.sensor;
+      document.getElementById('physicalRoomId').textContent = room.id;
+      const selected = (room.valves || []).map(String);
+      for (const option of valves.options) option.selected = selected.includes(option.value);
+      $(valves).multiselect('refresh');
+    }
+
+    function refresh(selectedId) {
+      select.replaceChildren();
+      for (const room of rooms) select.add(new Option(room.name, room.id));
+      if (selectedId) select.value = selectedId;
+      showRoom();
+    }
+
+    function newRoomId() {
+      let id;
+      do {
+        id = Array.from(crypto.getRandomValues(new Uint8Array(4)), byte => byte.toString(16).padStart(2, '0')).join('');
+      } while (rooms.some(room => room.id === id));
+      return id;
+    }
+
+    async function saveRooms() {
+      if (rooms.some(room => !room.name.trim())) throw new Error('Every room needs a name');
+      const response = await fetch(hostName + '/config/rooms', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(rooms)
+      });
+      if (!response.ok) throw new Error((await response.text()) || response.statusText);
+      const programsPane = document.getElementById('roomProgramsPane');
+      if (programsPane) programsPane.dispatchEvent(new CustomEvent('roomcatalogsaved', {detail: rooms}));
+    }
+
+    select.addEventListener('change', showRoom);
+    name.addEventListener('input', () => {
+      const room = currentRoom();
+      if (room) { room.name = name.value; select.selectedOptions[0].textContent = name.value; }
+    });
+    sensor.addEventListener('input', () => { const room = currentRoom(); if (room) room.sensor = sensor.value; });
+    document.getElementById('choosePhysicalRoomSensor').addEventListener('click', async () => {
+      const room = currentRoom();
+      if (!room) return;
+      let scanned;
+      try {
+        const response = await fetch(hostName + '/status/devices');
+        if (!response.ok) throw new Error(response.statusText);
+        scanned = await response.json();
+        if (!Array.isArray(scanned)) throw new Error('Invalid device list');
+      } catch (error) {
+        alert('Cannot load scanned sensors: ' + error);
+        return;
+      }
+
+      const addresses = [...new Set(scanned.filter(address => typeof address === 'string'))];
+      if (room.sensor && !addresses.some(address => address.toUpperCase() === room.sensor.toUpperCase())) {
+        addresses.unshift(room.sensor);
+      }
+      if (addresses.length === 0) {
+        alert('No temperature sensors scanned yet. You can enter the BLE address manually.');
+        return;
+      }
+
+      const sensorSelect = $('<select class="form-control" id="selectScannedRoomSensor" data-no-validation></select>');
+      const usedSensors = new Map(rooms.filter(other => other.id !== room.id && other.sensor)
+        .map(other => [other.sensor.toUpperCase(), other.name]));
+      addresses.forEach(address => {
+        const usedBy = usedSensors.get(address.toUpperCase());
+        sensorSelect.append($('<option>').val(address).text(usedBy ? address + ' (' + usedBy + ')' : address)
+          .prop('disabled', !!usedBy && address.toUpperCase() !== room.sensor.toUpperCase())
+          .prop('selected', address.toUpperCase() === room.sensor.toUpperCase()));
+      });
+      const showUsed = $('<input type="checkbox" class="form-check-input" id="showUsedRoomSensors">');
+      const toggle = $('<div class="form-check mt-2"></div>').append(showUsed)
+        .append($('<label class="form-check-label" for="showUsedRoomSensors"></label>').text('Show sensors assigned to other rooms'));
+      showUsed.on('change', () => {
+        sensorSelect.find('option').each(function () {
+          const usedBy = usedSensors.get(this.value.toUpperCase());
+          this.disabled = !!usedBy && this.value.toUpperCase() !== room.sensor.toUpperCase()
+            && !showUsed.prop('checked');
+        });
+        if (sensorSelect.find('option:selected').prop('disabled')) {
+          sensorSelect.find('option:not(:disabled):first').prop('selected', true);
+        }
+      });
+      if (!sensorSelect.find('option:selected').length || sensorSelect.find('option:selected').prop('disabled')) {
+        sensorSelect.find('option:not(:disabled):first').prop('selected', true);
+      }
+      $('#editModalLabel').text('Choose temperature sensor');
+      $('#editModalBody').empty().append(sensorSelect, toggle);
+      $('#editModalSave').off('click').on('click', event => {
+        event.preventDefault();
+        const selectedAddress = sensorSelect.val();
+        if (!selectedAddress) return;
+        sensor.value = selectedAddress;
+        sensor.dispatchEvent(new Event('input', {bubbles: true}));
+        $('#editModal').modal('hide');
+      });
+      $('#editModal').modal('show');
+    });
+    document.getElementById('addPhysicalRoom').addEventListener('click', () => {
+      const room = {id: newRoomId(), name: 'New room', sensor: '', valves: []};
+      rooms.push(room);
+      refresh(room.id);
+      name.focus();
+      name.select();
+    });
+    document.getElementById('deletePhysicalRoom').addEventListener('click', async () => {
+      const room = currentRoom();
+      if (!room || !confirm("Delete room '" + room.name + "'? Programs using it must be edited first.")) return;
+      const previous = rooms;
+      rooms = rooms.filter(item => item.id !== room.id);
+      try { await saveRooms(); refresh(); }
+      catch (error) { rooms = previous; refresh(room.id); alert('Cannot delete room: ' + error); }
+    });
+    document.getElementById('savePhysicalRooms').addEventListener('click', async () => {
+      try { await saveRooms(); alert('Rooms saved'); }
+      catch (error) { alert('Cannot save rooms: ' + error); }
+    });
+
+    const loading = document.getElementById('physicalRoomLoading');
+    const loadingMessage = document.getElementById('physicalRoomLoadingMessage');
+    const card = document.getElementById('physicalRoomCard');
+
+    async function loadRoomConfiguration() {
+      if (!loading.isConnected) return;
+      try {
+        const [catalogResponse, hardwareResponse] = await Promise.all([
+          fetch(hostName + '/config/rooms'),
+          fetch(hostName + '/config/hardware')
+        ]);
+        if (!catalogResponse.ok || !hardwareResponse.ok) throw new Error('Room configuration unavailable');
+        const [catalog, hardware] = await Promise.all([catalogResponse.json(), hardwareResponse.json()]);
+        if (!Array.isArray(catalog)) throw new Error('Invalid room catalog');
+        if (!loading.isConnected) return;
+
+        rooms = catalog;
+        (hardware.valve_pins || []).forEach((pin, index) => {
+          const label = pin && pin.label ? pin.label : 'Valve ' + (index + 1);
+          valves.add(new Option(label, String(index)));
+        });
+        $(valves).multiselect({
+          numberDisplayed: 0,
+          allSelectedText: 'All valves',
+          nonSelectedText: 'Select valves',
+          onChange: function () {
+            const room = currentRoom();
+            if (room) room.valves = Array.from(valves.selectedOptions, option => Number(option.value));
+          }
+        });
+        refresh();
+        loading.classList.add('d-none');
+        loadingMessage.classList.add('d-none');
+        card.classList.remove('d-none');
+
+        fetch(hostName + '/status/devices')
+          .then(response => response.ok ? response.json() : [])
+          .then(devices => {
+            if (!Array.isArray(devices) || !card.isConnected) return;
+            for (const address of devices) document.getElementById('knownRoomSensors').append(new Option(address));
+          }).catch(() => {});
+      } catch (error) {
+        if (!loading.isConnected) return;
+        loadingMessage.textContent = 'Waiting for room configuration...';
+        setTimeout(loadRoomConfiguration, 2000);
+      }
+    }
+
+    loadRoomConfiguration();
+  })();
+</script>

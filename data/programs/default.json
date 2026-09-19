@@ -1,11 +1,6 @@
 [
 	{
-		"name": "Pokoj Janka",
-		"id": "409afa7c",
-		"sensor": "58:2d:34:31:12:64",
-		"valves": [
-			0
-		],
+		"room_id": "409afa7c",
 		"base_temp": 2070,
 		"temp_margin_up": 10,
 		"temp_margin_down": 15,
@@ -30,12 +25,7 @@
 		]
 	},
 	{
-		"name": "Sypialnia",
-		"id": "bed0953c",
-		"sensor": "a4:c1:38:61:34:a3",
-		"valves": [
-			1
-		],
+		"room_id": "bed0953c",
 		"base_temp": 2070,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,
@@ -65,12 +55,7 @@
 		]
 	},
 	{
-		"name": "Salon",
-		"id": "d2aeb35a",
-		"sensor": "58:2d:34:31:11:bd",
-		"valves": [
-			2
-		],
+		"room_id": "d2aeb35a",
 		"base_temp": 2070,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,
@@ -92,16 +77,10 @@
 					6
 				]
 			}
-
 		]
 	},
 	{
-		"name": "Przedpokoj",
-		"id": "fc17b026",
-		"sensor": "",
-		"valves": [
-			3
-		],
+		"room_id": "fc17b026",
 		"base_temp": 1900,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,
@@ -109,12 +88,7 @@
 		"temperatures": []
 	},
 	{
-		"name": "Kuchnia",
-		"id": "d29a8f11",
-		"sensor": "a4:c1:38:70:3a:7a",
-		"valves": [
-			4
-		],
+		"room_id": "d29a8f11",
 		"base_temp": 1900,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,
@@ -122,13 +96,7 @@
 		"temperatures": []
 	},
 	{
-		"name": "Lazienka",
-		"id": "4bbccb1b",
-		"sensor": "58:2d:34:3a:71:56",
-		"valves": [
-			5,
-			7
-		],
+		"room_id": "4bbccb1b",
 		"base_temp": 2070,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,
@@ -197,16 +165,10 @@
 					7
 				]
 			}
-
 		]
 	},
 	{
-		"name": "Biuro",
-		"id": "e5cc68c6",
-		"sensor": "a4:c1:38:91:aa:7b",
-		"valves": [
-			6
-		],
+		"room_id": "e5cc68c6",
 		"base_temp": 2090,
 		"temp_margin_up": 5,
 		"temp_margin_down": 15,

@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .room_identity import migrate_room_registry, room_key
+from .room_identity import room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,15 +53,16 @@ async def async_setup_entry(
         for index, room in enumerate(rooms):
             if not isinstance(room, dict):
                 continue
-            key = room_key(room, index)
-            migrate_room_registry(hass, prefix, index, key)
+            key = room_key(room)
+            if key is None:
+                continue
             entity = entities.get(key)
             if entity is None:
                 entity = OverrideDuration(prefix, index, key, room.get("name"), hub_id, durations)
                 entities[key] = entity
                 added.append(entity)
             entity.set_online(online)
-        active_keys = {room_key(room, index) for index, room in enumerate(rooms) if isinstance(room, dict)}
+        active_keys = {key for room in rooms if isinstance(room, dict) if (key := room_key(room)) is not None}
         for key, entity in entities.items():
             if key not in active_keys:
                 entity.set_online(False)

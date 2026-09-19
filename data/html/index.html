@@ -75,6 +75,10 @@
 		}
 
 		$(document).on('input change', '.form-control', function() {
+			if (this.hasAttribute('data-no-validation')) {
+				$(this).removeClass('is-valid is-invalid');
+				return;
+			}
 			if (this.checkValidity()) {
 				$(this).removeClass('is-invalid').addClass('is-valid');
 			} else {
@@ -279,7 +283,7 @@
 						</a>
 						<ul class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
 							<li><a class="dropdown-item" href="#" data-page="program">Change active program</a></li>
-							<li><a class="dropdown-item" href="#" data-page="rooms">Rooms and temperatures</a></li>
+							<li><a class="dropdown-item" href="#" data-page="room_management">Rooms and programs</a></li>
 							<li><a class="dropdown-item" href="#" data-page="network">Network and services</a></li>
 							<li><a class="dropdown-item" href="#" data-page="curve">Boiler and heating curve</a></li>
 							<li><a class="dropdown-item" href="#" data-page="hardware">Hardware configuration</a></li>
