@@ -37,11 +37,12 @@ void EmsTelegram::logDebug(ib::logger::LoggerInterface &log, ib::logger::LoggerI
 			opType = 'W';
 		}
 
-		DBGLOGFD((&log), feature, "(0x%X) -%c-> (0x%X), type: 0x%4.4X, offset: %d, dataLen: %d data: ", source_, opType, destination_, typeId_, offset_, data_.size());
+		char dataStr[data_.size() * 2 + 1] = {0};
 		for (size_t i = 0; i < data_.size(); ++i) {
-			DBGLOGFI((&log), feature, "%2.2X ", data_[i]);
+			snprintf(dataStr + i * 2, sizeof(dataStr) - i * 2, "%2.2X", data_[i]);
 		}
-		DBGLOGFI((&log), feature, "\n");
+
+		DBGLOGFD((&log), feature, "(0x%X) -%c-> (0x%X), type: 0x%4.4X, offset: %d, dataLen: %d data: %s\n", source_, opType, destination_, typeId_, offset_, data_.size(), dataStr);
 	}
 }
 

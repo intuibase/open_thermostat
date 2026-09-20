@@ -205,7 +205,9 @@ private:
 	}
 
 	void enqueueTelegramToSend(EmsTelegram telegram, bool front = false) {
-		if (log_) telegram.logDebug(*log_, logFeature_);
+		if (log_) {
+			telegram.logDebug(*log_, verboseFeature());
+		}
 		std::unique_lock<std::mutex> lock(telegramProcessingMutex_);
 
 		if (telegramsToSend_.size() == maxTelegramQueueSize) {

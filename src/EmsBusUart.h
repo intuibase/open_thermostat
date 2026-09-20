@@ -29,12 +29,7 @@ public:
 
 	EmsBusUart(std::shared_ptr<ib::logger::LoggerInterface> log, processTelegram_t processTelegram) : log_(log), processTelegram_(processTelegram), forwarder_(std::move(log)) {
 		if (log_) {
-			static const auto id = [this] {
-				auto feature = log_->addFeature("EmsUart");
-				log_->enableFeature(feature, false);
-				return feature;
-			}();
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("EmsUart");
 		}
 	}
 

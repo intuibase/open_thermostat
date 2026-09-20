@@ -179,8 +179,7 @@ public:
 
 	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomCount_t getRoomsCount, getRoomStatus_t getRoomsStatus, getActiveProgram_t getActiveProgram, getBoilerStarted_t getBoilerStarted, getEmsMetrics_t getEmsMetrics, setTemporaryTemperature_t setTemporaryTemperature) : log_(std::move(log)), setTemporaryTemperature_(std::move(setTemporaryTemperature)) {
 		if (log_) {
-			static const auto id = log_->addFeature("MQTT");
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("MQTT");
 		}
 		auto mqttConfig = config::getMqttConfig();
 		DBGLOGFD(log_, logFeature_, "Enabled: %d\n", mqttConfig.enabled);

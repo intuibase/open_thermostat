@@ -23,12 +23,7 @@ public:
 	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
 	explicit EmsBusUartForwarder(std::shared_ptr<ib::logger::LoggerInterface> log) : log_(std::move(log)) {
 		if (log_) {
-			static const auto id = [this] {
-				auto feature = log_->addFeature("EmsUartFwd");
-				log_->enableFeature(feature, false);
-				return feature;
-			}();
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("EmsUartFwd");
 		}
 	}
 	static constexpr int EmsBusBaudrate = 9600;

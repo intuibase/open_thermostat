@@ -31,8 +31,7 @@ public:
 		, valveLabels_(std::move(valveLabels))
 		, valvesStates_(valvePorts_.size(), true) {
 		if (log_) {
-			static const auto id = log_->addFeature("Boiler");
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("Boiler");
 		}
 		boilerPort_->initOutput();
 		for (auto &vp : valvePorts_) {

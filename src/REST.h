@@ -53,10 +53,8 @@ public:
 class REST {
 public:
 	REST(std::shared_ptr<ib::logger::LoggerInterface> log, HeatingController &controller, uint16_t listenPort) : log_(std::move(log)), controller_(controller), server_(listenPort) {
-		if (log_) {
-			static const auto id = log_->addFeature("REST");
-			logFeature_ = id;
-		}
+		logFeature_ = log_->addFeature("REST");
+
 		server_.enableCORS(true);
 		server_.enableCrossOrigin(true);
 

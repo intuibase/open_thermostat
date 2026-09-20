@@ -20,12 +20,7 @@ public:
 	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
 	OpenWeather(std::shared_ptr<ib::logger::LoggerInterface> log, config::OpenWeatherConfig config) : log_(std::move(log)), config_(std::move(config)), query_(buildQuery()), lastFetch_(0) {
 		if (log_) {
-			static const auto id = [this] {
-				auto feature = log_->addFeature("OpenWeather");
-				log_->enableFeature(feature, false);
-				return feature;
-			}();
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("OpenWeather");
 		}
 		DBGLOGFD(log_, logFeature_, "Configuration. Enabled: %d appid:%s lat:%s lon:%s interval: %d\n", config_.enabled, config_.appid.c_str(), config_.latitude.c_str(), config_.longitude.c_str(), config_.interval);
 	}
