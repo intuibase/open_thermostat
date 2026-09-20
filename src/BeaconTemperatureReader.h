@@ -34,8 +34,7 @@ public:
 
 	BeaconTemperatureReader(std::shared_ptr<ib::logger::LoggerInterface> log, ReportTemperature_t pushTemperature) : log_(std::move(log)), pushTemperature_(pushTemperature) {
 		if (log_) {
-			static const auto id = log_->addFeature("TempReader");
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("TempReader");
 		}
 		stReader_ = this;
 

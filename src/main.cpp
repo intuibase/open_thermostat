@@ -224,6 +224,7 @@ void setup() {
 
 	WifiSetUp(wifiConfig, networkConfig, apConfig, startAP);
 	DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d WIFI\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+	config::readDebugOptions();
 }
 
 void loop() {

@@ -21,7 +21,6 @@ EmsController::EmsController(std::shared_ptr<ib::logger::LoggerInterface> log) :
 	if (log_) {
 		logFeature_ = log_->addFeature("EmsControl");
 		verboseFeature_ = log_->addFeature("EmsVerbose");
-		log_->enableFeature(verboseFeature_, false);
 		fatalFeature_ = log_->addFeature("Fatal");
 	}
 	DBGLOGFD(log_, logFeature_, "emsEnabled: %d emsForwarderEnabled: %d\n", emsConfig_.emsEnabled, emsConfig_.emsForwarderEnabled);

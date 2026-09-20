@@ -24,12 +24,7 @@ public:
 
 	Room(std::shared_ptr<ib::logger::LoggerInterface> log, RoomConfig config) : log_(std::move(log)), config_(std::move(config)) {
 		if (log_) {
-			static const auto id = [this] {
-				auto feature = log_->addFeature("Room");
-				log_->enableFeature(feature, false);
-				return feature;
-			}();
-			logFeature_ = id;
+			logFeature_ = log_->addFeature("Room");
 		}
 	}
 

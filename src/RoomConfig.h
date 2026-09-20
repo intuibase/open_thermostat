@@ -18,12 +18,7 @@ struct RoomConfig {
 	public:
 		explicit TemperatureSetting(std::shared_ptr<ib::logger::LoggerInterface> log = {}) : log_(std::move(log)) {
 			if (log_) {
-				static const auto id = [this] {
-					auto feature = log_->addFeature("Room");
-					log_->enableFeature(feature, false);
-					return feature;
-				}();
-				logFeature_ = id;
+				logFeature_ = log_->addFeature("Room");
 			}
 		}
 		bool doesFit(uint16_t time, uint8_t dayOfTheWeek) const;
