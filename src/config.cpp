@@ -11,8 +11,7 @@
 
 namespace {
 ib::logger::LoggerInterface::LogFeatureType configLogFeature() {
-	static const auto id = heating::logger->addFeature("Config");
-	return id;
+	return heating::logger->addFeature("Config");
 }
 }
 
