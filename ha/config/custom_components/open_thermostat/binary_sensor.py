@@ -15,6 +15,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
+from .heating import HeatingTracker, boolean_state
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,6 +48,8 @@ async def async_setup_entry(
     hub_id = hub.id if hub else None
     sensors: dict[tuple[str, str], RoomState] = {}
     boiler_sensors: dict[str, BoilerState] = {}
+    radiator_sensors: dict[str, RadiatorHeating] = {}
+    tracker: HeatingTracker = hass.data[DOMAIN][entry.entry_id]["heating_tracker"]
     connection = HubConnection(prefix)
     async_add_entities([connection])
     online = False
@@ -122,6 +125,21 @@ async def async_setup_entry(
     entry.async_on_unload(await mqtt.async_subscribe(hass, f"{prefix}/room_data", handle_rooms))
     entry.async_on_unload(await mqtt.async_subscribe(hass, f"{prefix}/ems_status", handle_ems_status))
 
+    @callback
+    def update_radiators() -> None:
+        added = []
+        for key, room in tracker.rooms.items():
+            entity = radiator_sensors.get(key)
+            if entity is None:
+                entity = RadiatorHeating(prefix, room.index, key, room.name, hub_id, tracker)
+                radiator_sensors[key] = entity
+                added.append(entity)
+            entity.update_from_tracker()
+        if added:
+            async_add_entities(added)
+
+    entry.async_on_unload(tracker.async_add_listener(update_radiators))
+
 
 class RoomState(BinarySensorEntity):
     """A heating status associated with its room device."""
@@ -196,11 +214,43 @@ class BoilerState(BinarySensorEntity):
             self.async_write_ha_state()
 
     def update_value(self, value: object, online: bool) -> None:
-        self._attr_is_on = (
-            value if isinstance(value, bool)
-            else value == "on" if value in ("on", "off")
-            else None
-        )
+        self._attr_is_on = boolean_state(value)
         self._attr_available = online
+        if self.entity_id is not None:
+            self.async_write_ha_state()
+
+
+class RadiatorHeating(BinarySensorEntity):
+    """Whether a room receives radiator heat, excluding hot-water cycles."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_translation_key = "radiators_heating"
+    _attr_device_class = BinarySensorDeviceClass.HEAT
+
+    def __init__(
+        self,
+        prefix: str,
+        index: int,
+        key: str,
+        room_name: str | None,
+        hub_id: str | None,
+        tracker: HeatingTracker,
+    ) -> None:
+        self._key = key
+        self._tracker = tracker
+        self._attr_unique_id = f"{prefix}_room_{key}_radiator_heating"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{prefix}_room_{key}")},
+            name=room_device_name(room_name, index),
+            manufacturer="intuibase",
+            model="OpenThermostat room",
+            via_device_id=hub_id,
+        )
+        self._attr_available = tracker.online
+
+    def update_from_tracker(self) -> None:
+        self._attr_available = self._tracker.online and self._key in self._tracker.rooms
+        self._attr_is_on = self._tracker.is_heating(self._key)
         if self.entity_id is not None:
             self.async_write_ha_state()

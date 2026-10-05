@@ -31,5 +31,18 @@
         "data": {"create_dashboard": "Utwórz dashboard OpenThermostat"}
       }
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "radiators_heating": {"name": "Grzejniki grzeją"}
+    },
+    "number": {
+      "radiator_rated_power": {"name": "Moc znamionowa grzejników"}
+    },
+    "sensor": {
+      "radiator_heating_time": {"name": "Czas grzania grzejników"},
+      "estimated_radiator_energy": {"name": "Szacowana energia grzejników"},
+      "estimated_radiator_power": {"name": "Szacowana moc grzejników"}
+    }
   }
 }

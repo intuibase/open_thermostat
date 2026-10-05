@@ -65,7 +65,7 @@ struct EmsBoilerState {
 
 		std::lock_guard<std::mutex> lock(mutex);
 
-		ss << "{";
+		ss << std::boolalpha << "{";
 		ADD_ITEM_TO_JSON(warmWaterEnabled, warmWaterEnabled.value())
 		ADD_ITEM_TO_JSON(selectedWarmWaterTemperature, static_cast<int>(selectedWarmWaterTemperature.value()))
 		ADD_ITEM_TO_JSON(outdoorTemperature, outdoorTemperature.value())
@@ -85,6 +85,7 @@ struct EmsBoilerState {
 		ADD_ITEM_TO_JSON(warmWaterActive, warmWaterActive.value())
 		ADD_ITEM_TO_JSON(serviceCode, serviceCode.value())
 		ADD_SITEM_TO_JSON(displayCode, displayCode.value().data())
+		ADD_ITEM_TO_JSON(protocolVersion, static_cast<int>(protocolVersion.value()))
 
 		ss << "}";
 	}
