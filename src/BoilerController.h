@@ -187,6 +187,11 @@ public:
 		return false;
 	}
 
+	bool isValveOpen(size_t index) const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return index < valvesStates_.size() && valvesStates_[index];
+	}
+
 	bool isManualTestActive() {
 		if (!manualTestActive_)
 			return false;

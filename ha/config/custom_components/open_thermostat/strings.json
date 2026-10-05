@@ -31,5 +31,18 @@
         "data": {"create_dashboard": "Create an OpenThermostat dashboard"}
       }
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "radiators_heating": {"name": "Radiators heating"}
+    },
+    "number": {
+      "radiator_rated_power": {"name": "Radiator rated power"}
+    },
+    "sensor": {
+      "radiator_heating_time": {"name": "Radiator heating time"},
+      "estimated_radiator_energy": {"name": "Estimated radiator energy"},
+      "estimated_radiator_power": {"name": "Estimated radiator power"}
+    }
   }
 }

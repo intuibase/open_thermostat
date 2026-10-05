@@ -250,7 +250,8 @@ public:
 			bool isBeingHeated = false;
 			if (boilerStarted && room->isEnabled()) {
 				for (auto const &valve : room->getValves()) {
-					if (boiler_.isValveOpen(valve)) {
+					auto valveIt = valveLabelMap_.find(valve);
+					if (valveIt != valveLabelMap_.end() && boiler_.isValveOpen(valveIt->second)) {
 						isBeingHeated = true;
 						break;
 					}

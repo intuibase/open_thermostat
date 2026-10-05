@@ -12,10 +12,12 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
+from .heating import HeatingTracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +80,8 @@ async def async_setup_entry(
     programs: dict[str, RoomProgram] = {}
     names: dict[str, RoomName] = {}
     hub_sensors: dict[tuple[str, str], HubMetric] = {}
+    heating_sensors: dict[tuple[str, str], RoomHeatingSensor] = {}
+    tracker: HeatingTracker = hass.data[DOMAIN][entry.entry_id]["heating_tracker"]
     online = False
 
     @callback
@@ -193,6 +197,27 @@ async def async_setup_entry(
             )
         )
 
+    @callback
+    def update_heating_sensors() -> None:
+        added = []
+        for key, room in tracker.rooms.items():
+            for metric, entity_class in (
+                ("radiator_heating_time", RoomHeatingTime),
+                ("radiator_estimated_energy", RoomEstimatedEnergy),
+                ("radiator_estimated_power", RoomEstimatedPower),
+            ):
+                entity_key = (key, metric)
+                entity = heating_sensors.get(entity_key)
+                if entity is None:
+                    entity = entity_class(prefix, room.index, key, room.name, hub_id, tracker)
+                    heating_sensors[entity_key] = entity
+                    added.append(entity)
+                entity.update_from_tracker()
+        if added:
+            async_add_entities(added)
+
+    entry.async_on_unload(tracker.async_add_listener(update_heating_sensors))
+
 
 class RoomMetric(SensorEntity):
     """A room temperature, humidity, or battery reading."""
@@ -235,6 +260,115 @@ class RoomMetric(SensorEntity):
         self._attr_available = online
         if self.entity_id is not None:
             self.async_write_ha_state()
+
+
+class RoomHeatingSensor(SensorEntity, RestoreEntity):
+    """Base class for a calculated room-heating sensor."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+
+    def __init__(
+        self,
+        prefix: str,
+        index: int,
+        key: str,
+        room_name: str | None,
+        hub_id: str | None,
+        tracker: HeatingTracker,
+        metric: str,
+    ) -> None:
+        self._key = key
+        self._tracker = tracker
+        self._attr_unique_id = f"{prefix}_room_{key}_{metric}"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{prefix}_room_{key}")},
+            name=room_device_name(room_name, index),
+            manufacturer="intuibase",
+            model="OpenThermostat room",
+            via_device_id=hub_id,
+        )
+        self._attr_available = tracker.online
+
+    def update_from_tracker(self) -> None:
+        self._attr_available = self._tracker.online and self._key in self._tracker.rooms
+        self._update_value()
+        if self.entity_id is not None:
+            self.async_write_ha_state()
+
+    def _update_value(self) -> None:
+        raise NotImplementedError
+
+
+class RoomHeatingTime(RoomHeatingSensor):
+    """Cumulative time during which the room receives radiator heat."""
+
+    _attr_translation_key = "radiator_heating_time"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args, "radiator_heating_time")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        previous = await self.async_get_last_state()
+        if previous is not None:
+            try:
+                self._tracker.restore_totals(self._key, seconds=float(previous.state) * 3600)
+            except (TypeError, ValueError):
+                pass
+        self.update_from_tracker()
+
+    def _update_value(self) -> None:
+        room = self._tracker.rooms.get(self._key)
+        self._attr_native_value = round(room.heating_seconds / 3600, 4) if room else None
+
+
+class RoomEstimatedEnergy(RoomHeatingSensor):
+    """Estimated cumulative radiator energy for one room."""
+
+    _attr_translation_key = "estimated_radiator_energy"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_icon = "mdi:radiator"
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args, "radiator_estimated_energy")
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        previous = await self.async_get_last_state()
+        if previous is not None:
+            try:
+                self._tracker.restore_totals(self._key, energy=float(previous.state))
+            except (TypeError, ValueError):
+                pass
+        self.update_from_tracker()
+
+    def _update_value(self) -> None:
+        room = self._tracker.rooms.get(self._key)
+        self._attr_native_value = round(room.estimated_energy_kwh, 5) if room else None
+
+
+class RoomEstimatedPower(RoomHeatingSensor):
+    """Current estimated heat output of the room's radiators."""
+
+    _attr_translation_key = "estimated_radiator_power"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = "W"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:radiator"
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args, "radiator_estimated_power")
+
+    def _update_value(self) -> None:
+        power = self._tracker.estimated_power(self._key)
+        self._attr_native_value = round(power, 1) if power is not None else None
 
 
 class RoomProgram(SensorEntity):

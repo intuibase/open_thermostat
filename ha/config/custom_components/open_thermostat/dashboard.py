@@ -8,6 +8,7 @@ from homeassistant.components.lovelace.const import LOVELACE_DATA
 from homeassistant.components.lovelace.dashboard import LovelaceStorage
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 
 from .const import DOMAIN
@@ -155,7 +156,9 @@ class RoomDashboard:
     @callback
     def _dashboard_config(self) -> dict:
         registry = er.async_get(self.hass)
+        devices = dr.async_get(self.hass)
         room_cards = []
+        heating_cards = []
         for key in sorted(self._rooms):
             unique_id = f"{self.prefix}_room_{key}_climate"
             entity_id = registry.async_get_entity_id("climate", DOMAIN, unique_id)
@@ -164,6 +167,28 @@ class RoomDashboard:
                     "type": "thermostat",
                     "entity": entity_id,
                     "show_current_as_primary": False,
+                })
+            heating_entities = []
+            for platform, suffix in (
+                ("binary_sensor", "radiator_heating"),
+                ("sensor", "radiator_heating_time"),
+                ("sensor", "radiator_estimated_power"),
+                ("sensor", "radiator_estimated_energy"),
+                ("number", "radiator_power"),
+            ):
+                entity_id = registry.async_get_entity_id(
+                    platform, DOMAIN, f"{self.prefix}_room_{key}_{suffix}"
+                )
+                if entity_id is not None:
+                    heating_entities.append(entity_id)
+            if heating_entities:
+                device = devices.async_get_device_by_identifier(
+                    (DOMAIN, f"{self.prefix}_room_{key}"), self.entry_id
+                )
+                heating_cards.append({
+                    "type": "entities",
+                    "title": device.name if device is not None else key,
+                    "entities": heating_entities,
                 })
         hub_entities = {
             entry.unique_id.removeprefix(f"{self.prefix}_hub_"): entry.entity_id
@@ -183,6 +208,7 @@ class RoomDashboard:
         polish = self.hass.config.language.lower().startswith("pl")
         rooms_title = "Pomieszczenia" if polish else "Rooms"
         diagnostics_title = "Diagnostyka" if polish else "Diagnostics"
+        heating_title = "Ogrzewanie" if polish else "Heating"
         device_title = "Urządzenie" if polish else "Device diagnostics"
         ems_title = "Informacje EMS" if polish else "EMS information"
         diagnostics_cards = []
@@ -205,6 +231,12 @@ class RoomDashboard:
                     "path": "rooms",
                     "icon": "mdi:thermostat",
                     "cards": room_cards,
+                },
+                {
+                    "title": heating_title,
+                    "path": "heating",
+                    "icon": "mdi:radiator",
+                    "cards": heating_cards,
                 },
                 {
                     "title": diagnostics_title,
