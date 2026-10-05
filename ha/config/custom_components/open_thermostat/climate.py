@@ -18,7 +18,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .room_identity import room_key
+from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
 
@@ -129,6 +129,7 @@ class OpenThermostatRoom(ClimateEntity):
     """Display room readings and request a timed temperature override."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = 10
@@ -139,6 +140,7 @@ class OpenThermostatRoom(ClimateEntity):
 
     def __init__(self, prefix: str, index: int, key: str, hub_id: str | None, durations: dict[str, int], send_temperature) -> None:
         self._key = key
+        self._index = index
         self._durations = durations
         self._send_temperature = send_temperature
         self._room_name: str | None = None
@@ -147,10 +149,10 @@ class OpenThermostatRoom(ClimateEntity):
         self._hub_id = hub_id
         self._device_identifier = f"{prefix}_room_{key}"
         self._attr_unique_id = f"{prefix}_room_{key}_climate"
-        self._attr_name = f"Room {index + 1}"
+        self._attr_name = None
         self._attr_device_info = DeviceInfo(
             identifiers={("open_thermostat", self._device_identifier)},
-            name=self._attr_name,
+            name=room_device_name(None, index),
             manufacturer="intuibase",
             model="OpenThermostat room",
             via_device_id=self._hub_id,
@@ -191,10 +193,9 @@ class OpenThermostatRoom(ClimateEntity):
         name = data.get("name")
         if isinstance(name, str) and name:
             self._room_name = name
-            self._attr_name = name
             self._attr_device_info = DeviceInfo(
                 identifiers={("open_thermostat", self._device_identifier)},
-                name=name,
+                name=room_device_name(name, self._index),
                 manufacturer="intuibase",
                 model="OpenThermostat room",
                 via_device_id=self._hub_id,

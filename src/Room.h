@@ -65,6 +65,7 @@ public:
 	bool isEnabled() const;
 
 	const std::string &getName() const { return config_.name_; }
+	const std::string &getId() const { return config_.id_; }
 
 	auto getValves() const { return config_.valves_; }
 	auto const &getSensorAddress() const { return config_.sensorAddress_; }

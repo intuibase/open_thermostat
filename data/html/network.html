@@ -215,6 +215,9 @@
 										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
 												id="DeviceMQTTEnabled"><label class="form-check-label"
 												for="DeviceMQTTEnabled">Enabled</label></div>
+										<div class="form-check"><input class="form-check-input" type="checkbox" value=""
+												id="DeviceMQTTPublishHomeAssistantDiscovery"><label class="form-check-label"
+												for="DeviceMQTTPublishHomeAssistantDiscovery">Publish Home Assistant MQTT Discovery</label></div>
 									</div>
 								</div>
 								<div class="form-row">
@@ -600,6 +603,7 @@
 				}
 				if (settings.mqtt != undefined) {
 					$('#DeviceMQTTEnabled').prop('checked', settings.mqtt.enabled),
+						$('#DeviceMQTTPublishHomeAssistantDiscovery').prop('checked', settings.mqtt.publishHomeAssistantDiscovery !== false),
 						$('#DeviceMQTTBrokerAddress').val(settings.mqtt.brokerAddress),
 						$('#DeviceMQTTBrokerPort').val(settings.mqtt.brokerPort),
 						$('#DeviceMQTTBrokerUser').val(settings.mqtt.username);
@@ -651,6 +655,7 @@
 			"loggerTimeoutMs": parseInt($('#DeviceDebugTimeout').val(), 10),
 			"mqtt": {
 				"enabled": $('#DeviceMQTTEnabled').prop('checked'),
+				"publishHomeAssistantDiscovery": $('#DeviceMQTTPublishHomeAssistantDiscovery').prop('checked'),
 				"brokerAddress": $('#DeviceMQTTBrokerAddress').val(),
 				"brokerPort": parseInt($('#DeviceMQTTBrokerPort').val(), 10),
 				"username": $('#DeviceMQTTBrokerUser').val(),

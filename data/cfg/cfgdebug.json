@@ -13,6 +13,7 @@
   "MQTT rooms": false,
   "MQTT device status": false,
   "MQTT EMS metrics": false,
+  "MQTTEMSStatus": false,
   "App": true,
   "Config": true,
   "RTC": true,

@@ -2,17 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "OpenThermostat Rooms",
+        "title": "OpenThermostat",
         "description": "Enter the MQTT topic prefix configured in the thermostat.",
         "data": {
           "topic_prefix": "MQTT topic prefix",
-          "create_dashboard": "Create an OpenThermostat room dashboard"
+          "create_dashboard": "Create an OpenThermostat dashboard"
         }
       },
       "confirm": {
         "title": "OpenThermostat detected",
         "description": "Add climate entities for rooms from MQTT prefix {prefix}?",
-        "data": {"create_dashboard": "Create an OpenThermostat room dashboard"}
+        "data": {"create_dashboard": "Create an OpenThermostat dashboard"}
       }
     },
     "abort": {
@@ -28,7 +28,7 @@
     "step": {
       "init": {
         "title": "OpenThermostat dashboard",
-        "data": {"create_dashboard": "Create an OpenThermostat room dashboard"}
+        "data": {"create_dashboard": "Create an OpenThermostat dashboard"}
       }
     }
   }

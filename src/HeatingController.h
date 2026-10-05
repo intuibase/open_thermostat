@@ -273,6 +273,14 @@ public:
 		return rooms_.size();
 	}
 
+	std::vector<std::string> getRoomIds() const {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		std::vector<std::string> ids;
+		ids.reserve(rooms_.size());
+		for (auto const &room : rooms_) ids.emplace_back(room->getId());
+		return ids;
+	}
+
 	std::string getActiveProgram() const {
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		return currentProgram_;
@@ -432,11 +440,12 @@ private:
 
 	MQTT mqtt_{
 		log_,
-		[this]() {return getRoomsCount();},
+		[this]() { return getRoomIds(); },
 		[this](std::ostream &ss) { getRoomsStatus(ss);},
 		[this]() { return getActiveProgram(); },
 		[this]() { return boiler_.isBoilerStarted(); },
 		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);},
+		[this](std::ostream &ss) { getEMSStatus(ss);},
 		[this](std::string const &name, int16_t temperature, uint32_t seconds) {
 			return setRoomTemporaryTemperature(name, temperature, seconds);
 		}

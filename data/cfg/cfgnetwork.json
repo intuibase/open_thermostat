@@ -15,6 +15,7 @@
 	"loggerTimeoutMs": 10000,
 	"mqtt": {
 		"enabled": true,
+		"publishHomeAssistantDiscovery": false,
 		"brokerAddress": "192.168.1.1",
 		"brokerPort": 1883,
 		"username": "",

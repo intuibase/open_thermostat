@@ -2,17 +2,17 @@
   "config": {
     "step": {
       "user": {
-        "title": "Pokoje OpenThermostat",
+        "title": "OpenThermostat",
         "description": "Podaj prefiks tematu MQTT ustawiony w termostacie.",
         "data": {
           "topic_prefix": "Prefiks tematu MQTT",
-          "create_dashboard": "Utwórz dashboard pokojów OpenThermostat"
+          "create_dashboard": "Utwórz dashboard OpenThermostat"
         }
       },
       "confirm": {
         "title": "Wykryto OpenThermostat",
         "description": "Dodać encje pokojów z prefiksu MQTT {prefix}?",
-        "data": {"create_dashboard": "Utwórz dashboard pokojów OpenThermostat"}
+        "data": {"create_dashboard": "Utwórz dashboard OpenThermostat"}
       }
     },
     "abort": {
@@ -28,7 +28,7 @@
     "step": {
       "init": {
         "title": "Dashboard OpenThermostat",
-        "data": {"create_dashboard": "Utwórz dashboard pokojów OpenThermostat"}
+        "data": {"create_dashboard": "Utwórz dashboard OpenThermostat"}
       }
     }
   }

@@ -13,7 +13,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .room_identity import room_key
+from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
 
@@ -43,6 +43,25 @@ HUB_METRICS = {
         "warm_water_avg_flow": ("warmWaterAvgFlow", None, "L/min", SensorStateClass.MEASUREMENT, "Average flow of warm water"),
         "outdoor_temperature": ("outdoorTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Outdoor temperature"),
     },
+    "ems_status": {
+        "boiler_selected_hot_water_temperature": ("selectedWarmWaterTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Boiler selected hot water temperature"),
+        "boiler_selected_flow_temperature": ("selectedFlowTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Boiler selected flow temperature"),
+        "boiler_current_flow_temperature": ("currentFlowTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Boiler current flow temperature"),
+        "boiler_pressure": ("pressure", SensorDeviceClass.PRESSURE, "bar", SensorStateClass.MEASUREMENT, "Boiler pressure"),
+        "boiler_burner_power": ("currentBurnerPower", SensorDeviceClass.POWER_FACTOR, PERCENTAGE, SensorStateClass.MEASUREMENT, "Boiler burner power"),
+        "boiler_hot_water_flow": ("warmWaterFlow", None, "L/min", SensorStateClass.MEASUREMENT, "Boiler hot water flow"),
+        "boiler_current_hot_water_temperature": ("currentWarmWaterTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Boiler current hot water temperature"),
+        "boiler_protocol_version": ("protocolVersion", None, None, None, "Boiler protocol version"),
+        "boiler_service_code": ("serviceCode", None, None, None, "Boiler service code"),
+        "boiler_display_code": ("displayCode", None, None, None, "Boiler display code"),
+    },
+}
+
+HUB_DIVISORS = {
+    "boiler_current_flow_temperature": 10,
+    "boiler_pressure": 10,
+    "boiler_hot_water_flow": 10,
+    "boiler_current_hot_water_temperature": 10,
 }
 
 
@@ -89,8 +108,6 @@ async def async_setup_entry(
             key = (topic, metric)
             entity = hub_sensors.get(key)
             if entity is None:
-                if not isinstance(value, (int, float)) or isinstance(value, bool):
-                    continue
                 entity = HubMetric(prefix, topic, metric)
                 hub_sensors[key] = entity
                 added.append(entity)
@@ -192,7 +209,7 @@ class RoomMetric(SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_name = display_name
         self._attr_unique_id = f"{prefix}_room_{key}_{metric}"
-        name = room_name if isinstance(room_name, str) and room_name else f"Room {index + 1}"
+        name = room_device_name(room_name, index)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{prefix}_room_{key}")},
             name=name,
@@ -229,7 +246,7 @@ class RoomProgram(SensorEntity):
 
     def __init__(self, prefix: str, index: int, key: str, room_name: str | None, hub_id: str | None = None) -> None:
         self._attr_unique_id = f"{prefix}_room_{key}_program"
-        name = room_name if isinstance(room_name, str) and room_name else f"Room {index + 1}"
+        name = room_device_name(room_name, index)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{prefix}_room_{key}")},
             name=name,
@@ -273,6 +290,7 @@ class HubMetric(SensorEntity):
         self._attr_state_class = state_class
         self._attr_name = name
         self._attr_unique_id = f"{prefix}_hub_{metric}"
+        self._divisor = HUB_DIVISORS.get(metric, 1)
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, prefix)})
         self._attr_available = False
 
@@ -283,7 +301,9 @@ class HubMetric(SensorEntity):
 
     def update_value(self, value: object, online: bool) -> None:
         self._attr_native_value = (
-            value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+            value / self._divisor
+            if isinstance(value, (int, float)) and not isinstance(value, bool)
+            else value if isinstance(value, str) and value else None
         )
         self._attr_available = online
         if self.entity_id is not None:
@@ -301,7 +321,7 @@ class RoomName(SensorEntity):
         self._attr_unique_id = f"{prefix}_room_{key}_name"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{prefix}_room_{key}")},
-            name=room_name,
+            name=room_device_name(room_name, index),
             manufacturer="intuibase",
             model="OpenThermostat room",
             via_device_id=hub_id,

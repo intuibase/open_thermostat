@@ -19,4 +19,5 @@ __pycache__/
 /out/
 /data_priv/
 /data_test_s3/
+/data_prod/
 /apache_*
