@@ -60,6 +60,21 @@ The web interface provides separate **Rooms** and **Programs** tabs and separate
 
 This firmware only supports the separated format. Build and upload the filesystem from the versioned `data` directory together with the firmware. For PlatformIO, use `pio run -e <environment> -t buildfs` followed by the matching filesystem upload command. Uploading the firmware without the new filesystem leaves heating disabled because `/cfg/rooms.json` is required.
 
+## Filesystem OTA
+
+The ESP32-S3 partition table contains two equal SPIFFS slots. A filesystem OTA update is written sector by sector to the inactive slot while the current slot remains mounted. The firmware checks the complete byte count, mounts the uploaded image, verifies required UI and configuration files, and only then records the new slot in NVS for the next reboot. If the selected slot cannot be mounted during startup, the firmware automatically falls back to the other slot.
+
+The classic 4 MB ESP32 keeps one SPIFFS partition because there is not enough flash for two useful slots. It uses the same incremental erase, size checks, and filesystem validation, but an interrupted upload can still damage its only filesystem. The firmware provides a dependency-free recovery page at `/recovery`; when SPIFFS cannot be mounted, `/` displays that page as well.
+
+Moving an existing ESP32-S3 installation from the old single SPIFFS partition to the dual-slot layout requires one USB deployment because application OTA does not update the partition table:
+
+```bash
+pio run -e esp32s3 -t upload
+pio run -e esp32s3 -t uploadfs
+```
+
+After that migration, filesystem updates can use the web UI. Always upload the `spiffs.bin` built for the same hardware environment. The server requires the image size to match its target partition exactly: 589,824 bytes for `esp32dev` and 4,653,056 bytes for the dual-slot `esp32s3` layout.
+
 The firmware publishes room IDs in `room_data`, and the custom Home Assistant integration uses them as stable device and entity identities.
 
 MQTT Discovery also uses the permanent room ID instead of the room's array position. For example, with MQTT base `ib-therm`, room ID `d29a8f11` produces `sensor.ib_therm_d29a8f11_current_temperature`. The MQTT base is sanitized only where Home Assistant requires an entity ID (`ib-therm` becomes `ib_therm`); MQTT topics and unique IDs continue to use the configured value.

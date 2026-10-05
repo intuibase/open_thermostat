@@ -12,6 +12,7 @@
 #include <logger/LoggerSocketSink.h>
 
 #include "config.h"
+#include "Filesystem.h"
 #include "HeatingController.h"
 #include "REST.h"
 #include "RTCTimeHelpers.h"
@@ -188,8 +189,10 @@ void setup() {
 	DBGLOGFI(heating::logger, appLogFeature(), "SERIAL 1 ENABLED\n");
 #endif
 
-	if (!SPIFFS.begin(false)) {
+	if (!heating::filesystem.mount()) {
 		DBGLOGFI(heating::logger, appLogFeature(), "An Error has occurred while mounting SPIFFS");
+	} else {
+		DBGLOGFI(heating::logger, appLogFeature(), "Mounted SPIFFS partition '%s', dual slots: %d, fallback slot used: %d\n", heating::filesystem.activeLabel().c_str(), heating::filesystem.hasDualPartitions(), heating::filesystem.usedFallbackSlot());
 	}
 
 	config::readDebugOptions();
