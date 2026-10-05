@@ -1,6 +1,6 @@
 {
   "domain": "open_thermostat",
-  "name": "OpenThermostat Rooms",
+  "name": "OpenThermostat",
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["lovelace", "mqtt"],
@@ -8,5 +8,5 @@
   "integration_type": "hub",
   "iot_class": "local_push",
   "mqtt": ["+/room_data"],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

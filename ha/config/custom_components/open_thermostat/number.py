@@ -13,7 +13,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .room_identity import room_key
+from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ class OverrideDuration(NumberEntity, RestoreEntity):
         self._durations = durations
         self._attr_native_value = durations.setdefault(key, 120)
         self._attr_unique_id = f"{prefix}_room_{key}_override_duration"
-        name = room_name if isinstance(room_name, str) and room_name else f"Room {index + 1}"
+        name = room_device_name(room_name, index)
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{prefix}_room_{key}")},
             name=name,

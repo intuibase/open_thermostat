@@ -524,6 +524,8 @@ MqttConfig getMqttConfig() {
 
 	MqttConfig config;
 	config.enabled = json::getBool(mqtt, "enabled");
+	auto publishDiscovery = cJSON_GetObjectItemCaseSensitive(mqtt, "publishHomeAssistantDiscovery");
+	config.publishHomeAssistantDiscovery = publishDiscovery == nullptr || cJSON_IsTrue(publishDiscovery);
 	config.brokerAddress = json::getString(mqtt, "brokerAddress");
 	config.brokerPort = json::getInt(mqtt, "brokerPort");
 	config.username = json::getString(mqtt, "username");

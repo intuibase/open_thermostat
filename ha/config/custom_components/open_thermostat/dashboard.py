@@ -14,6 +14,44 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+DEVICE_DIAGNOSTIC_METRICS = (
+    "connected",
+    "memory_free",
+    "memory_min_free",
+    "memory_max_alloc",
+    "rtc_temperature",
+    "cpu_temperature",
+    "uptime",
+)
+
+EMS_METRICS = (
+    "energy",
+    "energy_warm_water",
+    "energy_heating",
+    "warm_water_usage",
+    "warm_water_avg_flow",
+    "outdoor_temperature",
+    "boiler_heating_enabled",
+    "boiler_hot_water_enabled",
+    "boiler_burner_active",
+    "boiler_pump_active",
+    "boiler_heating_active",
+    "boiler_hot_water_active",
+    "boiler_siphon_filling",
+    "boiler_fan_active",
+    "boiler_pump_venting",
+    "boiler_selected_hot_water_temperature",
+    "boiler_selected_flow_temperature",
+    "boiler_current_flow_temperature",
+    "boiler_pressure",
+    "boiler_burner_power",
+    "boiler_hot_water_flow",
+    "boiler_current_hot_water_temperature",
+    "boiler_display_code",
+    "boiler_service_code",
+    "boiler_protocol_version",
+)
+
 
 class RoomDashboard:
     """Manage a separate dashboard containing the discovered climate entities."""
@@ -21,6 +59,7 @@ class RoomDashboard:
     def __init__(self, hass: HomeAssistant, prefix: str, entry_id: str) -> None:
         self.hass = hass
         self.prefix = prefix
+        self.entry_id = entry_id
         self.path = f"open-thermostat-{slugify(prefix, separator='-')}-{entry_id[:8].lower()}"
         self._rooms: set[str] = set()
         self._store: LovelaceStorage | None = None
@@ -92,9 +131,8 @@ class RoomDashboard:
 
     @callback
     def _entity_registry_updated(self, event) -> None:
-        """Follow room entity creation and entity ID changes."""
-        if event.data["entity_id"].startswith("climate."):
-            self._schedule_refresh()
+        """Follow integration entity creation and entity ID changes."""
+        self._schedule_refresh()
 
     @callback
     def _schedule_refresh(self) -> None:
@@ -117,14 +155,62 @@ class RoomDashboard:
     @callback
     def _dashboard_config(self) -> dict:
         registry = er.async_get(self.hass)
-        cards = []
+        room_cards = []
         for key in sorted(self._rooms):
             unique_id = f"{self.prefix}_room_{key}_climate"
             entity_id = registry.async_get_entity_id("climate", DOMAIN, unique_id)
             if entity_id is not None:
-                cards.append({
+                room_cards.append({
                     "type": "thermostat",
                     "entity": entity_id,
                     "show_current_as_primary": False,
                 })
-        return {"views": [{"title": "Pokoje", "path": "rooms", "cards": cards}]}
+        hub_entities = {
+            entry.unique_id.removeprefix(f"{self.prefix}_hub_"): entry.entity_id
+            for entry in er.async_entries_for_config_entry(registry, self.entry_id)
+            if entry.unique_id.startswith(f"{self.prefix}_hub_")
+        }
+        diagnostic_entities = [
+            hub_entities[metric]
+            for metric in DEVICE_DIAGNOSTIC_METRICS
+            if metric in hub_entities
+        ]
+        ems_entities = [
+            hub_entities[metric]
+            for metric in EMS_METRICS
+            if metric in hub_entities
+        ]
+        polish = self.hass.config.language.lower().startswith("pl")
+        rooms_title = "Pomieszczenia" if polish else "Rooms"
+        diagnostics_title = "Diagnostyka" if polish else "Diagnostics"
+        device_title = "Urządzenie" if polish else "Device diagnostics"
+        ems_title = "Informacje EMS" if polish else "EMS information"
+        diagnostics_cards = []
+        if diagnostic_entities:
+            diagnostics_cards.append({
+                "type": "entities",
+                "title": device_title,
+                "entities": diagnostic_entities,
+            })
+        if ems_entities:
+            diagnostics_cards.append({
+                "type": "entities",
+                "title": ems_title,
+                "entities": ems_entities,
+            })
+        return {
+            "views": [
+                {
+                    "title": rooms_title,
+                    "path": "rooms",
+                    "icon": "mdi:thermostat",
+                    "cards": room_cards,
+                },
+                {
+                    "title": diagnostics_title,
+                    "path": "diagnostics",
+                    "icon": "mdi:information-outline",
+                    "cards": diagnostics_cards,
+                },
+            ]
+        }
