@@ -36,6 +36,21 @@ BOILER_STATES = {
 }
 
 
+def _boolean_state(value: object) -> bool | None:
+    """Normalize boolean states emitted by current and older firmware."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("on", "true", "1"):
+            return True
+        if normalized in ("off", "false", "0"):
+            return False
+    return None
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -196,11 +211,7 @@ class BoilerState(BinarySensorEntity):
             self.async_write_ha_state()
 
     def update_value(self, value: object, online: bool) -> None:
-        self._attr_is_on = (
-            value if isinstance(value, bool)
-            else value == "on" if value in ("on", "off")
-            else None
-        )
+        self._attr_is_on = _boolean_state(value)
         self._attr_available = online
         if self.entity_id is not None:
             self.async_write_ha_state()
