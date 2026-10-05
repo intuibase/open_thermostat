@@ -2,6 +2,8 @@
 #include "Logging.h"
 
 #include <esp_ota_ops.h>
+#include <esp_spi_flash.h>
+#include <mbedtls/sha256.h>
 #include <SPIFFS.h>
 #include <WebServer.h>
 #include <Wire.h>
@@ -10,9 +12,13 @@
 
 #include "viewable_stringbuf.h"
 #include "HeatingController.h"
+#include "Filesystem.h"
 
 #include "Network.h"
+#include <algorithm>
 #include <iomanip>
+#include <array>
+#include <cstring>
 #include <memory>
 #include <map>
 #include <set>
@@ -96,6 +102,7 @@ public:
 
 		server_.on("/ota", HTTP_POST, [this]() { handleOTAResponse(); }, [this]() { handleOTAUpdate(); });
 		server_.on("/otafs", HTTP_POST, [this]() { handleOTAResponse(); }, [this]() { handleOTAFFSUpdate(); });
+		server_.on("/recovery", HTTP_GET, [this]() { recovery(); });
 
 		server_.on("/", HTTP_GET, [this]() { index(); });
 
@@ -865,7 +872,24 @@ private:
 	}
 
 	void index() {
+		if (!filesystem.isMounted()) {
+			recovery();
+			return;
+		}
 		serveFile("/index.html");
+	}
+
+	void recovery() {
+		static constexpr auto page = R"html(<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenThermostat recovery</title><style>body{font-family:sans-serif;max-width:42rem;margin:3rem auto;padding:0 1rem}button,input{font-size:1rem;margin:.5rem 0;padding:.6rem}progress{width:100%}</style></head>
+<body><h1>OpenThermostat recovery</h1><p>Select the SPIFFS image built for this device. Keep the device powered until verification finishes.</p>
+<input id="file" type="file" accept=".bin"><button id="upload">Upload filesystem</button><progress id="progress" max="100" value="0"></progress><pre id="status"></pre>
+<script>
+const button=document.getElementById('upload'),file=document.getElementById('file'),progress=document.getElementById('progress'),status=document.getElementById('status');
+button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin first.';return}button.disabled=true;status.textContent='Uploading and verifying...';const data=new FormData();data.append('size',file.files[0].size);data.append('file',file.files[0]);const xhr=new XMLHttpRequest();xhr.open('POST','/otafs');xhr.upload.onprogress=e=>{if(e.lengthComputable)progress.value=Math.round(e.loaded/e.total*100)};xhr.onload=()=>{button.disabled=false;status.textContent=xhr.status===200?'Update verified. Reboot the device.':'Update failed: '+xhr.responseText};xhr.onerror=()=>{button.disabled=false;status.textContent='Network error. The update was not confirmed.'};xhr.onabort=()=>{button.disabled=false;status.textContent='Upload aborted.'};xhr.timeout=300000;xhr.ontimeout=()=>{button.disabled=false;status.textContent='Upload timed out.'};xhr.send(data)};
+</script></body></html>)html"sv;
+		server_.sendView(200, "text/html"sv, page);
 	}
 
 	void serveFile(const char *serverPath) {
@@ -1032,12 +1056,12 @@ private:
 
 		if (upload.status == UPLOAD_FILE_START) {
 			auto size = server_.arg("size");
-			long fileSize = atol(size.c_str());
+			size_t fileSize = strtoull(size.c_str(), nullptr, 10);
 
 			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate START '%s', totalSize: '%zu'\n", upload.filename.c_str(), fileSize);
 
 			ota_ = OTAUpload{};
-			ota_.partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
+			ota_.partition = filesystem.updatePartition();
 			if (!ota_.partition) {
 				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate partition not found\n");
 				ota_.errorMessage = "FS partition not found"sv;
@@ -1047,23 +1071,23 @@ private:
 
 			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Found partition '%s', size: %d, encrypted: %d\n", ota_.partition->label, ota_.partition->size, ota_.partition->encrypted);
 
-			if (fileSize > 0 && fileSize > ota_.partition->size) {
-				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Partition size %zu smaller than binary file %zu!\n", ota_.partition->size, fileSize);
-				ota_.errorMessage = "FS partition smaller than file"sv;
+			if (fileSize == 0 || fileSize != ota_.partition->size) {
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Partition size %zu differs from binary file %zu!\n", ota_.partition->size, fileSize);
+				ota_.errorMessage = "FS image size must equal partition size"sv;
 				ota_.error = -1;
 				return;
 			}
 
-			SPIFFS.end();
-
-			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Erasing partition\n");
-			ota_.error = esp_partition_erase_range(ota_.partition, 0, ota_.partition->size);
-			if (ota_.error != ESP_OK) {
-				ota_.errorMessage = "FS partition erase failure"sv;
-				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Failed to erase SPIFFS partition!\n");
+			ota_.expectedSize = fileSize;
+			ota_.dualFilesystem = filesystem.hasDualPartitions();
+			mbedtls_sha256_init(&ota_.checksum);
+			if (mbedtls_sha256_starts_ret(&ota_.checksum, 0) != 0) {
+				ota_.error = ESP_FAIL;
+				ota_.errorMessage = "FS checksum initialization failed"sv;
 				return;
 			}
-
+			ota_.checksumStarted = true;
+			filesystem.beginSinglePartitionUpdate();
 			ota_.started = true;
 		} else if (upload.status == UPLOAD_FILE_WRITE) {
 			if (!ota_.started || ota_.error != ESP_OK) {
@@ -1073,21 +1097,74 @@ private:
 				}
 				return;
 			}
-			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate writing SPIFFS offset: %zu, size: %zu\n", ota_.offset, upload.currentSize);
+			if (ota_.offset > ota_.expectedSize || upload.currentSize > ota_.expectedSize - ota_.offset) {
+				ota_.error = ESP_ERR_INVALID_SIZE;
+				ota_.errorMessage = "FS upload exceeds partition size"sv;
+				return;
+			}
 
+			auto writeEnd = ota_.offset + upload.currentSize;
+			auto eraseEnd = (writeEnd + SPI_FLASH_SEC_SIZE - 1) & ~(SPI_FLASH_SEC_SIZE - 1);
+			if (eraseEnd > ota_.erasedUntil) {
+				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate erasing SPIFFS offset: %zu, size: %zu\n", ota_.erasedUntil, eraseEnd - ota_.erasedUntil);
+				ota_.error = esp_partition_erase_range(ota_.partition, ota_.erasedUntil, eraseEnd - ota_.erasedUntil);
+				if (ota_.error != ESP_OK) {
+					ota_.errorMessage = "FS partition erase failure"sv;
+					return;
+				}
+				ota_.erasedUntil = eraseEnd;
+			}
+
+			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate writing SPIFFS offset: %zu, size: %zu\n", ota_.offset, upload.currentSize);
 			ota_.error = esp_partition_write(ota_.partition, ota_.offset, upload.buf, upload.currentSize);
 			if (ota_.error != ESP_OK) {
 				ota_.errorMessage = "FS partition write error"sv;
 				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Failed to write SPIFFS partition: %d\n", ota_.error);
 				return;
 			}
+			if (mbedtls_sha256_update_ret(&ota_.checksum, upload.buf, upload.currentSize) != 0) {
+				ota_.error = ESP_FAIL;
+				ota_.errorMessage = "FS checksum update failed"sv;
+				return;
+			}
 			ota_.offset += upload.currentSize;
 		} else if (upload.status == UPLOAD_FILE_END) {
 			if (!ota_.started || ota_.error != ESP_OK) {
 				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate upload end, error: %d\n", ota_.error);
+				finishFilesystemChecksum();
 				return;
 			}
-			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate finished\n");
+			if (ota_.offset != ota_.expectedSize) {
+				ota_.error = ESP_ERR_INVALID_SIZE;
+				ota_.errorMessage = "FS upload is incomplete"sv;
+				if (!ota_.dualFilesystem) filesystem.restoreActive();
+				finishFilesystemChecksum();
+				return;
+			}
+			std::array<unsigned char, 32> uploadChecksum{};
+			if (!ota_.checksumStarted || mbedtls_sha256_finish_ret(&ota_.checksum, uploadChecksum.data()) != 0) {
+				finishFilesystemChecksum();
+				ota_.error = ESP_FAIL;
+				ota_.errorMessage = "FS checksum finalization failed"sv;
+				return;
+			}
+			finishFilesystemChecksum();
+			if (!verifyPartitionChecksum(ota_.partition, ota_.expectedSize, uploadChecksum)) {
+				ota_.error = ESP_ERR_INVALID_CRC;
+				ota_.errorMessage = "FS checksum verification failed"sv;
+				DBGLOGFI(log_, logFeature_, "handleOTAFFSUpdate SHA-256 read-back verification FAILED for partition '%s'\n", ota_.partition->label);
+				if (!ota_.dualFilesystem) filesystem.restoreActive();
+				return;
+			}
+			DBGLOGFI(log_, logFeature_, "handleOTAFFSUpdate SHA-256 read-back verification passed for partition '%s'\n", ota_.partition->label);
+			std::string validationResult;
+			if (!filesystem.validateAndSelectUpdate(ota_.partition, validationResult)) {
+				ota_.error = ESP_ERR_INVALID_STATE;
+				ota_.errorMessage = "FS image validation or slot selection failed"sv;
+				DBGLOGFI(log_, logFeature_, "handleOTAFFSUpdate final validation FAILED: %s\n", validationResult.c_str());
+				return;
+			}
+			DBGLOGFI(log_, logFeature_, "handleOTAFFSUpdate final validation passed: %s\n", validationResult.c_str());
 			ota_.success = true;
 		} else if (upload.status == UPLOAD_FILE_ABORTED) {
 			if (!ota_.started) {
@@ -1095,7 +1172,44 @@ private:
 				return;
 			}
 			DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate ABORTED\n");
+			ota_.error = ESP_FAIL;
+			ota_.errorMessage = "FS upload aborted"sv;
+			finishFilesystemChecksum();
+			if (!ota_.dualFilesystem) filesystem.restoreActive();
 		}
+	}
+
+	void finishFilesystemChecksum() {
+		if (!ota_.checksumStarted) return;
+		mbedtls_sha256_free(&ota_.checksum);
+		ota_.checksumStarted = false;
+	}
+
+	bool verifyPartitionChecksum(const esp_partition_t *partition, size_t size, const std::array<unsigned char, 32> &expected) {
+		std::unique_ptr<uint8_t[]> buffer(new (std::nothrow) uint8_t[SPI_FLASH_SEC_SIZE]);
+		if (!buffer) return false;
+
+		mbedtls_sha256_context checksum;
+		mbedtls_sha256_init(&checksum);
+		if (mbedtls_sha256_starts_ret(&checksum, 0) != 0) {
+			mbedtls_sha256_free(&checksum);
+			return false;
+		}
+
+		for (size_t offset = 0; offset < size; offset += SPI_FLASH_SEC_SIZE) {
+			auto chunkSize = std::min(static_cast<size_t>(SPI_FLASH_SEC_SIZE), size - offset);
+			if (esp_partition_read(partition, offset, buffer.get(), chunkSize) != ESP_OK ||
+				mbedtls_sha256_update_ret(&checksum, buffer.get(), chunkSize) != 0) {
+				mbedtls_sha256_free(&checksum);
+				return false;
+			}
+			delay(0);
+		}
+
+		std::array<unsigned char, 32> actual{};
+		auto result = mbedtls_sha256_finish_ret(&checksum, actual.data());
+		mbedtls_sha256_free(&checksum);
+		return result == 0 && std::memcmp(actual.data(), expected.data(), actual.size()) == 0;
 	}
 
 	struct OTAUpload {
@@ -1103,10 +1217,15 @@ private:
 		bool success = false;
 		const esp_partition_t *partition = nullptr;
 		size_t offset = 0;
+		size_t expectedSize = 0;
+		size_t erasedUntil = 0;
 		esp_ota_handle_t handle = 0;
 		esp_err_t error = ESP_OK;
 		std::string errorMessage;
 		bool writeErrorReported = false;
+		bool dualFilesystem = false;
+		bool checksumStarted = false;
+		mbedtls_sha256_context checksum{};
 	} ota_;
 
 	HeatingController &controller_;

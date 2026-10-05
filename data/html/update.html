@@ -45,6 +45,7 @@ $(document).ready(function() {
 	let fileInput = document.getElementById("FirmwarePath");
 	if (!fileInput.files.length) {
 		alert("Please select firmware.bin file!");
+		$("#FirmwareSubmit").prop('disabled', false);
 		return;
 	}
 
@@ -73,6 +74,22 @@ $(document).ready(function() {
 		} else {
 			alert("Firmware udpate error: " + xhr.responseText);
 		}
+		$("#FirmwareSubmit").prop('disabled', false);
+	};
+
+	xhr.onerror = function() {
+		alert("Update connection failed. The update was not confirmed. Do not reboot the device until it is reachable again.");
+		$("#FirmwareSubmit").prop('disabled', false);
+	};
+
+	xhr.onabort = function() {
+		alert("Update upload was aborted.");
+		$("#FirmwareSubmit").prop('disabled', false);
+	};
+
+	xhr.timeout = 300000;
+	xhr.ontimeout = function() {
+		alert("Update upload timed out. The update was not confirmed.");
 		$("#FirmwareSubmit").prop('disabled', false);
 	};
 
