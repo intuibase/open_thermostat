@@ -38,9 +38,9 @@ HUB_METRICS = {
         "uptime": ("uptime", SensorDeviceClass.DURATION, "s", SensorStateClass.TOTAL_INCREASING, "Device uptime"),
     },
     "ems_metrics": {
-        "energy": ("totalEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL, "Total energy consumption"),
-        "energy_warm_water": ("warmWaterEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL, "Energy used for warm water heating"),
-        "energy_heating": ("heatingEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL, "Energy used for space heating"),
+        "energy": ("totalEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL_INCREASING, "Total energy consumption"),
+        "energy_warm_water": ("warmWaterEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL_INCREASING, "Energy used for warm water heating"),
+        "energy_heating": ("heatingEnergyUsedKwh", SensorDeviceClass.ENERGY, "kWh", SensorStateClass.TOTAL_INCREASING, "Energy used for space heating"),
         "warm_water_usage": ("warmWaterUsage", None, "L", SensorStateClass.MEASUREMENT, "Warm water usage"),
         "warm_water_avg_flow": ("warmWaterAvgFlow", None, "L/min", SensorStateClass.MEASUREMENT, "Average flow of warm water"),
         "outdoor_temperature": ("outdoorTemperature", SensorDeviceClass.TEMPERATURE, UnitOfTemperature.CELSIUS, SensorStateClass.MEASUREMENT, "Outdoor temperature"),
@@ -64,6 +64,12 @@ HUB_DIVISORS = {
     "boiler_pressure": 10,
     "boiler_hot_water_flow": 10,
     "boiler_current_hot_water_temperature": 10,
+}
+
+HUB_TRANSLATION_KEYS = {
+    "energy": "boiler_total_energy",
+    "energy_warm_water": "boiler_hot_water_energy",
+    "energy_heating": "boiler_space_heating_energy",
 }
 
 
@@ -409,7 +415,7 @@ class RoomProgram(SensorEntity):
             self.async_write_ha_state()
 
 
-class HubMetric(SensorEntity):
+class HubMetric(SensorEntity, RestoreEntity):
     """A reading published by the thermostat's main device."""
 
     _attr_should_poll = False
@@ -422,11 +428,37 @@ class HubMetric(SensorEntity):
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
-        self._attr_name = name
+        if translation_key := HUB_TRANSLATION_KEYS.get(metric):
+            self._attr_translation_key = translation_key
+        else:
+            self._attr_name = name
         self._attr_unique_id = f"{prefix}_hub_{metric}"
         self._divisor = HUB_DIVISORS.get(metric, 1)
+        self._is_energy_delta = topic == "ems_metrics" and metric in {
+            "energy",
+            "energy_warm_water",
+            "energy_heating",
+        }
+        self._pending_energy = 0.0
+        self._restored = False
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, prefix)})
         self._attr_available = False
+
+    async def async_added_to_hass(self) -> None:
+        """Restore cumulative EMS energy before applying queued increments."""
+        await super().async_added_to_hass()
+        if self._is_energy_delta:
+            total = 0.0
+            previous = await self.async_get_last_state()
+            if previous is not None:
+                try:
+                    total = max(float(previous.state), 0.0)
+                except (TypeError, ValueError):
+                    pass
+            self._attr_native_value = total + self._pending_energy
+            self._pending_energy = 0.0
+        self._restored = True
+        self.async_write_ha_state()
 
     def set_online(self, online: bool) -> None:
         self._attr_available = online
@@ -434,11 +466,19 @@ class HubMetric(SensorEntity):
             self.async_write_ha_state()
 
     def update_value(self, value: object, online: bool) -> None:
-        self._attr_native_value = (
+        parsed_value = (
             value / self._divisor
             if isinstance(value, (int, float)) and not isinstance(value, bool)
             else value if isinstance(value, str) and value else None
         )
+        if self._is_energy_delta and isinstance(parsed_value, (int, float)):
+            increment = max(float(parsed_value), 0.0)
+            if self._restored:
+                self._attr_native_value = float(self._attr_native_value or 0.0) + increment
+            else:
+                self._pending_energy += increment
+        elif not self._is_energy_delta:
+            self._attr_native_value = parsed_value
         self._attr_available = online
         if self.entity_id is not None:
             self.async_write_ha_state()
