@@ -211,6 +211,13 @@ class RoomDashboard:
         heating_title = "Ogrzewanie" if polish else "Heating"
         device_title = "Urządzenie" if polish else "Device diagnostics"
         ems_title = "Informacje EMS" if polish else "EMS information"
+        energy_chart_title = (
+            "Dzienne zużycie energii: CO i CWU"
+            if polish
+            else "Daily energy use: heating and hot water"
+        )
+        heating_energy_name = "Ogrzewanie pomieszczeń" if polish else "Space heating"
+        hot_water_energy_name = "Ciepła woda" if polish else "Hot water"
         diagnostics_cards = []
         if diagnostic_entities:
             diagnostics_cards.append({
@@ -223,6 +230,27 @@ class RoomDashboard:
                 "type": "entities",
                 "title": ems_title,
                 "entities": ems_entities,
+            })
+        energy_chart_entities = []
+        if "energy_heating" in hub_entities:
+            energy_chart_entities.append({
+                "entity": hub_entities["energy_heating"],
+                "name": heating_energy_name,
+            })
+        if "energy_warm_water" in hub_entities:
+            energy_chart_entities.append({
+                "entity": hub_entities["energy_warm_water"],
+                "name": hot_water_energy_name,
+            })
+        if energy_chart_entities:
+            diagnostics_cards.insert(0, {
+                "type": "statistics-graph",
+                "title": energy_chart_title,
+                "chart_type": "bar",
+                "period": "day",
+                "days_to_show": 14,
+                "stat_types": ["change"],
+                "entities": energy_chart_entities,
             })
         return {
             "views": [
