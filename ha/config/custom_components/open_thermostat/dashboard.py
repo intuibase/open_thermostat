@@ -53,6 +53,12 @@ EMS_METRICS = (
     "boiler_protocol_version",
 )
 
+CHART_PERIODS = {
+    "day": ("day", 14),
+    "week": ("week", 84),
+    "month": ("month", 365),
+}
+
 
 class RoomDashboard:
     """Manage a separate dashboard containing the discovered climate entities."""
@@ -205,6 +211,9 @@ class RoomDashboard:
             for entry in er.async_entries_for_config_entry(registry, self.entry_id)
             if entry.unique_id.startswith(f"{self.prefix}_hub_")
         }
+        chart_period_entity = registry.async_get_entity_id(
+            "select", DOMAIN, f"{self.prefix}_hub_energy_chart_period"
+        )
         diagnostic_entities = [
             hub_entities[metric]
             for metric in DEVICE_DIAGNOSTIC_METRICS
@@ -220,30 +229,24 @@ class RoomDashboard:
         diagnostics_title = "Diagnostyka" if polish else "Diagnostics"
         heating_title = "Ogrzewanie" if polish else "Heating"
         room_energy_chart_title = (
-            "Dzienne zużycie energii według pomieszczeń"
+            "Zużycie energii według pomieszczeń"
             if polish
-            else "Daily energy use by room"
+            else "Energy use by room"
         )
         device_title = "Urządzenie" if polish else "Device diagnostics"
         ems_title = "Informacje EMS" if polish else "EMS information"
         energy_chart_title = (
-            "Dzienne zużycie energii: CO i CWU"
+            "Zużycie energii: CO i CWU"
             if polish
-            else "Daily energy use: heating and hot water"
+            else "Energy use: heating and hot water"
         )
         heating_energy_name = "Ogrzewanie pomieszczeń" if polish else "Space heating"
         hot_water_energy_name = "Ciepła woda" if polish else "Hot water"
         diagnostics_cards = []
-        if room_energy_chart_entities:
-            heating_cards.insert(0, {
-                "type": "statistics-graph",
-                "title": room_energy_chart_title,
-                "chart_type": "bar",
-                "period": "day",
-                "days_to_show": 14,
-                "stat_types": ["change"],
-                "entities": room_energy_chart_entities,
-            })
+        if room_energy_chart_entities and chart_period_entity:
+            heating_cards = self._energy_chart_cards(
+                chart_period_entity, room_energy_chart_title, room_energy_chart_entities
+            ) + heating_cards
         if diagnostic_entities:
             diagnostics_cards.append({
                 "type": "entities",
@@ -267,16 +270,10 @@ class RoomDashboard:
                 "entity": hub_entities["energy_warm_water"],
                 "name": hot_water_energy_name,
             })
-        if energy_chart_entities:
-            diagnostics_cards.insert(0, {
-                "type": "statistics-graph",
-                "title": energy_chart_title,
-                "chart_type": "bar",
-                "period": "day",
-                "days_to_show": 14,
-                "stat_types": ["change"],
-                "entities": energy_chart_entities,
-            })
+        if energy_chart_entities and chart_period_entity:
+            diagnostics_cards = self._energy_chart_cards(
+                chart_period_entity, energy_chart_title, energy_chart_entities
+            ) + diagnostics_cards
         return {
             "views": [
                 {
@@ -299,3 +296,27 @@ class RoomDashboard:
                 },
             ]
         }
+
+    @staticmethod
+    def _energy_chart_cards(selector: str, title: str, entities: list[dict]) -> list[dict]:
+        """Build a native selector and conditional day/week/month charts."""
+        cards = [{"type": "entities", "entities": [selector]}]
+        for option, (period, days_to_show) in CHART_PERIODS.items():
+            cards.append({
+                "type": "conditional",
+                "conditions": [{
+                    "condition": "state",
+                    "entity": selector,
+                    "state": option,
+                }],
+                "card": {
+                    "type": "statistics-graph",
+                    "title": title,
+                    "chart_type": "bar",
+                    "period": period,
+                    "days_to_show": days_to_show,
+                    "stat_types": ["change"],
+                    "entities": entities,
+                },
+            })
+        return cards

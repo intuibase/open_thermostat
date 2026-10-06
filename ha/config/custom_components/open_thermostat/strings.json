@@ -39,6 +39,12 @@
     "number": {
       "radiator_rated_power": {"name": "Radiator rated power"}
     },
+    "select": {
+      "energy_chart_period": {
+        "name": "Energy chart period",
+        "state": {"day": "Day", "week": "Week", "month": "Month"}
+      }
+    },
     "sensor": {
       "radiator_heating_time": {"name": "Radiator heating time"},
       "estimated_radiator_energy": {"name": "Estimated radiator energy"},

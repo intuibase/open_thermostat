@@ -39,6 +39,12 @@
     "number": {
       "radiator_rated_power": {"name": "Moc znamionowa grzejników"}
     },
+    "select": {
+      "energy_chart_period": {
+        "name": "Okres wykresów energii",
+        "state": {"day": "Dzień", "week": "Tydzień", "month": "Miesiąc"}
+      }
+    },
     "sensor": {
       "radiator_heating_time": {"name": "Czas grzania grzejników"},
       "estimated_radiator_energy": {"name": "Szacowana energia grzejników"},
