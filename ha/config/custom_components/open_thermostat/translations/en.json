@@ -41,7 +41,7 @@
     },
     "select": {
       "energy_chart_period": {
-        "name": "Energy chart period",
+        "name": "Chart period",
         "state": {"day": "Day", "week": "Week", "month": "Month"}
       }
     },

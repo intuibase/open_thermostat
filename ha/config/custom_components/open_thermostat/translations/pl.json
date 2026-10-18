@@ -41,7 +41,7 @@
     },
     "select": {
       "energy_chart_period": {
-        "name": "Okres wykresów energii",
+        "name": "Okres wykresów",
         "state": {"day": "Dzień", "week": "Tydzień", "month": "Miesiąc"}
       }
     },
