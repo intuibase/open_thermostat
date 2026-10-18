@@ -53,6 +53,12 @@ EMS_METRICS = (
     "boiler_protocol_version",
 )
 
+CHART_PERIODS = {
+    "day": ("day", 14),
+    "week": ("week", 84),
+    "month": ("month", 365),
+}
+
 
 class RoomDashboard:
     """Manage a separate dashboard containing the discovered climate entities."""
@@ -159,6 +165,8 @@ class RoomDashboard:
         devices = dr.async_get(self.hass)
         room_cards = []
         heating_cards = []
+        room_energy_chart_entities = []
+        room_heating_time_chart_entities = []
         for key in sorted(self._rooms):
             unique_id = f"{self.prefix}_room_{key}_climate"
             entity_id = registry.async_get_entity_id("climate", DOMAIN, unique_id)
@@ -169,6 +177,8 @@ class RoomDashboard:
                     "show_current_as_primary": False,
                 })
             heating_entities = []
+            energy_entity_id = None
+            heating_time_entity_id = None
             for platform, suffix in (
                 ("binary_sensor", "radiator_heating"),
                 ("sensor", "radiator_heating_time"),
@@ -181,20 +191,38 @@ class RoomDashboard:
                 )
                 if entity_id is not None:
                     heating_entities.append(entity_id)
+                    if suffix == "radiator_heating_time":
+                        heating_time_entity_id = entity_id
+                    elif suffix == "radiator_estimated_energy":
+                        energy_entity_id = entity_id
             if heating_entities:
                 device = devices.async_get_device_by_identifier(
                     (DOMAIN, f"{self.prefix}_room_{key}"), self.entry_id
                 )
+                room_name = device.name if device is not None else key
                 heating_cards.append({
                     "type": "entities",
-                    "title": device.name if device is not None else key,
+                    "title": room_name,
                     "entities": heating_entities,
                 })
+                if energy_entity_id is not None:
+                    room_energy_chart_entities.append({
+                        "entity": energy_entity_id,
+                        "name": room_name.removeprefix("OpenThermostat — "),
+                    })
+                if heating_time_entity_id is not None:
+                    room_heating_time_chart_entities.append({
+                        "entity": heating_time_entity_id,
+                        "name": room_name.removeprefix("OpenThermostat — "),
+                    })
         hub_entities = {
             entry.unique_id.removeprefix(f"{self.prefix}_hub_"): entry.entity_id
             for entry in er.async_entries_for_config_entry(registry, self.entry_id)
             if entry.unique_id.startswith(f"{self.prefix}_hub_")
         }
+        chart_period_entity = registry.async_get_entity_id(
+            "select", DOMAIN, f"{self.prefix}_hub_energy_chart_period"
+        )
         diagnostic_entities = [
             hub_entities[metric]
             for metric in DEVICE_DIAGNOSTIC_METRICS
@@ -209,9 +237,37 @@ class RoomDashboard:
         rooms_title = "Pomieszczenia" if polish else "Rooms"
         diagnostics_title = "Diagnostyka" if polish else "Diagnostics"
         heating_title = "Ogrzewanie" if polish else "Heating"
+        room_energy_chart_title = (
+            "Zużycie energii według pomieszczeń"
+            if polish
+            else "Energy use by room"
+        )
+        room_heating_time_chart_title = (
+            "Czas grzania według pomieszczeń"
+            if polish
+            else "Heating time by room"
+        )
         device_title = "Urządzenie" if polish else "Device diagnostics"
         ems_title = "Informacje EMS" if polish else "EMS information"
+        energy_chart_title = (
+            "Zużycie energii: CO i CWU"
+            if polish
+            else "Energy use: heating and hot water"
+        )
+        total_energy_chart_title = (
+            "Całkowita energia kotła" if polish else "Total boiler energy"
+        )
+        heating_energy_name = "Ogrzewanie pomieszczeń" if polish else "Space heating"
+        hot_water_energy_name = "Ciepła woda" if polish else "Hot water"
         diagnostics_cards = []
+        if room_energy_chart_entities and chart_period_entity:
+            heating_cards = self._energy_chart_cards(
+                chart_period_entity,
+                room_energy_chart_title,
+                room_energy_chart_entities,
+                room_heating_time_chart_title,
+                room_heating_time_chart_entities,
+            ) + heating_cards
         if diagnostic_entities:
             diagnostics_cards.append({
                 "type": "entities",
@@ -224,6 +280,33 @@ class RoomDashboard:
                 "title": ems_title,
                 "entities": ems_entities,
             })
+        energy_chart_entities = []
+        if "energy_heating" in hub_entities:
+            energy_chart_entities.append({
+                "entity": hub_entities["energy_heating"],
+                "name": heating_energy_name,
+            })
+        if "energy_warm_water" in hub_entities:
+            energy_chart_entities.append({
+                "entity": hub_entities["energy_warm_water"],
+                "name": hot_water_energy_name,
+            })
+        if energy_chart_entities and chart_period_entity:
+            total_energy_entities = (
+                [{
+                    "entity": hub_entities["energy"],
+                    "name": total_energy_chart_title,
+                }]
+                if "energy" in hub_entities
+                else None
+            )
+            diagnostics_cards = self._energy_chart_cards(
+                chart_period_entity,
+                energy_chart_title,
+                energy_chart_entities,
+                total_energy_chart_title,
+                total_energy_entities,
+            ) + diagnostics_cards
         return {
             "views": [
                 {
@@ -246,3 +329,54 @@ class RoomDashboard:
                 },
             ]
         }
+
+    @staticmethod
+    def _energy_chart_cards(
+        selector: str,
+        title: str,
+        entities: list[dict],
+        secondary_title: str | None = None,
+        secondary_entities: list[dict] | None = None,
+    ) -> list[dict]:
+        """Build one stable panel with a selector and conditional charts."""
+        cards = [{
+            "type": "entities",
+            "title": title,
+            "show_header_toggle": False,
+            "entities": [selector],
+        }]
+        for option, (period, days_to_show) in CHART_PERIODS.items():
+            graph = {
+                "type": "statistics-graph",
+                "chart_type": "bar",
+                "period": period,
+                "days_to_show": days_to_show,
+                "stat_types": ["change"],
+                "entities": entities,
+            }
+            if secondary_title and secondary_entities:
+                graph = {
+                    "type": "vertical-stack",
+                    "cards": [
+                        graph,
+                        {
+                            "type": "statistics-graph",
+                            "title": secondary_title,
+                            "chart_type": "bar",
+                            "period": period,
+                            "days_to_show": days_to_show,
+                            "stat_types": ["change"],
+                            "entities": secondary_entities,
+                        },
+                    ],
+                }
+            cards.append({
+                "type": "conditional",
+                "conditions": [{
+                    "condition": "state",
+                    "entity": selector,
+                    "state": option,
+                }],
+                "card": graph,
+            })
+        return [{"type": "vertical-stack", "cards": cards}]
