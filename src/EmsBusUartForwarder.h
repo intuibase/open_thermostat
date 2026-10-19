@@ -7,9 +7,9 @@
 #include <soc/uart_reg.h>
 #include <array>
 
-#include <mutex>
-#include <unordered_map>
-#include <queue>
+#include <optional>
+#include <atomic>
+#include "EMS/EmsFrameQueue.h"
 
 namespace heating {
 
@@ -25,6 +25,11 @@ public:
 		if (log_) {
 			logFeature_ = log_->addFeature("EmsUartFwd");
 		}
+		heads_.fill(-1);
+		tails_.fill(-1);
+		for (size_t i = 0; i < slots_.size(); ++i) {
+			slots_[i].next = i + 1 < slots_.size() ? static_cast<int>(i + 1) : -1;
+		}
 	}
 	static constexpr int EmsBusBaudrate = 9600;
 	static constexpr uart_port_t UartSlot = UART_NUM_1;
@@ -35,7 +40,7 @@ public:
 	void start(uint8_t rxPin = 13, uint8_t txPin = 5);
 
 	bool isEnabled() {
-		return enabled_;
+		return enabled_.load(std::memory_order_acquire);
 	}
 
 #define EMSUART_TX_BIT_TIME 104 // bit time @9600 baud
@@ -62,24 +67,30 @@ public:
 		return true;
 	}
 
-	std::shared_ptr<std::vector<uint8_t>> getDataToWriteToEmsBus(uint8_t id) {
-		std::lock_guard<std::mutex> m(sendToEmsBusQueueMutex_);
-		auto found = sendToEmsBusQueue_.find(id);
-		if (found == std::end(sendToEmsBusQueue_)) {
+	std::optional<ems::EmsRawFrame> getDataToWriteToEmsBus(uint8_t id) {
+		if (id >= heads_.size()) {
 			return {};
 		}
-
-		if (found->second.empty()) {
-			return {};
+		std::optional<ems::EmsRawFrame> result;
+		portENTER_CRITICAL(&queueMux_);
+		const int index = heads_[id];
+		if (index >= 0) {
+			auto &slot = slots_[index];
+			result = slot.frame;
+			heads_[id] = slot.next;
+			if (heads_[id] < 0) {
+				tails_[id] = -1;
+			}
+			--sizes_[id];
+			slot.next = freeHead_;
+			freeHead_ = index;
 		}
-
-		auto data = std::move(found->second.front());
-		found->second.pop();
-
-		DBGLOGFD(log_, logFeature_, "Found telegram in 0x%2.2X queue, %d telegrams left\n", id, found->second.size());
-
-		return data;
+		portEXIT_CRITICAL(&queueMux_);
+		return result;
 	}
+
+	std::atomic<uint32_t> rxErrors{0};
+	std::atomic<uint32_t> dropped{0};
 
 private:
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
@@ -100,30 +111,49 @@ private:
 		return static_cast<uint32_t>(buffer_.size());
 	}
 
-	void enqueueWriteToEmsBus(std::shared_ptr<std::vector<uint8_t>> data) {
-		std::lock_guard<std::mutex> m(sendToEmsBusQueueMutex_);
-		uint8_t id = data->at(0) & 0x7F;
-		DBGLOGFD(log_, logFeature_, "Enqueued telegram from 0x%2.2X. Size: %d\n", id, data->size());
-		DBGLOGFD(log_, logFeature_, "sendToEmsBusQueue Id's: %d. Queue for id 0x%2.2X: %d\n", sendToEmsBusQueue_.size(), id, sendToEmsBusQueue_[id].size());
-
-		if (sendToEmsBusQueue_[id].size() == MaxForwarderQueueSize) {
-			DBGLOGFD(log_, logFeature_, "Can't enqueue telegram from 0x%2.2X. Size: %d. Queue full (%d)\n", id, data->size(), sendToEmsBusQueue_[id].size());
-			DBGLOGFI(log_, logFeature_, "EmsBus Free memory %d/%d (minimum was: %d) MaxAlloc: %d Stack remaining: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
+	void enqueueWriteToEmsBus(const uint8_t *data, uint8_t length) {
+		if (length == 0 || length > ems::EmsRawFrame::capacity) {
 			return;
 		}
-
-		sendToEmsBusQueue_[id].push(std::move(data));
+		const uint8_t id = data[0] & 0x7F;
+		bool full;
+		portENTER_CRITICAL(&queueMux_);
+		full = freeHead_ < 0 || sizes_[id] == MaxForwarderQueueSize;
+		if (!full) {
+			const int index = freeHead_;
+			auto &slot = slots_[index];
+			freeHead_ = slot.next;
+			slot.next = -1;
+			slot.frame.length = length;
+			std::copy_n(data, length, slot.frame.data.begin());
+			if (tails_[id] >= 0) {
+				slots_[tails_[id]].next = index;
+			} else {
+				heads_[id] = index;
+			}
+			tails_[id] = index;
+			++sizes_[id];
+		}
+		portEXIT_CRITICAL(&queueMux_);
+		if (full) {
+			dropped.fetch_add(1, std::memory_order_relaxed);
+		}
 	}
 
-	bool enabled_ = false;
-
+	std::atomic<bool> enabled_{false};
 	QueueHandle_t uartQueue_;
 	std::array<uint8_t, EmsMaxTelegramSize> buffer_;
-
-	using deviceTxQueue_t = std::queue<std::shared_ptr<std::vector<uint8_t>>>;
-
-	std::unordered_map<uint8_t, deviceTxQueue_t> sendToEmsBusQueue_;
-	std::mutex sendToEmsBusQueueMutex_;
+	struct Slot {
+		ems::EmsRawFrame frame;
+		int next = -1;
+	};
+	// Bounded shared pool; per-device FIFO order and the existing limit of ten.
+	std::array<Slot, 32> slots_{};
+	std::array<int, 128> heads_{};
+	std::array<int, 128> tails_{};
+	std::array<uint8_t, 128> sizes_{};
+	int freeHead_ = 0;
+	portMUX_TYPE queueMux_ = portMUX_INITIALIZER_UNLOCKED;
 
 	friend void heating::uart_detail::uart_forwarder_event_task(void *pvParameters);
 };
@@ -135,48 +165,49 @@ static void uart_forwarder_event_task(void *pvParameters) {
 	uint32_t length = 0;
 
 	for (;;) {
-		if (xQueueReceive(bus->getQueueHandle(), (void *)&event, (TickType_t)portMAX_DELAY)) {
-			switch (event.type) {
-			case UART_DATA:
-				length += event.size;
-				break;
-			case UART_BREAK: // we got some data from EMS-ESP32, need to send them to EMS bus
-				if (length > bus->getDataBufferSize()) {
-					// read trash data
-					while(length > 0) {
-						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Forwarder message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
-						uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), std::min(length, bus->getDataBufferSize()), portMAX_DELAY);
-						length -= std::min(length, bus->getDataBufferSize());
-					}
-				} else {
-					if (uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), length, portMAX_DELAY) != -1) {
-						auto dataToEnqueue = std::make_shared<std::vector<uint8_t>>(bus->getDataBuffer(), bus->getDataBuffer() + length - 1);
-						bus->enqueueWriteToEmsBus(std::move(dataToEnqueue));
-					} else {
-						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "read failed\n");
-					}
+		if (!xQueueReceive(bus->getQueueHandle(), &event, portMAX_DELAY)) {
+			continue;
+		}
+		switch (event.type) {
+		case UART_DATA:
+			length += event.size;
+			break;
+		case UART_BREAK: {
+			const bool validSize = length > 1 && length <= bus->getDataBufferSize();
+			bool complete = validSize;
+			while (length > 0) {
+				const auto chunk = std::min(length, bus->getDataBufferSize());
+				const int read = uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), chunk, 0);
+				if (read != static_cast<int>(chunk)) {
+					complete = false;
+					uart_flush_input(bus->getUartSlot());
+					xQueueReset(bus->getQueueHandle());
+					break;
 				}
-				length = 0;
-				break;
-			case UART_FIFO_OVF:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "forwarder event fifo overflow\n", "");
-				uart_flush_input(bus->getUartSlot());
-				xQueueReset(bus->getQueueHandle());
-				length = 0;
-				break;
-			//Event of UART ring buffer full
-			case UART_BUFFER_FULL:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "forwarder event buffer full\n", "");
-				// If buffer full happened, you should consider increasing your buffer size
-				// As an example, we directly flush the rx buffer here in order to read more data.
-				uart_flush_input(bus->getUartSlot());
-				xQueueReset(bus->getQueueHandle());
-				length = 0;
-				break;
-			default:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Forwarder event %d\n", event.type);
-				break;
+				length -= chunk;
+				if (complete) {
+					bus->enqueueWriteToEmsBus(bus->getDataBuffer(), static_cast<uint8_t>(chunk - 1));
+				}
 			}
+			if (!complete) {
+				bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			}
+			length = 0;
+			break;
+		}
+		case UART_FIFO_OVF:
+		case UART_BUFFER_FULL:
+			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			uart_flush_input(bus->getUartSlot());
+			xQueueReset(bus->getQueueHandle());
+			length = 0;
+			break;
+		case UART_PARITY_ERR:
+		case UART_FRAME_ERR:
+			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			break;
+		default:
+			break;
 		}
 	}
 	vTaskDelete(nullptr);

@@ -14,6 +14,7 @@
 #include "EMS/UBAProtocolVersion.h"
 
 #include <TimeHelpers.h>
+#include <esp_timer.h>
 
 namespace heating::ems {
 
@@ -30,6 +31,7 @@ EmsController::EmsController(std::shared_ptr<ib::logger::LoggerInterface> log) :
 	}
 	config::EmsPins emsPins{config::getEmsPins()};
 
+	captureForeignTelegrams_.store(log_ && log_->isFeatureEnabled(verboseFeature()), std::memory_order_relaxed);
 	uart_.start(emsPins.rx, emsPins.tx);
 
 	if (emsConfig_.emsForwarderEnabled) {
@@ -178,46 +180,111 @@ void EmsController::requestPeriodicData() {
 	}
 }
 
-bool EmsController::processPoll(uint8_t deviceId) {
-	// DBGLOGFI(log_, verboseFeature(), "poll: 0x%X\n", deviceId);
+void EmsController::reset() {
+	size_t dropped;
+	portENTER_CRITICAL(&txMux_);
+	dropped = txSize_;
+	txHead_ = 0;
+	txSize_ = 0;
+	portEXIT_CRITICAL(&txMux_);
+	// UART recovery is performed by its owner, never concurrently with RX/TX.
+	uart_.requestReset();
+	DBGLOGFD(log_, fatalFeature(), "EmsController::reset %zu TX dropped\n", dropped);
+	requestStartupData();
+}
 
-	if (txNotConfirmed_ > maxTxNotConfirmed) {
-		DBGLOGFD(log_, fatalFeature(), "We have %zu TX not confirmed! Last poll millis: %ld, current millis: %ld\n--- Resetting UART ---\n", txNotConfirmed_.load(), lastPoll_, millis());
-		reset();
+void EmsController::enqueueTelegramToSend(EmsTelegram telegram, bool front) {
+	// Encode and allocate before taking the TX lock; poll only copies ready bytes.
+	auto encoded = telegram.encodeToRawDataWithCRC();
+	if (encoded.empty() || encoded.size() > EmsRawFrame::capacity) {
+		DBGLOGFD(log_, fatalFeature(), "Invalid EMS TX size: %zu\n", encoded.size());
+		return;
 	}
+	EmsRawFrame frame;
+	frame.length = static_cast<uint8_t>(encoded.size());
+	std::copy(encoded.begin(), encoded.end(), frame.data.begin());
+	bool full;
+	portENTER_CRITICAL(&txMux_);
+	full = txSize_ == telegramsToSend_.size();
+	if (!full) {
+		// Preserve the existing ordering: front=true appends; default prepends.
+		if (!front) {
+			txHead_ = (txHead_ + telegramsToSend_.size() - 1) % telegramsToSend_.size();
+		}
+		telegramsToSend_[(txHead_ + (front ? txSize_ : 0)) % telegramsToSend_.size()] = frame;
+		++txSize_;
+	}
+	portEXIT_CRITICAL(&txMux_);
+	if (full) {
+		resetRequested_.store(true, std::memory_order_relaxed);
+		DBGLOGFD(log_, fatalFeature(), "EMS TX queue full\n");
+	} else if (log_) {
+		telegram.logDebug(*log_, verboseFeature());
+	}
+}
 
+bool EmsController::processPoll(uint8_t deviceId) {
 	if (deviceId != deviceId_) {
 		return false;
 	}
-
-	lastPoll_ = millis();
-
-	std::unique_lock<std::mutex> lock(telegramProcessingMutex_);
-	if (telegramsToSend_.empty()) {
-		lock.unlock();
-		pong();
-	} else {
-		DBGLOGFD(log_, verboseFeature(), "poll(), telegrams left in queue: %zu\n", telegramsToSend_.size());
-
-		EmsTelegram telegram = std::move(telegramsToSend_.front());
-		telegramsToSend_.pop_front();
-		lock.unlock();
-		uart_.writeToEms(std::move(telegram.encodeToRawDataWithCRC())); // move is redundant here
-		txNotConfirmed_++;
+	const auto started = esp_timer_get_time();
+	polls_.fetch_add(1, std::memory_order_relaxed);
+	if (txNotConfirmed_.load(std::memory_order_relaxed) > maxTxNotConfirmed) {
+		resetRequested_.store(true, std::memory_order_relaxed);
 	}
+
+	EmsRawFrame frame;
+	portENTER_CRITICAL(&txMux_);
+	if (txSize_ != 0) {
+		frame = telegramsToSend_[txHead_];
+		txHead_ = (txHead_ + 1) % telegramsToSend_.size();
+		--txSize_;
+	}
+	portEXIT_CRITICAL(&txMux_);
+	if (frame.length == 0) {
+		pong();
+	} else if (uart_.writeToEms(frame.data.data(), frame.length)) {
+		txNotConfirmed_.fetch_add(1, std::memory_order_relaxed);
+		txFrames_.fetch_add(1, std::memory_order_relaxed);
+	}
+	// Includes the intentionally paced UART write, from poll recognition to return.
+	const auto elapsed = static_cast<uint32_t>(esp_timer_get_time() - started);
+	auto maximum = maxPollServiceUs_.load(std::memory_order_relaxed);
+	while (maximum < elapsed && !maxPollServiceUs_.compare_exchange_weak(maximum, elapsed, std::memory_order_relaxed)) {}
 	return true;
 }
 
-void EmsController::processTelegram(uint8_t *data, uint8_t length) { // runs on uart thread - log only in verbose mode
-	// telegram always ends with BRK - \0
-
-	if (length == 2 && !(data[0] & 0x80)) { // polling if 0 byte is not masked, if masked then it is poll response
+void EmsController::processTelegram(uint8_t *data, uint8_t length) {
+	// Only the UART task updates confirmation accounting, including recovery.
+	const auto resets = uart_.resets.load(std::memory_order_relaxed);
+	if (uartResetsSeen_ != resets) {
+		uartResetsSeen_ = resets;
+		txNotConfirmed_.store(0, std::memory_order_relaxed);
+	}
+	// UART context: answer polls immediately; copy ordinary frames without waiting.
+	if (length == 2 && !(data[0] & 0x80)) {
 		processPoll(data[0]);
 		return;
-	} else if (length < 7) { // minimum telegram length is 6 bytes + 1 byte BRK
+	}
+	if (length < 7) {
 		return;
 	}
+	// Echo accounting must not depend on loop()/the diagnostic logger keeping up.
+	if (data[1] != 0 && (data[1] & 0x7F) != deviceId_) {
+		if ((data[0] & 0x7F) == deviceId_ && txNotConfirmed_.load(std::memory_order_relaxed) > 0) {
+			txNotConfirmed_.fetch_sub(1, std::memory_order_relaxed);
+		}
+		// Cache the diagnostic setting in loop(); never call the logger here.
+		if (!captureForeignTelegrams_.load(std::memory_order_relaxed)) {
+			return;
+		}
+	}
+	if (!telegramsToProcess_.push(data, length)) {
+		rxDropped_.fetch_add(1, std::memory_order_relaxed);
+	}
+}
 
+void EmsController::decodeTelegram(uint8_t *data, uint8_t length) {
 	if (log_->isFeatureEnabled(verboseFeature())) {
 		DBGLOGFD(log_, verboseFeature(), "processTelegram (%ld): ", length);
 		for (size_t i = 0; i < length; ++i) {
@@ -229,9 +296,6 @@ void EmsController::processTelegram(uint8_t *data, uint8_t length) { // runs on 
 	if (data[1] != 0 && ((data[1] & 0x7F) != deviceId_)) {
 		if ((data[0] & 0x7F) == deviceId_) {
 			DBGLOGFD(log_, verboseFeature(), "Telegram sent from us. Debug follows:\n");
-			if (txNotConfirmed_ > 0) {
-				txNotConfirmed_--;
-			}
 			// TODO validate sent telegrams by ID?
 		} else {
 			DBGLOGFD(log_, verboseFeature(), "Telegram not for us. Src: 0x%2.2X Dest: 0x%2.2X, debug follows:\n", data[0] & 0x7F, data[1] & 0x7F);
@@ -254,43 +318,54 @@ void EmsController::processTelegram(uint8_t *data, uint8_t length) { // runs on 
 	try {
 		EmsTelegram telegram = EmsTelegram::getFromRawData(*log_, verboseFeature_, data, length - 1);
 		telegram.logDebug(*log_, logFeature_);
-		std::lock_guard<std::mutex> lock(telegramProcessingMutex_);
-		telegramsToProcess_.push(std::move(telegram));
+		if (telegram.getOperationType() == EmsTelegram::operation_t::READ) {
+			processReadRequest(telegram);
+		} else {
+			std::list<std::function<void(EmsTelegram const &)>> processors;
+			{
+				std::lock_guard<std::mutex> lock(telegramProcessorsMutex_);
+				auto found = telegramProcessors_.find(telegram.getTypeId());
+				if (found != telegramProcessors_.end()) {
+					processors = found->second;
+				}
+			}
+			for (auto const &processor : processors) {
+				processor(telegram);
+			}
+			if (processors.empty()) {
+				DBGLOGFD(log_, logFeature_, "Unknown telegram ID: 0x%4.4X\n", telegram.getTypeId());
+			}
+		}
 	} catch (std::exception const &e) {
 		DBGLOGFD(log_, fatalFeature(), "EmsController: error decoding telegram: %s\n", e.what());
 	}
-
 }
 
 void EmsController::processTelegrams() {
-	std::unique_lock<std::mutex> lock(telegramProcessingMutex_);
-	if (telegramsToProcess_.empty()) {
-		return;
-	} else {
-		DBGLOGFD(log_, logFeature_, "EmsController::processTelegrams size: %zu\n", telegramsToProcess_.size());
-
-		do {
-			EmsTelegram telegram = std::move(telegramsToProcess_.front());
-			telegramsToProcess_.pop();
-			lock.unlock();
-
-			if (telegram.getOperationType() == EmsTelegram::operation_t::READ) {
-				processReadRequest(telegram);
-			} else {
-				std::lock_guard<std::mutex> lock(telegramProcessorsMutex_);
-				auto processors = telegramProcessors_.find(telegram.getTypeId());
-				if (processors != telegramProcessors_.end()) {
-					for (auto const &processor : processors->second) {
-						processor(telegram);
-					}
-				} else {
-					DBGLOGFD(log_, logFeature_, "Unknown telegram ID: 0x%4.4X\n", telegram.getTypeId());
-				}
-			}
-
-			lock.lock();
-		} while (!telegramsToProcess_.empty());
+	EmsRawFrame frame;
+	// Bound the work per loop even when the UART producer stays busy.
+	for (int i = 0; i < maxTelegramQueueSize && telegramsToProcess_.pop(frame); ++i) {
+		decodeTelegram(frame.data.data(), frame.length);
 	}
+}
+
+void EmsController::reportStats() {
+	const auto now = millis();
+	if (!ib::millisDurationPassed(now, lastStatsMillis_, 30000ul)) {
+		return;
+	}
+	lastStatsMillis_ = now;
+	DBGLOGFD(log_, logFeature_, "EMS totals: poll=%lu tx=%lu unconfirmed=%zu rx_drop=%lu uart_err=%lu timeout=%lu resets=%lu fwd_err=%lu fwd_drop=%lu poll_service_max_us=%lu\n",
+		static_cast<unsigned long>(polls_.load(std::memory_order_relaxed)),
+		static_cast<unsigned long>(txFrames_.load(std::memory_order_relaxed)),
+		txNotConfirmed_.load(std::memory_order_relaxed),
+		static_cast<unsigned long>(rxDropped_.load(std::memory_order_relaxed)),
+		static_cast<unsigned long>(uart_.rxErrors.load(std::memory_order_relaxed)),
+		static_cast<unsigned long>(uart_.rxTimeouts.load(std::memory_order_relaxed)),
+		static_cast<unsigned long>(uart_.resets.load(std::memory_order_relaxed)),
+		static_cast<unsigned long>(uart_.forwarderErrors()),
+		static_cast<unsigned long>(uart_.forwarderDropped()),
+		static_cast<unsigned long>(maxPollServiceUs_.exchange(0, std::memory_order_relaxed)));
 }
 
 void EmsController::processReadRequest(EmsTelegram const &telegram) {
