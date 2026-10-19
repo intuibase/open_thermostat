@@ -16,6 +16,10 @@ static void fetchTask(void *pvParameters);
 
 class OpenWeather {
 public:
+	// ESP-IDF specifies task stack sizes in bytes. HTTP, JSON number parsing
+	// and formatted logging need more than the previous 2500-byte budget.
+	static constexpr uint32_t fetchTaskStackBytes = 4 * 1024;
+
 	ib::logger::LoggerInterface::LogFeatureType getLogFeature() const { return logFeature_; }
 	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
 	OpenWeather(std::shared_ptr<ib::logger::LoggerInterface> log, config::OpenWeatherConfig config) : log_(std::move(log)), config_(std::move(config)), query_(buildQuery()), lastFetch_(0) {
@@ -42,7 +46,9 @@ public:
 		DBGLOGFD(log_, logFeature_, "Requesting temperature, last: %ld, now: %ld\n", lastFetch_, now);
 		lastFetch_ = now;
 
-		xTaskCreate(heating::openweather::fetchTask, "OWTask", 2500, this, 1, NULL);
+		if (xTaskCreate(heating::openweather::fetchTask, "OWTask", fetchTaskStackBytes, this, 1, NULL) != pdPASS) {
+			DBGLOGFD(log_, logFeature_, "Unable to create OWTask (%lu stack bytes)\n", static_cast<unsigned long>(fetchTaskStackBytes));
+		}
 	}
 
 	std::string getStatus() const {
@@ -145,7 +151,7 @@ namespace openweather {
 static void fetchTask(void *pvParameters) {
 	auto ow = reinterpret_cast<OpenWeather *>(pvParameters);
 	ow->getData();
-	DBGLOGFD(ow->getLogger(), ow->getLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), millis()/1000);
+	DBGLOGFD(ow->getLogger(), ow->getLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinFreeStackBytes: %u UpTime: %lds\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)), millis()/1000);
 	vTaskDelete(NULL);
 }
 }

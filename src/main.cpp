@@ -141,7 +141,9 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 		WiFi.begin(wifiConfig.ssid.c_str(), pass);
 
 		WiFi.setHostname(networkConfig.hostname.c_str());
+#if ESP_ARDUINO_VERSION_MAJOR < 3
 		WiFi.setAutoConnect(true);
+#endif
 		WiFi.setAutoReconnect(true);
 
 		WiFi.onEvent(WiFiGotIP, arduino_event_id_t::ARDUINO_EVENT_WIFI_STA_GOT_IP);

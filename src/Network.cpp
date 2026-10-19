@@ -2,7 +2,7 @@
 
 #include <WiFi.h>
 
-#include "Network.h"
+#include "ThermostatNetwork.h"
 #include "config.h"
 
 namespace heating {

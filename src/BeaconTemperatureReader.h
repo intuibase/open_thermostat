@@ -6,7 +6,7 @@
 
 #include <NimBLEDevice.h>
 #include <NimBLEAdvertisedDevice.h>
-#include <esp_gap_ble_api.h>
+#include <esp_bt.h>
 
 #include <atomic>
 #include <functional>
@@ -121,15 +121,15 @@ public:
 			frame += 2; // skip type and length bytes
 			// DBGLOGFD(log_, logFeature_, "Frame type: %d 0x%02X %d\n", frameType, frameType, frameLen);
 			switch (frameType) {
-				case ESP_BLE_AD_TYPE_NAME_SHORT:
-				case ESP_BLE_AD_TYPE_NAME_CMPL:
+				case BLE_HS_ADV_TYPE_INCOMP_NAME:
+				case BLE_HS_ADV_TYPE_COMP_NAME:
 					// DBGLOGFD(log_, logFeature_, "Device name: %s\n", std::string((char*)frame, frameLen).c_str());
 					deviceName = {reinterpret_cast<char *>(frame), frameLen};
 					if (deviceName != "MJ_HT_V1" && deviceName.substr(0, 4) != "ATC_") {
 						return; // don't parse service data
 					}
 					break;
-				case ESP_BLE_AD_TYPE_SERVICE_DATA:
+				case BLE_HS_ADV_TYPE_SVC_DATA_UUID16:
 					if (frameLen < 2) {
 						return;
 					}
