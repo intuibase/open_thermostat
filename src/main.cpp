@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <time.h>
+#include <atomic>
+#include <esp_sntp.h>
 
 #include <WiFi.h>
 #include <SPIFFS.h>
@@ -20,6 +22,8 @@
 #define ONBOARD_LED 2
 
 namespace {
+std::atomic<bool> ntpTimeUpdated{false};
+
 ib::logger::LoggerInterface::LogFeatureType appLogFeature() {
 	static const auto id = heating::logger->addFeature("App");
 	return id;
@@ -45,8 +49,14 @@ void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
 			heating::rest->restart();
 		}
 
-		auto networkConfig = config::getNetworkConfig();
+		// SNTP retains the hostname pointer for asynchronous retries and updates.
+		// Device settings take effect after reboot; keep this storage alive until then.
+		static const auto networkConfig = config::getNetworkConfig();
 		if (networkConfig.ntpEnabled) {
+			sntp_set_time_sync_notification_cb([](struct timeval *) {
+				// Runs in the network task: defer logging and RTC I/O to loop().
+				ntpTimeUpdated.store(true, std::memory_order_relaxed);
+			});
 			if (!networkConfig.timeZone.empty()) {
 				DBGLOGFI(heating::logger, appLogFeature(), "Configuring timezone time '%s' server: '%s' ", networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
 				configTzTime(networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
@@ -61,10 +71,6 @@ void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
 		if (!getLocalTime(&timeinfo)) {
 			DBGLOGFI(heating::logger, appLogFeature(), "Failed to obtain network time. Setting up from RTC\n");
 			heating::setLocalTimeFromRTC(networkConfig.timeZone, networkConfig.ntpUtcOffset, networkConfig.ntpDaylightUtcOffset);
-		} else if (networkConfig.ntpEnabled) {
-			DBGLOGFI(heating::logger, appLogFeature(), "%s", asctime(&timeinfo));
-			DBGLOGFI(heating::logger, appLogFeature(), "\nObtained network time, setting up RTC\n");
-			heating::setRTCfromLocalTime();
 		}
 
 		if (!MDNS.begin(WiFi.getHostname())) { //CONFIG_MDNS_TASK_STACK_SIZE 4096
@@ -234,6 +240,10 @@ void setup() {
 
 void loop() {
 	static unsigned long lastMillis = 0;
+	if (ntpTimeUpdated.exchange(false, std::memory_order_relaxed)) {
+		DBGLOGFI(heating::logger, appLogFeature(), "NTP synchronized, updating RTC\n");
+		heating::setRTCfromLocalTime();
+	}
 
 	auto now = millis();
 	if (ib::millisDurationPassed(now, lastMillis, 10000)) {
