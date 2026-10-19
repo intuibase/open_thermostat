@@ -6,6 +6,7 @@
 #include <hal/uart_types.h>
 #include <soc/uart_reg.h>
 #include <array>
+#include <atomic>
 
 #include <functional>
 
@@ -85,15 +86,13 @@ public:
 		return true;
 	}
 
-	void reset() {
-		DBGLOGFD(log_, logFeature_, "reset\n");
-		DBGLOGFD(log_, logFeature_, "EMS rx: %d tx: %d\n", rxPin_, txPin_);
+	void requestReset() { resetRequested_.store(true, std::memory_order_relaxed); }
 
-		uart_wait_tx_done(UartSlot, (TickType_t)1000 / portTICK_PERIOD_MS); //(UART_NUM_MAX -1));
-		uart_flush(UartSlot);
-		xQueueReset(uartQueue_);
-		uart_send_break(UartSlot);
-	}
+	uint32_t forwarderErrors() const { return forwarder_.rxErrors.load(std::memory_order_relaxed); }
+	uint32_t forwarderDropped() const { return forwarder_.dropped.load(std::memory_order_relaxed); }
+	std::atomic<uint32_t> rxErrors{0};
+	std::atomic<uint32_t> rxTimeouts{0};
+	std::atomic<uint32_t> resets{0};
 
 private:
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
@@ -113,8 +112,7 @@ private:
 			// DBGLOGFD(log_, logFeature_, "Polling device %d\n", buffer_[0]);
 			auto data = forwarder_.getDataToWriteToEmsBus(buffer_[0]); // we have data from that id, send
 			if (data) {
-				DBGLOGFD(log_, logFeature_, "We have data forwarded from device 0x%2.2X. Size %d. Sending to EMSBUS\n", buffer_[0], data->size());
-				writeToEms(data->data(), data->size());
+				writeToEms(data->data.data(), data->length);
 				performProcess = false; // it was a poll to forwarded device, we responded, so this poll is definitely not for us
 			}
 		}
@@ -123,7 +121,7 @@ private:
 			processTelegram_(buffer_.data(), size);
 		}
 
-		if (forwarder_.isEnabled()) {
+		if (forwarder_.isEnabled() && size > 1) {
 			forwarder_.writeToEms(buffer_.data(), size - 1);
 		}
 	}
@@ -136,6 +134,15 @@ private:
 		return static_cast<uint32_t>(buffer_.size());
 	}
 
+	// Recovery runs only in the UART task, between complete event handlers.
+	void performReset() {
+		uart_flush_input(UartSlot);
+		xQueueReset(uartQueue_);
+		uart_send_break(UartSlot);
+		resets.fetch_add(1, std::memory_order_relaxed);
+	}
+
+	std::atomic<bool> resetRequested_{false};
 	QueueHandle_t uartQueue_;
 	std::array<uint8_t, EmsMaxTelegramSize> buffer_;
 	processTelegram_t processTelegram_;
@@ -156,67 +163,57 @@ static void uart_event_task(void *pvParameters) {
 	constexpr auto rxTimeoutMs = 5000;
 
 	for (;;) {
-		if (xQueueReceive(bus->getQueueHandle(), (void *)&event, (TickType_t)rxTimeoutMs / portTICK_PERIOD_MS)) { //(TickType_t)portMAX_DELAY)) {
-			switch (event.type) {
-			//Event of UART receving data
-			/*We'd better handler data event fast, there would be much more data events than
-			other types of events. If we take too much time on data event, the queue might
-			be full.*/
-			case UART_DATA:
-				length += event.size;
-				break;
-			//Event of HW FIFO overflow detected
-			//Event of UART RX break detected
-			case UART_BREAK:
-				// ESP_LOGI(TAG, "uart rx break");
-				if (length > bus->getDataBufferSize()) {
-					// read trash data
-					while(length > 0) {
-						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Message too long, reading %ld/%ld\n", std::min(length, bus->getDataBufferSize()), length);
-						uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), std::min(length, bus->getDataBufferSize()), portMAX_DELAY);
-						length -= std::min(length, bus->getDataBufferSize());
-					}
-				} else {
-					if (uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), length, portMAX_DELAY) != -1) {
-						bus->processTelegram(length);
-					} else {
-						DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "read failed\n");
-					}
+		if (bus->resetRequested_.exchange(false, std::memory_order_relaxed)) {
+			bus->performReset();
+			length = 0;
+		}
+		if (!xQueueReceive(bus->getQueueHandle(), &event, pdMS_TO_TICKS(rxTimeoutMs))) {
+			bus->rxTimeouts.fetch_add(1, std::memory_order_relaxed);
+			bus->requestReset();
+			continue;
+		}
+		switch (event.type) {
+		case UART_DATA:
+			length += event.size;
+			break;
+		case UART_BREAK: {
+			// Events describe bytes already buffered by the driver. Never wait for
+			// missing bytes: discard a partial/oversized frame and resync at BREAK.
+			const bool validSize = length > 0 && length <= bus->getDataBufferSize();
+			bool complete = validSize;
+			while (length > 0) {
+				const auto chunk = std::min(length, bus->getDataBufferSize());
+				const int read = uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), chunk, 0);
+				if (read != static_cast<int>(chunk)) {
+					complete = false;
+					uart_flush_input(bus->getUartSlot());
+					xQueueReset(bus->getQueueHandle());
+					break;
 				}
-				length = 0;
-				break;
-			case UART_FIFO_OVF:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event fifo overflow\n", "");
-				// If fifo overflow happened, you should consider adding flow control for your application.
-				// The ISR has already reset the rx FIFO,
-				// As an example, we directly flush the rx buffer here in order to read more data.
-				uart_flush_input(bus->getUartSlot());
-				xQueueReset(bus->getQueueHandle());
-				length = 0;
-				break;
-			//Event of UART ring buffer full
-			case UART_BUFFER_FULL:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event buffer full\n", "");
-				// If buffer full happened, you should consider increasing your buffer size
-				// As an example, we directly flush the rx buffer here in order to read more data.
-				uart_flush_input(bus->getUartSlot());
-				xQueueReset(bus->getQueueHandle());
-				length = 0;
-				break;
-			case UART_PARITY_ERR:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "parity check error\n", "");
-				break;
-			case UART_FRAME_ERR:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "frame error\n", "");
-				break;
-			//Others
-			default:
-				DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Event %d\n", event.type);
-				break;
+				length -= chunk;
+				if (complete) {
+					bus->processTelegram(chunk);
+				}
 			}
-		} else {
-			DBGLOGFD(bus->getLogger(), bus->getLogFeature(), "Read queue timeout\n");
-			bus->reset();
+			if (!complete) {
+				bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			}
+			length = 0;
+			break;
+		}
+		case UART_FIFO_OVF:
+		case UART_BUFFER_FULL:
+			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			uart_flush_input(bus->getUartSlot());
+			xQueueReset(bus->getQueueHandle());
+			length = 0;
+			break;
+		case UART_PARITY_ERR:
+		case UART_FRAME_ERR:
+			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			break;
+		default:
+			break;
 		}
 	}
 	vTaskDelete(nullptr);
