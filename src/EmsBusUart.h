@@ -24,7 +24,7 @@ public:
 	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
 	using processTelegram_t = std::function<void(uint8_t *, uint8_t)>;
 	static constexpr int EmsBusBaudrate = 9600;
-	static constexpr int UartSlot = 2;
+	static constexpr uart_port_t UartSlot = UART_NUM_2;
 	static constexpr size_t EmsMaxTelegramSize = 33;
 
 	EmsBusUart(std::shared_ptr<ib::logger::LoggerInterface> log, processTelegram_t processTelegram) : log_(log), processTelegram_(processTelegram), forwarder_(std::move(log)) {
@@ -102,7 +102,7 @@ private:
 		return uartQueue_;
 	}
 
-	constexpr int getUartSlot() {
+	constexpr uart_port_t getUartSlot() {
 		return UartSlot;
 	}
 

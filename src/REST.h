@@ -3,7 +3,7 @@
 
 #include <esp_ota_ops.h>
 #include <esp_spi_flash.h>
-#include <mbedtls/sha256.h>
+#include "Sha256Compat.h"
 #include <SPIFFS.h>
 #include <WebServer.h>
 #include <Wire.h>
@@ -14,7 +14,7 @@
 #include "HeatingController.h"
 #include "Filesystem.h"
 
-#include "Network.h"
+#include "ThermostatNetwork.h"
 #include <algorithm>
 #include <iomanip>
 #include <array>
@@ -1081,7 +1081,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 			ota_.expectedSize = fileSize;
 			ota_.dualFilesystem = filesystem.hasDualPartitions();
 			mbedtls_sha256_init(&ota_.checksum);
-			if (mbedtls_sha256_starts_ret(&ota_.checksum, 0) != 0) {
+			if (crypto::sha256Start(&ota_.checksum, 0) != 0) {
 				ota_.error = ESP_FAIL;
 				ota_.errorMessage = "FS checksum initialization failed"sv;
 				return;
@@ -1122,7 +1122,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 				DBGLOGFD(log_, logFeature_, "handleOTAFFSUpdate Failed to write SPIFFS partition: %d\n", ota_.error);
 				return;
 			}
-			if (mbedtls_sha256_update_ret(&ota_.checksum, upload.buf, upload.currentSize) != 0) {
+			if (crypto::sha256Update(&ota_.checksum, upload.buf, upload.currentSize) != 0) {
 				ota_.error = ESP_FAIL;
 				ota_.errorMessage = "FS checksum update failed"sv;
 				return;
@@ -1142,7 +1142,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 				return;
 			}
 			std::array<unsigned char, 32> uploadChecksum{};
-			if (!ota_.checksumStarted || mbedtls_sha256_finish_ret(&ota_.checksum, uploadChecksum.data()) != 0) {
+			if (!ota_.checksumStarted || crypto::sha256Finish(&ota_.checksum, uploadChecksum.data()) != 0) {
 				finishFilesystemChecksum();
 				ota_.error = ESP_FAIL;
 				ota_.errorMessage = "FS checksum finalization failed"sv;
@@ -1191,7 +1191,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 
 		mbedtls_sha256_context checksum;
 		mbedtls_sha256_init(&checksum);
-		if (mbedtls_sha256_starts_ret(&checksum, 0) != 0) {
+		if (crypto::sha256Start(&checksum, 0) != 0) {
 			mbedtls_sha256_free(&checksum);
 			return false;
 		}
@@ -1199,7 +1199,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 		for (size_t offset = 0; offset < size; offset += SPI_FLASH_SEC_SIZE) {
 			auto chunkSize = std::min(static_cast<size_t>(SPI_FLASH_SEC_SIZE), size - offset);
 			if (esp_partition_read(partition, offset, buffer.get(), chunkSize) != ESP_OK ||
-				mbedtls_sha256_update_ret(&checksum, buffer.get(), chunkSize) != 0) {
+				crypto::sha256Update(&checksum, buffer.get(), chunkSize) != 0) {
 				mbedtls_sha256_free(&checksum);
 				return false;
 			}
@@ -1207,7 +1207,7 @@ button.onclick=()=>{if(!file.files.length){status.textContent='Select spiffs.bin
 		}
 
 		std::array<unsigned char, 32> actual{};
-		auto result = mbedtls_sha256_finish_ret(&checksum, actual.data());
+		auto result = crypto::sha256Finish(&checksum, actual.data());
 		mbedtls_sha256_free(&checksum);
 		return result == 0 && std::memcmp(actual.data(), expected.data(), actual.size()) == 0;
 	}

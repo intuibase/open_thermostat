@@ -27,7 +27,7 @@ public:
 		}
 	}
 	static constexpr int EmsBusBaudrate = 9600;
-	static constexpr int UartSlot = 1;
+	static constexpr uart_port_t UartSlot = UART_NUM_1;
 	static constexpr size_t EmsMaxTelegramSize = 33;
 
 	static constexpr size_t MaxForwarderQueueSize = 10;
@@ -88,7 +88,7 @@ private:
 		return uartQueue_;
 	}
 
-	constexpr int getUartSlot() {
+	constexpr uart_port_t getUartSlot() {
 		return UartSlot;
 	}
 
