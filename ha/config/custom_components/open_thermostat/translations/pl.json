@@ -27,8 +27,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "Dashboard OpenThermostat",
-        "data": {"create_dashboard": "Utwórz dashboard OpenThermostat"}
+        "title": "Ustawienia OpenThermostat",
+        "data": {
+          "create_dashboard": "Utwórz dashboard OpenThermostat",
+          "battery_alerts": "Alerty słabej baterii",
+          "battery_threshold": "Próg słabej baterii",
+          "battery_reminder": "Przypominaj codziennie o słabych bateriach",
+          "battery_reminder_time": "Godzina przypomnienia",
+          "notify_service": "Dodatkowa usługa powiadomień"
+        },
+        "description": "Alert offline jest zawsze aktywny. Powiadomienia pojawiają się w HA; opcjonalnie wybierz dodatkową usługę (np. telefon). Czujniki baterii są wykrywane automatycznie. Godzina przypomnienia używa strefy czasowej HA."
       }
     }
   },
