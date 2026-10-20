@@ -130,12 +130,13 @@ public:
 				// valve should be closed only if temperature is in upper/lower margin - in case of no samples, valve should remain open but should not trigger or continue heating
 				if (roomStatus == Room::TemperatureStatus::TEMPERATURE_OK) {
 					auto valves = room->getValves();
-					if (log_->isFeatureEnabled(logFeature_)) {
-						DBGLOGFD(log_, logFeature_, "  adding valves to close for room %s valves: ", room->getName().c_str());
+					if (log_ && log_->doesFeatureMeetsLevelCondition(ib::logger::LoggerInterface::LogLevel::DEBUG, logFeature_)) {
+						std::string valveList;
 						for (auto const &valve : valves) {
-							DBGLOGFI(log_, logFeature_, "'%s' ", valve.c_str());
+							if (!valveList.empty()) valveList += ' ';
+							valveList += "'" + valve + "'";
 						}
-						DBGLOGFI(log_, logFeature_, "");
+						DBGLOGFD(log_, logFeature_, "  adding valves to close for room %s valves: %s\n", room->getName().c_str(), valveList.c_str());
 					}
 
 					for (auto const &valve : valves) {
@@ -373,7 +374,7 @@ private:
 
 	void resetIfNoDataForLongTime() {
 		if (lastReadTemperatureCounter_.durationPassed()) {
-			DBGLOGFI(log_, logFeature_, "RESTARTING DUE TO NO DATA FOR OVER 5m");
+			DBGLOGFI(log_, logFeature_, "RESTARTING DUE TO NO DATA FOR OVER 5m\n");
 			ESP.restart();
 		}
 	}

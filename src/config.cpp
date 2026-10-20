@@ -183,7 +183,7 @@ RTCPins getRTCPins() {
 	file.close();
 
 	if (!root) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json\n");
 		return {};
 	}
 
@@ -220,7 +220,7 @@ EmsPins getEmsPins() {
 	file.close();
 
 	if (!root) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json\n");
 		return {};
 	}
 
@@ -257,7 +257,7 @@ std::optional<EmsForwarderPins> getEmsForwarderPins() {
 	file.close();
 
 	if (!root) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json\n");
 		return {};
 	}
 
@@ -292,13 +292,13 @@ std::vector<PinConfig> getValvePins() {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(file.readString().c_str()), &cJSON_Delete);
 	file.close();
 	if (!root) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json\n");
 		return {};
 	}
 
 	auto valve_pins = cJSON_GetObjectItem(root.get(), "valve_pins");
 	if (!valve_pins || valve_pins->type != cJSON_Array) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. valve_pins");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json. valve_pins\n");
 		return {};
 	}
 
@@ -405,7 +405,7 @@ WiFiConfig getWiFiConfig() {
 	file.close();
 
 	if (!network || network->type != cJSON_Object) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing wifi config");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing wifi config\n");
 		return {};
 	}
 
@@ -634,7 +634,7 @@ BoilerConfig getBoilerConfig() {
 std::string parseProgram(std::string const &data) {
 	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(data.c_str()), &cJSON_Delete);
 	if (!root) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json");
+		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing json\n");
 		return {};
 	}
 	return json::getString(root.get(), "program");

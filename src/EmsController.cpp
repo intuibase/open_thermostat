@@ -306,12 +306,16 @@ void EmsController::processTelegram(uint8_t *data, uint8_t length) {
 }
 
 void EmsController::decodeTelegram(uint8_t *data, uint8_t length) {
-	if (log_->isFeatureEnabled(verboseFeature())) {
-		DBGLOGFD(log_, verboseFeature(), "processTelegram (%ld): ", length);
+	if (log_ && log_->doesFeatureMeetsLevelCondition(ib::logger::LoggerInterface::LogLevel::DEBUG, verboseFeature())) {
+		static constexpr char hex[] = "0123456789ABCDEF";
+		std::string telegram;
+		telegram.reserve(static_cast<size_t>(length) * 3);
 		for (size_t i = 0; i < length; ++i) {
-			DBGLOGFI(log_, verboseFeature(), "%2.2X ", data[i]);
+			telegram += hex[data[i] >> 4];
+			telegram += hex[data[i] & 0x0F];
+			telegram += ' ';
 		}
-		DBGLOGFI(log_, verboseFeature(), "\n");
+		DBGLOGFD(log_, verboseFeature(), "processTelegram (%u): %s\n", static_cast<unsigned>(length), telegram.c_str());
 	}
 
 	if (data[1] != 0 && ((data[1] & 0x7F) != deviceId_)) {
