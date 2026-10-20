@@ -187,6 +187,7 @@ void EmsController::reset() {
 	txHead_ = 0;
 	txSize_ = 0;
 	portEXIT_CRITICAL(&txMux_);
+	txDropped_.fetch_add(dropped, std::memory_order_relaxed);
 	// UART recovery is performed by its owner, never concurrently with RX/TX.
 	uart_.requestReset();
 	DBGLOGFD(log_, fatalFeature(), "EmsController::reset %zu TX dropped\n", dropped);
@@ -204,6 +205,7 @@ void EmsController::enqueueTelegramToSend(EmsTelegram telegram, bool front) {
 	frame.length = static_cast<uint8_t>(encoded.size());
 	std::copy(encoded.begin(), encoded.end(), frame.data.begin());
 	bool full;
+	size_t depth;
 	portENTER_CRITICAL(&txMux_);
 	full = txSize_ == telegramsToSend_.size();
 	if (!full) {
@@ -214,8 +216,11 @@ void EmsController::enqueueTelegramToSend(EmsTelegram telegram, bool front) {
 		telegramsToSend_[(txHead_ + (front ? txSize_ : 0)) % telegramsToSend_.size()] = frame;
 		++txSize_;
 	}
+	depth = txSize_;
 	portEXIT_CRITICAL(&txMux_);
+	txHighWater_.observe(depth);
 	if (full) {
+		txDropped_.fetch_add(1, std::memory_order_relaxed);
 		resetRequested_.store(true, std::memory_order_relaxed);
 		DBGLOGFD(log_, fatalFeature(), "EMS TX queue full\n");
 	} else if (log_) {
@@ -241,22 +246,38 @@ bool EmsController::processPoll(uint8_t deviceId) {
 		--txSize_;
 	}
 	portEXIT_CRITICAL(&txMux_);
-	if (frame.length == 0) {
-		pong();
-	} else if (uart_.writeToEms(frame.data.data(), frame.length)) {
-		txNotConfirmed_.fetch_add(1, std::memory_order_relaxed);
-		txFrames_.fetch_add(1, std::memory_order_relaxed);
+	const uint8_t response = deviceId_ | emsMask_.value_or(0);
+	int64_t firstWriteUs = 0;
+	const bool written = frame.length == 0
+		? uart_.writeToEms(&response, 1, &firstWriteUs)
+		: uart_.writeToEms(frame.data.data(), frame.length, &firstWriteUs);
+	const auto finished = esp_timer_get_time();
+	if (written) {
+		if (frame.length == 0) {
+			pongs_.fetch_add(1, std::memory_order_relaxed);
+		} else {
+			txNotConfirmed_.fetch_add(1, std::memory_order_relaxed);
+			txFrames_.fetch_add(1, std::memory_order_relaxed);
+		}
+	} else if (frame.length != 0) {
+		txDropped_.fetch_add(1, std::memory_order_relaxed);
 	}
-	// Includes the intentionally paced UART write, from poll recognition to return.
-	const auto elapsed = static_cast<uint32_t>(esp_timer_get_time() - started);
-	auto maximum = maxPollServiceUs_.load(std::memory_order_relaxed);
-	while (maximum < elapsed && !maxPollServiceUs_.compare_exchange_weak(maximum, elapsed, std::memory_order_relaxed)) {}
+	if (firstWriteUs != 0) {
+		const auto startDelay = static_cast<uint32_t>(firstWriteUs - started);
+		maxPollStartUs_.observe(startDelay);
+		const auto threshold = slowPollThresholdUs_.load(std::memory_order_relaxed);
+		if (threshold != 0 && startDelay > threshold) {
+			slowPolls_.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+	// Includes intentionally paced transmission, but excludes metric updates.
+	maxPollServiceUs_.observe(static_cast<uint32_t>(finished - started));
 	return true;
 }
 
 void EmsController::processTelegram(uint8_t *data, uint8_t length) {
 	// Only the UART task updates confirmation accounting, including recovery.
-	const auto resets = uart_.resets.load(std::memory_order_relaxed);
+	const auto resets = uart_.resetCount();
 	if (uartResetsSeen_ != resets) {
 		uartResetsSeen_ = resets;
 		txNotConfirmed_.store(0, std::memory_order_relaxed);
@@ -305,6 +326,7 @@ void EmsController::decodeTelegram(uint8_t *data, uint8_t length) {
 			try {
 				EmsTelegram::getFromRawData(*log_, verboseFeature_, data, length - 1).logDebug(*log_, logFeature_);
 			} catch (std::exception const &e) {
+				decodeErrors_.fetch_add(1, std::memory_order_relaxed);
 				DBGLOGFD(log_, fatalFeature(), "processTelegram for debug. Error decoding telegram: %s\n", e.what());
 			}
 		}
@@ -337,6 +359,7 @@ void EmsController::decodeTelegram(uint8_t *data, uint8_t length) {
 			}
 		}
 	} catch (std::exception const &e) {
+		decodeErrors_.fetch_add(1, std::memory_order_relaxed);
 		DBGLOGFD(log_, fatalFeature(), "EmsController: error decoding telegram: %s\n", e.what());
 	}
 }
@@ -349,23 +372,62 @@ void EmsController::processTelegrams() {
 	}
 }
 
+EmsControllerStatsSnapshot EmsController::getStatsSnapshot() const {
+	return {polls_.load(std::memory_order_relaxed), txFrames_.load(std::memory_order_relaxed),
+		pongs_.load(std::memory_order_relaxed), rxDropped_.load(std::memory_order_relaxed),
+		txDropped_.load(std::memory_order_relaxed), decodeErrors_.load(std::memory_order_relaxed),
+		slowPolls_.load(std::memory_order_relaxed), telegramsToProcess_.highWaterMark(), txHighWater_.load(),
+		maxPollStartUs_.load(), maxPollServiceUs_.load(), slowPollThresholdUs_.load(std::memory_order_relaxed)};
+}
+
+void EmsController::getDiagnostics(std::ostream &ss) const {
+	auto current = getStatsSnapshot();
+	// MQTT never resets a measurement window. Use the last completed report.
+	current.maxPollStartUs = previousStats_.maxPollStartUs;
+	current.maxPollServiceUs = previousStats_.maxPollServiceUs;
+	writeEmsDiagnostics(ss, current, uart_.getStatsSnapshot(), txNotConfirmed_.load(std::memory_order_relaxed),
+		uart_.forwarderErrors(), uart_.forwarderDropped(), lastStatsMillis_, lastStatsIntervalMs_,
+		maxTelegramQueueSize, EmsRawFrame::capacity, EmsBusUartForwarder::PoolCapacity,
+		EmsBusUartForwarder::MaxForwarderQueueSize, emsConfig_.emsEnabled);
+}
+
 void EmsController::reportStats() {
 	const auto now = millis();
 	if (!ib::millisDurationPassed(now, lastStatsMillis_, 30000ul)) {
 		return;
 	}
+	const auto intervalMs = static_cast<uint32_t>(now - lastStatsMillis_);
+	lastStatsIntervalMs_ = intervalMs;
 	lastStatsMillis_ = now;
-	DBGLOGFD(log_, logFeature_, "EMS totals: poll=%lu tx=%lu unconfirmed=%zu rx_drop=%lu uart_err=%lu timeout=%lu resets=%lu fwd_err=%lu fwd_drop=%lu poll_service_max_us=%lu\n",
-		static_cast<unsigned long>(polls_.load(std::memory_order_relaxed)),
-		static_cast<unsigned long>(txFrames_.load(std::memory_order_relaxed)),
-		txNotConfirmed_.load(std::memory_order_relaxed),
-		static_cast<unsigned long>(rxDropped_.load(std::memory_order_relaxed)),
-		static_cast<unsigned long>(uart_.rxErrors.load(std::memory_order_relaxed)),
-		static_cast<unsigned long>(uart_.rxTimeouts.load(std::memory_order_relaxed)),
-		static_cast<unsigned long>(uart_.resets.load(std::memory_order_relaxed)),
-		static_cast<unsigned long>(uart_.forwarderErrors()),
-		static_cast<unsigned long>(uart_.forwarderDropped()),
-		static_cast<unsigned long>(maxPollServiceUs_.exchange(0, std::memory_order_relaxed)));
+	auto current = getStatsSnapshot();
+	current.maxPollStartUs = maxPollStartUs_.take();
+	current.maxPollServiceUs = maxPollServiceUs_.take();
+	const auto uart = uart_.getStatsSnapshot();
+	const auto forwarderErrors = uart_.forwarderErrors();
+	const auto forwarderDropped = uart_.forwarderDropped();
+	// Unsigned subtraction also handles one counter wrap between reports.
+	auto delta = [](uint32_t value, uint32_t previous) { return static_cast<unsigned long>(value - previous); };
+	DBGLOGFD(log_, logFeature_, "EMS interval_ms=%lu poll=%lu tx=%lu pong=%lu echo_pending=%zu rx_drop=%lu tx_drop=%lu decode_err=%lu rx_hwm=%lu tx_hwm=%lu\n",
+		static_cast<unsigned long>(intervalMs), delta(current.polls, previousStats_.polls),
+		delta(current.txFrames, previousStats_.txFrames), delta(current.pongs, previousStats_.pongs),
+		txNotConfirmed_.load(std::memory_order_relaxed), delta(current.rxDropped, previousStats_.rxDropped),
+		delta(current.txDropped, previousStats_.txDropped), delta(current.decodeErrors, previousStats_.decodeErrors),
+		static_cast<unsigned long>(current.rxHighWater), static_cast<unsigned long>(current.txHighWater));
+	DBGLOGFD(log_, logFeature_, "EMS poll_start_max_us=%lu poll_service_max_us=%lu slow_poll=%lu slow_threshold_us=%lu\n",
+		static_cast<unsigned long>(current.maxPollStartUs), static_cast<unsigned long>(current.maxPollServiceUs),
+		delta(current.slowPolls, previousStats_.slowPolls), static_cast<unsigned long>(current.slowPollThresholdUs));
+	DBGLOGFD(log_, logFeature_, "EMS UART rx=%lu bytes=%lu read_err=%lu length_err=%lu fifo_ovf=%lu buffer_full=%lu parity_err=%lu frame_err=%lu timeout=%lu resets=%lu write_err=%lu fwd_err=%lu fwd_drop=%lu\n",
+		delta(uart.frames, previousUartStats_.frames), delta(uart.bytes, previousUartStats_.bytes),
+		delta(uart.readErrors, previousUartStats_.readErrors), delta(uart.invalidLengths, previousUartStats_.invalidLengths),
+		delta(uart.fifoOverflows, previousUartStats_.fifoOverflows), delta(uart.bufferFull, previousUartStats_.bufferFull),
+		delta(uart.parityErrors, previousUartStats_.parityErrors), delta(uart.frameErrors, previousUartStats_.frameErrors),
+		delta(uart.timeouts, previousUartStats_.timeouts), delta(uart.resets, previousUartStats_.resets),
+		delta(uart.writeErrors, previousUartStats_.writeErrors), delta(forwarderErrors, previousForwarderErrors_),
+		delta(forwarderDropped, previousForwarderDropped_));
+	previousStats_ = current;
+	previousUartStats_ = uart;
+	previousForwarderErrors_ = forwarderErrors;
+	previousForwarderDropped_ = forwarderDropped;
 }
 
 void EmsController::processReadRequest(EmsTelegram const &telegram) {

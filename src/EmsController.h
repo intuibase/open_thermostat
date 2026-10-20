@@ -131,6 +131,12 @@ public:
 
 	explicit EmsController(std::shared_ptr<ib::logger::LoggerInterface> log);
 
+	EmsControllerStatsSnapshot getStatsSnapshot() const;
+	void getDiagnostics(std::ostream &ss) const;
+	// Observational threshold from poll recognition to first UART driver call.
+	// Zero disables slow-poll counting; this is not an EMS protocol deadline.
+	void setSlowPollThresholdUs(uint32_t value) { slowPollThresholdUs_.store(value, std::memory_order_relaxed); }
+
 	void requestStartupData();
 
 	void changeBoilerState(bool turnOnHeating, uint8_t heatingTemperature) {
@@ -208,11 +214,6 @@ private:
 	void processTelegram(uint8_t *data, uint8_t length);
 	bool processPoll(uint8_t deviceId);
 
-	void pong() {
-		uint8_t response = deviceId_ | emsMask_.value_or(0);
-		uart_.writeToEms(&response, 1);
-	}
-
 	void startHeating(uint8_t heatingTemperature);
 	void stopHeating();
 
@@ -234,8 +235,20 @@ private:
 	std::atomic<uint32_t> rxDropped_{0};
 	std::atomic<uint32_t> polls_{0};
 	std::atomic<uint32_t> txFrames_{0};
-	std::atomic<uint32_t> maxPollServiceUs_{0};
+	std::atomic<uint32_t> pongs_{0};
+	std::atomic<uint32_t> txDropped_{0};
+	std::atomic<uint32_t> decodeErrors_{0};
+	std::atomic<uint32_t> slowPolls_{0};
+	std::atomic<uint32_t> slowPollThresholdUs_{1000};
+	EmsMaximum maxPollStartUs_;
+	EmsMaximum maxPollServiceUs_;
+	EmsMaximum txHighWater_;
+	EmsControllerStatsSnapshot previousStats_{};
+	EmsUartStatsSnapshot previousUartStats_{};
+	uint32_t previousForwarderErrors_ = 0;
+	uint32_t previousForwarderDropped_ = 0;
 	unsigned long lastStatsMillis_ = 0;
+	uint32_t lastStatsIntervalMs_ = 0;
 
 	std::mutex telegramProcessorsMutex_;
 	std::unordered_map<uint16_t, std::list<std::function<void(EmsTelegram const &)>>> telegramProcessors_;

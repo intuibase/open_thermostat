@@ -1,0 +1,31 @@
+"""EMS debug fields: cumulative counters and last-window timing measurements."""
+
+# Field, fallback name, measurement kind. Units are assigned by sensor.py.
+EMS_DIAGNOSTIC_METRICS = {
+    "ems_poll": ("poll", "EMS polls", "counter"),
+    "ems_tx": ("tx", "EMS transmitted telegrams", "counter"),
+    "ems_pong": ("pong", "EMS pong responses", "counter"),
+    "ems_rx": ("rx", "EMS received frames", "counter"),
+    "ems_rx_bytes": ("rx_bytes", "EMS received bytes", "counter"),
+    "ems_rx_drop": ("rx_drop", "EMS dropped RX frames", "counter"),
+    "ems_tx_drop": ("tx_drop", "EMS dropped TX frames", "counter"),
+    "ems_decode_err": ("decode_err", "EMS decoding errors", "counter"),
+    "ems_read_err": ("read_err", "EMS UART read errors", "counter"),
+    "ems_length_err": ("length_err", "EMS invalid frame lengths", "counter"),
+    "ems_fifo_ovf": ("fifo_ovf", "EMS UART FIFO overflows", "counter"),
+    "ems_buffer_full": ("buffer_full", "EMS UART buffer overflows", "counter"),
+    "ems_parity_err": ("parity_err", "EMS UART parity errors", "counter"),
+    "ems_frame_err": ("frame_err", "EMS UART framing errors", "counter"),
+    "ems_timeout": ("timeout", "EMS UART receive timeouts", "counter"),
+    "ems_resets": ("resets", "EMS UART resets", "counter"),
+    "ems_write_err": ("write_err", "EMS UART write errors", "counter"),
+    "ems_fwd_err": ("fwd_err", "EMS forwarder errors", "counter"),
+    "ems_fwd_drop": ("fwd_drop", "EMS forwarder dropped frames", "counter"),
+    "ems_slow_poll": ("slow_poll", "EMS slow poll responses", "counter"),
+    "ems_echo_pending": ("echo_pending", "EMS pending transmission echoes", "gauge"),
+    "ems_rx_hwm": ("rx_hwm", "EMS maximum RX queue depth", "gauge"),
+    "ems_tx_hwm": ("tx_hwm", "EMS maximum TX queue depth", "gauge"),
+    "ems_poll_start_max_us": ("poll_start_max_us", "EMS maximum poll response start delay", "duration"),
+    "ems_poll_service_max_us": ("poll_service_max_us", "EMS maximum poll service duration", "duration"),
+    "ems_slow_threshold_us": ("slow_threshold_us", "EMS slow poll observation threshold", "duration"),
+}

@@ -447,6 +447,7 @@ private:
 		[this]() { return boiler_.isBoilerStarted(); },
 		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);},
 		[this](std::ostream &ss) { getEMSStatus(ss);},
+		[this](std::ostream &ss) { ems_.getDiagnostics(ss); },
 		[this](std::string const &name, int16_t temperature, uint32_t seconds) {
 			return setRoomTemporaryTemperature(name, temperature, seconds);
 		}

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <algorithm>
 #include <cstdint>
+#include "EmsDiagnostics.h"
 
 namespace heating::ems {
 
@@ -23,15 +24,21 @@ public:
 		}
 		const auto write = write_.load(std::memory_order_relaxed);
 		const auto next = (write + 1) % slots_.size();
-		if (next == read_.load(std::memory_order_acquire)) {
+		const auto read = read_.load(std::memory_order_acquire);
+		if (next == read) {
 			return false;
 		}
 		auto &frame = slots_[write];
 		std::copy_n(data, length, frame.data.begin());
 		frame.length = static_cast<uint8_t>(length);
+		// Occupancy at the producer's read-index sample, before publishing.
+		// Sampling after publication could miss an immediately consumed frame.
+		highWater_.observe(static_cast<uint32_t>((next + slots_.size() - read) % slots_.size()));
 		write_.store(next, std::memory_order_release);
 		return true;
 	}
+
+	uint32_t highWaterMark() const { return highWater_.load(); }
 
 	bool pop(EmsRawFrame &frame) {
 		const auto read = read_.load(std::memory_order_relaxed);
@@ -48,6 +55,7 @@ private:
 	std::array<EmsRawFrame, Capacity + 1> slots_{};
 	std::atomic<size_t> read_{0};
 	std::atomic<size_t> write_{0};
+	EmsMaximum highWater_;
 };
 
 } // namespace heating::ems

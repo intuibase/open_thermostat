@@ -215,6 +215,25 @@ private:
 	getEmsStatus_t getEmsStatus_;
 };
 
+class EmsDiagnosticsReporter final : public ib::mqtt::MQTTReporterInterface {
+public:
+	using GetDiagnostics = std::function<void(std::ostream &)>;
+	explicit EmsDiagnosticsReporter(GetDiagnostics getDiagnostics) : getDiagnostics_(std::move(getDiagnostics)) {}
+	void getStatus(std::ostream &ss) const override { getDiagnostics_(ss); }
+	// Entities are managed by the OpenThermostat integration.
+	void publishHADiscovery(ib::mqtt::MQTTPublishInterface &) override {}
+	void publishStateTopic(ib::mqtt::MQTTPublishInterface &publish, uint16_t) override {
+		if (!counter_.durationPassed()) { return; }
+		ib::viewable_stringbuf buffer;
+		std::ostream ss(&buffer);
+		getStatus(ss);
+		publish.publishStateTopic("ems_diagnostics"sv, buffer.view(), false);
+	}
+private:
+	GetDiagnostics getDiagnostics_;
+	ib::PeriodicCounter counter_{30000};
+};
+
 class MQTT {
 public:
 	using getRoomStatus_t = std::function<void(std::ostream &)>;
@@ -225,7 +244,7 @@ public:
 	using getEmsStatus_t = std::function<void(std::ostream &)>;
 	using setTemporaryTemperature_t = std::function<bool(std::string const &, int16_t, uint32_t)>;
 
-	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomIds_t getRoomIds, getRoomStatus_t getRoomsStatus, getActiveProgram_t getActiveProgram, getBoilerStarted_t getBoilerStarted, getEmsMetrics_t getEmsMetrics, getEmsStatus_t getEmsStatus, setTemporaryTemperature_t setTemporaryTemperature) : log_(std::move(log)), setTemporaryTemperature_(std::move(setTemporaryTemperature)) {
+	MQTT(std::shared_ptr<ib::logger::LoggerInterface> log, getRoomIds_t getRoomIds, getRoomStatus_t getRoomsStatus, getActiveProgram_t getActiveProgram, getBoilerStarted_t getBoilerStarted, getEmsMetrics_t getEmsMetrics, getEmsStatus_t getEmsStatus, EmsDiagnosticsReporter::GetDiagnostics getEmsDiagnostics, setTemporaryTemperature_t setTemporaryTemperature) : log_(std::move(log)), setTemporaryTemperature_(std::move(setTemporaryTemperature)) {
 		if (log_) {
 			logFeature_ = log_->addFeature("MQTT");
 		}
@@ -262,6 +281,8 @@ public:
 		reporters_.emplace_back(std::make_shared<DeviceStatusReporter>(log_));
 		reporters_.emplace_back(std::make_shared<EmsMetricsReporter>(log_, std::move(getEmsMetrics)));
 		reporters_.emplace_back(std::make_shared<EmsStatusReporter>(log_, std::move(getEmsStatus)));
+
+		reporters_.emplace_back(std::make_shared<EmsDiagnosticsReporter>(std::move(getEmsDiagnostics)));
 
 		mqtt_ = std::make_shared<ib::mqtt::MQTT>(log_, libConfig, deviceInfo, reporters_);
 		mqtt_->subscribe("command/temporary", [this](char *, uint8_t *payload, unsigned int length) {
