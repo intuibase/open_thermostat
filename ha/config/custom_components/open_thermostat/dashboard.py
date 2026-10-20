@@ -12,6 +12,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import slugify
 
 from .const import DOMAIN
+from .ems_diagnostics import EMS_DIAGNOSTIC_METRICS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -233,6 +234,11 @@ class RoomDashboard:
             for metric in EMS_METRICS
             if metric in hub_entities
         ]
+        ems_debug_entities = [
+            hub_entities[metric]
+            for metric in EMS_DIAGNOSTIC_METRICS
+            if metric in hub_entities
+        ]
         polish = self.hass.config.language.lower().startswith("pl")
         rooms_title = "Pomieszczenia" if polish else "Rooms"
         diagnostics_title = "Diagnostyka" if polish else "Diagnostics"
@@ -279,6 +285,12 @@ class RoomDashboard:
                 "type": "entities",
                 "title": ems_title,
                 "entities": ems_entities,
+            })
+        if ems_debug_entities:
+            diagnostics_cards.append({
+                "type": "entities",
+                "title": "Diagnostyka EMS" if polish else "EMS diagnostics",
+                "entities": ems_debug_entities,
             })
         energy_chart_entities = []
         if "energy_heating" in hub_entities:

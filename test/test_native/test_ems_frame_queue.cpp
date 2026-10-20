@@ -22,10 +22,12 @@ TEST(EmsFrameQueue, OwnsCopyOfUartBuffer) {
 TEST(EmsFrameQueue, FullQueuePreservesPendingFramesAndRecoversAfterWrap) {
 	EmsFrameQueue<3> queue;
 	EmsRawFrame frame;
+	EXPECT_EQ(queue.highWaterMark(), 0u);
 	for (unsigned cycle = 0; cycle < 100; ++cycle) {
 		for (uint8_t value = 0; value < 3; ++value) {
 			ASSERT_TRUE(queue.push(&value, 1));
 		}
+		EXPECT_EQ(queue.highWaterMark(), 3u);
 		const uint8_t overflow = 99;
 		EXPECT_FALSE(queue.push(&overflow, 1));
 		for (uint8_t value = 0; value < 3; ++value) {
@@ -33,6 +35,7 @@ TEST(EmsFrameQueue, FullQueuePreservesPendingFramesAndRecoversAfterWrap) {
 			EXPECT_EQ(frame.data[0], value);
 		}
 		EXPECT_FALSE(queue.pop(frame));
+		EXPECT_EQ(queue.highWaterMark(), 3u);
 	}
 }
 
@@ -74,5 +77,27 @@ TEST(EmsFrameQueue, ConcurrentProducerAndConsumerPreserveOrderAndPayload) {
 	}
 	producer.join();
 	EXPECT_TRUE(valid);
+	EXPECT_GE(queue.highWaterMark(), 1u);
+	EXPECT_LE(queue.highWaterMark(), 7u);
+}
+
+TEST(EmsDiagnostics, ConcurrentWindowExchangeDoesNotLoseMaximum) {
+	heating::ems::EmsMaximum maximum;
+	std::atomic<bool> done{false};
+	constexpr uint32_t count = 100000;
+	std::thread producer([&] {
+		for (uint32_t i = 1; i <= count; ++i) {
+			maximum.observe(i);
+		}
+		done.store(true, std::memory_order_release);
+	});
+	uint32_t observed = 0;
+	while (!done.load(std::memory_order_acquire)) {
+		observed = std::max(observed, maximum.take());
+	}
+	producer.join();
+	observed = std::max(observed, maximum.take());
+	EXPECT_EQ(observed, count);
+	EXPECT_EQ(maximum.load(), 0u);
 }
 } // namespace

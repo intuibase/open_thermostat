@@ -7,7 +7,7 @@ from homeassistant.components import mqtt
 from homeassistant.components.mqtt.models import ReceiveMessage
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfInformation, UnitOfTemperature
+from homeassistant.const import EntityCategory, PERCENTAGE, UnitOfInformation, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -18,6 +18,7 @@ from .room_identity import room_device_name, room_key
 from .const import CONF_TOPIC_PREFIX, DOMAIN
 from .program import room_program_name
 from .heating import HeatingTracker
+from .ems_diagnostics import EMS_DIAGNOSTIC_METRICS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +58,17 @@ HUB_METRICS = {
         "boiler_service_code": ("serviceCode", None, None, None, "Boiler service code"),
         "boiler_display_code": ("displayCode", None, None, None, "Boiler display code"),
     },
+}
+
+HUB_METRICS["ems_diagnostics"] = {
+    metric: (
+        field,
+        SensorDeviceClass.DURATION if kind == "duration" else None,
+        UnitOfTime.MICROSECONDS if kind == "duration" else None,
+        SensorStateClass.TOTAL_INCREASING if kind == "counter" else SensorStateClass.MEASUREMENT,
+        name,
+    )
+    for metric, (field, name, kind) in EMS_DIAGNOSTIC_METRICS.items()
 }
 
 HUB_DIVISORS = {
@@ -121,6 +133,16 @@ async def async_setup_entry(
                 entity = HubMetric(prefix, topic, metric)
                 hub_sensors[key] = entity
                 added.append(entity)
+            if topic == "ems_diagnostics":
+                entity._attr_extra_state_attributes = {
+                    key: payload[key]
+                    for key in (
+                        "enabled", "window_end_uptime_ms", "window_duration_ms",
+                        "rx_capacity", "tx_capacity", "frame_capacity",
+                        "fwd_capacity", "fwd_device_capacity",
+                    )
+                    if key in payload
+                }
             entity.update_value(value, online)
         if added:
             async_add_entities(added)
@@ -423,12 +445,14 @@ class HubMetric(SensorEntity, RestoreEntity):
 
     def __init__(self, prefix: str, topic: str, metric: str) -> None:
         _field, device_class, unit, state_class, name = HUB_METRICS[topic][metric]
-        if topic == "device_status":
+        if topic in {"device_status", "ems_diagnostics"}:
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_device_class = device_class
         self._attr_native_unit_of_measurement = unit
         self._attr_state_class = state_class
-        if translation_key := HUB_TRANSLATION_KEYS.get(metric):
+        if topic == "ems_diagnostics":
+            self._attr_translation_key = metric
+        elif translation_key := HUB_TRANSLATION_KEYS.get(metric):
             self._attr_translation_key = translation_key
         else:
             self._attr_name = name

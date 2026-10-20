@@ -11,6 +11,8 @@
 #include <functional>
 
 #include "EmsBusUartForwarder.h"
+#include "EMS/EmsDiagnostics.h"
+#include <esp_timer.h>
 
 namespace heating {
 
@@ -70,29 +72,37 @@ public:
 
 	bool writeToEms(std::vector<uint8_t> const &data) { return writeToEms(data.data(), static_cast<uint8_t>(data.size())); }
 
-	bool writeToEms(uint8_t const *data, uint8_t length) {
+	// firstWriteUs marks entry to the driver, not the first bit on the wire.
+	bool writeToEms(uint8_t const *data, uint8_t length, int64_t *firstWriteUs = nullptr) {
 		if (length == 0 || length > EmsMaxTelegramSize) {
 			return false;
 		}
 
+        bool written = true;
         for (uint8_t i = 0; i < length; i++) {
-            uart_write_bytes(UartSlot, &data[i], 1);
+            if (i == 0 && firstWriteUs) {
+                *firstWriteUs = esp_timer_get_time();
+            }
+            if (uart_write_bytes(UartSlot, &data[i], 1) != 1) {
+                stats_.writeErrors.fetch_add(1, std::memory_order_relaxed);
+                written = false;
+                break;
+            }
             delayMicroseconds(EMSUART_TX_WAIT_HT3);
         }
         uart_set_line_inverse(UartSlot, UART_SIGNAL_TXD_INV);
         delayMicroseconds(EMSUART_TX_BRK_HT3);
         uart_set_line_inverse(UartSlot, 0);
 
-		return true;
+		return written;
 	}
 
 	void requestReset() { resetRequested_.store(true, std::memory_order_relaxed); }
 
 	uint32_t forwarderErrors() const { return forwarder_.rxErrors.load(std::memory_order_relaxed); }
 	uint32_t forwarderDropped() const { return forwarder_.dropped.load(std::memory_order_relaxed); }
-	std::atomic<uint32_t> rxErrors{0};
-	std::atomic<uint32_t> rxTimeouts{0};
-	std::atomic<uint32_t> resets{0};
+	ems::EmsUartStatsSnapshot getStatsSnapshot() const { return stats_.snapshot(); }
+	uint32_t resetCount() const { return stats_.resets.load(std::memory_order_relaxed); }
 
 private:
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
@@ -139,9 +149,10 @@ private:
 		uart_flush_input(UartSlot);
 		xQueueReset(uartQueue_);
 		uart_send_break(UartSlot);
-		resets.fetch_add(1, std::memory_order_relaxed);
+		stats_.resets.fetch_add(1, std::memory_order_relaxed);
 	}
 
+	ems::EmsUartStats stats_;
 	std::atomic<bool> resetRequested_{false};
 	QueueHandle_t uartQueue_;
 	std::array<uint8_t, EmsMaxTelegramSize> buffer_;
@@ -168,7 +179,7 @@ static void uart_event_task(void *pvParameters) {
 			length = 0;
 		}
 		if (!xQueueReceive(bus->getQueueHandle(), &event, pdMS_TO_TICKS(rxTimeoutMs))) {
-			bus->rxTimeouts.fetch_add(1, std::memory_order_relaxed);
+			bus->stats_.timeouts.fetch_add(1, std::memory_order_relaxed);
 			bus->requestReset();
 			continue;
 		}
@@ -181,36 +192,39 @@ static void uart_event_task(void *pvParameters) {
 			// missing bytes: discard a partial/oversized frame and resync at BREAK.
 			const bool validSize = length > 0 && length <= bus->getDataBufferSize();
 			bool complete = validSize;
+			if (!validSize) {
+				bus->stats_.invalidLengths.fetch_add(1, std::memory_order_relaxed);
+			}
 			while (length > 0) {
 				const auto chunk = std::min(length, bus->getDataBufferSize());
 				const int read = uart_read_bytes(bus->getUartSlot(), bus->getDataBuffer(), chunk, 0);
 				if (read != static_cast<int>(chunk)) {
 					complete = false;
+					bus->stats_.readErrors.fetch_add(1, std::memory_order_relaxed);
 					uart_flush_input(bus->getUartSlot());
 					xQueueReset(bus->getQueueHandle());
 					break;
 				}
 				length -= chunk;
 				if (complete) {
+					bus->stats_.frames.fetch_add(1, std::memory_order_relaxed);
+					bus->stats_.bytes.fetch_add(chunk, std::memory_order_relaxed);
 					bus->processTelegram(chunk);
 				}
-			}
-			if (!complete) {
-				bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
 			}
 			length = 0;
 			break;
 		}
 		case UART_FIFO_OVF:
 		case UART_BUFFER_FULL:
-			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			(event.type == UART_FIFO_OVF ? bus->stats_.fifoOverflows : bus->stats_.bufferFull).fetch_add(1, std::memory_order_relaxed);
 			uart_flush_input(bus->getUartSlot());
 			xQueueReset(bus->getQueueHandle());
 			length = 0;
 			break;
 		case UART_PARITY_ERR:
 		case UART_FRAME_ERR:
-			bus->rxErrors.fetch_add(1, std::memory_order_relaxed);
+			(event.type == UART_PARITY_ERR ? bus->stats_.parityErrors : bus->stats_.frameErrors).fetch_add(1, std::memory_order_relaxed);
 			break;
 		default:
 			break;

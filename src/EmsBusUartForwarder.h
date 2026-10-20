@@ -36,6 +36,7 @@ public:
 	static constexpr size_t EmsMaxTelegramSize = 33;
 
 	static constexpr size_t MaxForwarderQueueSize = 10;
+	static constexpr size_t PoolCapacity = 32;
 
 	void start(uint8_t rxPin = 13, uint8_t txPin = 5);
 
@@ -148,7 +149,7 @@ private:
 		int next = -1;
 	};
 	// Bounded shared pool; per-device FIFO order and the existing limit of ten.
-	std::array<Slot, 32> slots_{};
+	std::array<Slot, PoolCapacity> slots_{};
 	std::array<int, 128> heads_{};
 	std::array<int, 128> tails_{};
 	std::array<uint8_t, 128> sizes_{};
