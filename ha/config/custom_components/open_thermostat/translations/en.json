@@ -27,8 +27,16 @@
   "options": {
     "step": {
       "init": {
-        "title": "OpenThermostat dashboard",
-        "data": {"create_dashboard": "Create an OpenThermostat dashboard"}
+        "title": "OpenThermostat settings",
+        "data": {
+          "create_dashboard": "Create an OpenThermostat dashboard",
+          "battery_alerts": "Low battery alerts",
+          "battery_threshold": "Low battery threshold",
+          "battery_reminder": "Remind daily about low batteries",
+          "battery_reminder_time": "Reminder time",
+          "notify_service": "Additional notification service"
+        },
+        "description": "Offline alerts are always active. Notifications appear in HA; optionally select an additional service (e.g. your phone). Battery sensors are detected automatically. Reminder time uses the HA timezone."
       }
     }
   },
