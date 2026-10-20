@@ -183,7 +183,7 @@ private:
 			case HTTP_GET: {
 				File file = SPIFFS.open("/cfg/cfgprogram.json", FILE_READ);
 				if (!file) {
-					DBGLOGFD(log_, logFeature_, "configProgramCurrent missing config");
+					DBGLOGFD(log_, logFeature_, "configProgramCurrent missing config\n");
 					server_.send(500, "text/plain", "Missing config");
 					return;
 				}

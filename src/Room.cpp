@@ -48,7 +48,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 
 	auto meanTemperature = getAverageTemperature();
 	if (!meanTemperature.has_value()) {
-		DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d dOw: %d mean: %d, set: %d, margin: u%d/d%d Boiler: 0 Heat: 1 no samples\n", config_.name_.c_str(), time, dayOfTheWeek, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
+		DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d dOw: %d mean: unavailable, set: %d, margin: u%d/d%d Boiler: 0 Heat: 0 no samples\n", config_.name_.c_str(), time, dayOfTheWeek, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown());
 		return std::make_tuple(Room::TemperatureStatus::MISSING_TEMPERATURE, std::nullopt);
 	}
 
@@ -58,7 +58,7 @@ std::tuple<Room::TemperatureStatus, std::optional<uint8_t>> Room::shouldStartBoi
 	stats.shouldHeat_ = shouldContinueHeating;
 	stats.shouldStartBoiler_ = shouldStartBoiler;
 
-	DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", config_.name_.c_str(), time, meanTemperature, currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0, shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
+	DBGLOGFD(log_, logFeature_, "SSB  %-15.15s %d mean: %d, set: %d, margin: u%d/d%d Override: %d left Boiler: %d Heat: %d. Boiler temp override: %d\n", config_.name_.c_str(), time, meanTemperature.value(), currentSet, getTemperatureMarginUp(), getTemperatureMarginDown(), (temporaryOverride_ && temporaryOverride_->isValid()) ? temporaryOverride_->getSecondsLeft() : 0, shouldStartBoiler, shouldContinueHeating, currentProgram ? currentProgram->getHeatingTemperatureOverride().value_or(0) : 0);
 
 	Room::TemperatureStatus status{Room::TemperatureStatus::TEMPERATURE_OK};
 	if (shouldStartBoiler) {

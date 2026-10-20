@@ -58,7 +58,7 @@ void WiFiGotIP(arduino_event_id_t event, arduino_event_info_t info) {
 				ntpTimeUpdated.store(true, std::memory_order_relaxed);
 			});
 			if (!networkConfig.timeZone.empty()) {
-				DBGLOGFI(heating::logger, appLogFeature(), "Configuring timezone time '%s' server: '%s' ", networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
+				DBGLOGFI(heating::logger, appLogFeature(), "Configuring timezone time '%s' server: '%s'\n", networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
 				configTzTime(networkConfig.timeZone.c_str(), networkConfig.ntpHost.c_str());
 			} else {
 				configTime(networkConfig.ntpUtcOffset, networkConfig.ntpDaylightUtcOffset, networkConfig.ntpHost.c_str());
@@ -157,7 +157,8 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 
 	if (networkConfig.loggerEnabled && !networkConfig.loggerHost.empty()) {
 		heating::logger->attachSink(std::make_shared<ib::logger::LoggerSocketSink>(
-		ib::logger::LoggerInterface::LogLevel::TRACE, networkConfig.loggerHost, networkConfig.loggerPort));
+			ib::logger::LoggerInterface::LogLevel::TRACE, networkConfig.loggerHost, networkConfig.loggerPort,
+			ib::logger::LoggerSocketSink::MemoryPreference::PreferPsram));
 	}
 }
 
@@ -183,8 +184,8 @@ void setup() {
 	DBGLOGFI(heating::logger, appLogFeature(), "IDF: %s\n", app->idf_ver);
 	DBGLOGFI(heating::logger, appLogFeature(), "Firmware sha256: %s\n", app->app_elf_sha256);
 	DBGLOGFI(heating::logger, appLogFeature(), "Partition: %s, size: %d, encrypted: %d\n", partition->label, partition->size, partition->encrypted);
-	DBGLOGFI(heating::logger, appLogFeature(), "-----------------------");
-	DBGLOGFI(heating::logger, appLogFeature(), "Starting up");
+	DBGLOGFI(heating::logger, appLogFeature(), "-----------------------\n");
+	DBGLOGFI(heating::logger, appLogFeature(), "Starting up\n");
 
 #ifdef CONFIG_BT_CLASSIC_ENABLED
 	DBGLOGFI(heating::logger, appLogFeature(), "CLASSIC BT ENABLED\n");
@@ -198,7 +199,7 @@ void setup() {
 #endif
 
 	if (!heating::filesystem.mount()) {
-		DBGLOGFI(heating::logger, appLogFeature(), "An Error has occurred while mounting SPIFFS");
+		DBGLOGFI(heating::logger, appLogFeature(), "An Error has occurred while mounting SPIFFS\n");
 	} else {
 		DBGLOGFI(heating::logger, appLogFeature(), "Mounted SPIFFS partition '%s', dual slots: %d, fallback slot used: %d\n", heating::filesystem.activeLabel().c_str(), heating::filesystem.hasDualPartitions(), heating::filesystem.usedFallbackSlot());
 	}
@@ -250,7 +251,7 @@ void loop() {
 		lastMillis = now;
 
 		heating::controller->operate();
-		DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %lds SPIFFS: %zu/%zu\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), esp_timer_get_time()/1000000, SPIFFS.usedBytes(), SPIFFS.totalBytes());
+		DBGLOGFI(heating::logger, appLogFeature(), "Free memory %d/%d (minimum was: %d) MaxAlloc: %d MinPeekStack: %d boxTemp: %f, UpTime: %llds SPIFFS: %zu/%zu PSRAM free/total: %lu/%lu\n", ESP.getFreeHeap(), ESP.getHeapSize(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), uxTaskGetStackHighWaterMark(nullptr), heating::rtcGetTemp(), static_cast<long long>(esp_timer_get_time() / 1000000), SPIFFS.usedBytes(), SPIFFS.totalBytes(), static_cast<unsigned long>(ESP.getFreePsram()), static_cast<unsigned long>(ESP.getPsramSize()));
 
 		if (!WiFi.isConnected()) {
 			DBGLOGFI(heating::logger, appLogFeature(), "WiFi not connected. Reconnecting.\n");
