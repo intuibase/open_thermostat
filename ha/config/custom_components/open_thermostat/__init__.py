@@ -7,6 +7,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import CONF_CREATE_DASHBOARD, CONF_TOPIC_PREFIX, DOMAIN, PLATFORMS
 from .dashboard import RoomDashboard
 from .heating import HeatingTracker
+from .alerts import IntegrationAlerts
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -28,8 +29,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await dashboard.async_start()
         state["dashboard"] = dashboard
     try:
+        alerts = IntegrationAlerts(hass, entry)
+        state["alerts"] = alerts
+        await alerts.async_start()
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
+        if alerts := state.get("alerts"):
+            await alerts.async_stop()
         if dashboard := state.get("dashboard"):
             await dashboard.async_stop()
         hass.data[DOMAIN].pop(entry.entry_id, None)
@@ -42,6 +48,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload the room climate platform and its MQTT subscriptions."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
+        await hass.data[DOMAIN][entry.entry_id]["alerts"].async_stop()
         await hass.data[DOMAIN][entry.entry_id]["heating_tracker"].async_stop()
         if dashboard := hass.data[DOMAIN][entry.entry_id].get("dashboard"):
             await dashboard.async_stop()

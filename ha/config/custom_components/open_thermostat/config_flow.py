@@ -8,8 +8,13 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.service_info.mqtt import MqttServiceInfo
+from homeassistant.helpers import selector
 
-from .const import CONF_CREATE_DASHBOARD, CONF_TOPIC_PREFIX, DOMAIN
+from .const import (
+    CONF_CREATE_DASHBOARD, CONF_TOPIC_PREFIX, DOMAIN, CONF_BATTERY_ALERTS,
+    CONF_BATTERY_THRESHOLD, CONF_BATTERY_REMINDER, CONF_BATTERY_REMINDER_TIME,
+    CONF_NOTIFY_SERVICE,
+)
 
 
 def valid_prefix(value: str) -> str:
@@ -92,12 +97,20 @@ class OpenThermostatConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OpenThermostatOptionsFlow(config_entries.OptionsFlowWithReload):
-    """Configure the optional room dashboard."""
+    """Configure the room dashboard and built-in alerts."""
 
     async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
-        """Show the dashboard switch."""
+        """Show alert settings without requiring a separate automation."""
         if user_input is not None:
             return self.async_create_entry(data=user_input)
+        options = self.config_entry.options
+        services = sorted(
+            f"notify.{name}" for name in self.hass.services.async_services().get("notify", {})
+            if name not in {"send_message", "persistent_notification"}
+        )
+        current_service = options.get(CONF_NOTIFY_SERVICE, "")
+        if current_service and current_service not in services:
+            services.append(current_service)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
@@ -105,5 +118,16 @@ class OpenThermostatOptionsFlow(config_entries.OptionsFlowWithReload):
                     CONF_CREATE_DASHBOARD,
                     default=self.config_entry.options.get(CONF_CREATE_DASHBOARD, False),
                 ): bool,
+                vol.Required(CONF_BATTERY_ALERTS, default=options.get(CONF_BATTERY_ALERTS, True)): bool,
+                vol.Required(CONF_BATTERY_THRESHOLD, default=options.get(CONF_BATTERY_THRESHOLD, 20)):
+                    selector.NumberSelector({"min": 1, "max": 100, "step": 1, "unit_of_measurement": "%", "mode": "box"}),
+                vol.Required(CONF_BATTERY_REMINDER, default=options.get(CONF_BATTERY_REMINDER, True)): bool,
+                vol.Required(CONF_BATTERY_REMINDER_TIME, default=options.get(CONF_BATTERY_REMINDER_TIME, "12:00:00")):
+                    selector.TimeSelector(),
+                vol.Required(CONF_NOTIFY_SERVICE, default=current_service): selector.SelectSelector({
+                    "options": [{"value": "", "label": "Home Assistant"}]
+                        + [{"value": name, "label": name} for name in services],
+                    "mode": "dropdown",
+                }),
             }),
         )
