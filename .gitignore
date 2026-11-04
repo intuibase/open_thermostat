@@ -14,6 +14,9 @@ __pycache__/
 /ha/mosquitto/
 /ha/docker-compose.yml
 
+# Keep public documentation visible despite local Markdown exclusions.
+!/docs/*.md
+
 # Generated files and local private data.
 /logs/
 /out/

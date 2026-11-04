@@ -1,8 +1,11 @@
 # OpenThermostat for ESP32
 
-An open thermostat project enabling control of a central heating boiler and up to 8 separate heating circuits.
+An open thermostat project enabling control of a central heating boiler and configurable heating circuits using built-in GPIO or I/O expanders.
 
-![Main screen](docs/img/screen.jpg)
+Documentation: [user guide with UI screenshots](docs/USER_GUIDE.md) ·
+[documentation index](docs/README.md) · [REST API](docs/RESTAPI.md).
+
+![Main screen](docs/img/ui/home.png)
 
 OpenThermostat can control the boiler using an ON/OFF relay or directly via the EMS2 protocol (e.g., via the EMS interface board from [EMS Interface Board](https://bbqkees-electronics.nl/product/ems-interface-board-v3-1/)).
 
@@ -24,7 +27,40 @@ OpenThermostat can control the boiler using an ON/OFF relay or directly via the 
 - Ability to set room temperatures with an accuracy of 0.1°C
 - Ability to override the basic configuration for a circuit (room) at any time for any selected days of the week
 - Ability to forward EMS2 packets (allows connection of a second EMS32 board with EMS-ESP32)
+- Optional per-room adaptive optimal start, with thermal learning and shadow predictions
 - REST API
+
+## Build and installation
+
+Choose the PlatformIO environment matching the actual board, flash and PSRAM
+configuration: `esp32dev` for the configured classic 4 MB ESP32 layout, or
+`esp32s3` for the configured 16 MB ESP32-S3 layout. The S3 environment uses Octal
+PSRAM; verify that it matches your hardware before building.
+
+Build the firmware and upload it over USB:
+
+```sh
+pio run -e esp32s3
+pio run -e esp32s3 -t upload
+```
+
+Prepare a private filesystem source directory, such as `data_test_s3`, with the
+current UI and the intended configuration. Keep `data` as a sanitized template:
+never place real Wi-Fi/MQTT passwords, API keys or other secrets in it. For an
+existing installation, follow [configuration preservation](#preserve-configuration-before-a-filesystem-update)
+before replacing the filesystem.
+
+Build and upload the prepared filesystem using the same source directory for
+both commands:
+
+```sh
+PLATFORMIO_DATA_DIR="$PWD/data_test_s3" pio run -e esp32s3 -t buildfs
+PLATFORMIO_DATA_DIR="$PWD/data_test_s3" pio run -e esp32s3 -t uploadfs
+```
+
+Replace `esp32s3` with `esp32dev` for the classic board. After startup, open the
+device's assigned IP address and follow the [user guide](docs/USER_GUIDE.md).
+Wi-Fi/AP behavior is described in [Network and services](docs/NETWORK_AND_SERVICES.md#wi-fi).
 
 ## Home Assistant climate panels
 
@@ -60,7 +96,52 @@ Rooms and heating programs are stored separately. `data/cfg/rooms.json` contains
 
 The web interface provides separate **Rooms** and **Programs** tabs and separate save buttons. Creating a room generates its permanent ID. Renaming or reordering the room does not change that ID. A program can only add settings for a room that already exists in the room catalog.
 
-This firmware only supports the separated format. Build and upload the filesystem from the versioned `data` directory together with the firmware. For PlatformIO, use `pio run -e <environment> -t buildfs` followed by the matching filesystem upload command. Uploading the firmware without the new filesystem leaves heating disabled because `/cfg/rooms.json` is required.
+This firmware only supports the separated format. `/cfg/rooms.json` is required; an older filesystem without it leaves heating disabled. Use the versioned `data` directory as a sanitized template and prepare the installation's configuration in a private directory such as `data_test_s3`. Never put real credentials in `data`. A firmware-only update does not require replacing a filesystem that already has the compatible format and UI.
+
+### Preserve configuration before a filesystem update
+
+A SPIFFS image replaces the complete selected filesystem, including configuration;
+it does not merge new UI files with the device's current settings. Dual-slot OTA
+protects the upload process, not the configuration contents of the new image.
+Do not upload the repository's example configuration unchanged to an existing
+installation.
+
+Before building or uploading an image:
+
+1. Export the current room catalog (`GET /config/rooms`) and every program listed
+   by `GET /status/programs` (`GET /config/programs/<name>`). Preserve room IDs,
+   sensor addresses and valve references so room identities and assignments remain
+   consistent. For an older combined format, separate room definitions from program
+   settings before installing this firmware.
+2. Export device, hardware, boiler, debug and selected-program configuration.
+   Their API paths and image destinations are listed below. Keep a separate copy
+   of these exports before changing the image.
+3. Record the Wi-Fi SSID and password. `GET /config/wifi` returns the SSID only;
+   it is not a backup of the credentials. Retain the intended access-point
+   configuration from your existing filesystem backup as well.
+4. Put the preserved configuration and programs into a **private** filesystem
+   source directory, such as `data_test_s3`, alongside the new `html` assets.
+   Never put secrets in `data`, even temporarily. Check that hardware labels/indices,
+   room references and the selected program agree.
+5. Build with `PLATFORMIO_DATA_DIR="$PWD/data_test_s3" pio run -e <environment> -t buildfs`,
+   substituting your private source directory if different. Use the same
+   `PLATFORMIO_DATA_DIR` for `uploadfs`, or upload that image through supported OTA.
+   After restart, verify connectivity, the selected program, room readings and
+   physical output assignments.
+
+| Export | Destination in the filesystem image |
+|---|---|
+| `GET /config/rooms` | `/cfg/rooms.json` |
+| `GET /config/programs/<name>` | `/programs/<name>.json` |
+| `GET /config/program/current` | `/cfg/cfgprogram.json` |
+| `GET /config/device` | `/cfg/cfgnetwork.json` |
+| `GET /config/hardware` | `/cfg/cfgpins.json` |
+| `GET /config/boiler` | `/cfg/cfgboiler.json` |
+| `GET /config/debug` | `/cfg/cfgdebug.json` |
+| SSID and password retained separately | `/cfg/cfgwifi.json` with `ssid` and `password` |
+
+These paths are relative to the image root, corresponding to `cfg` and `programs`
+inside your private filesystem source directory.
 
 ## Filesystem OTA
 
@@ -68,11 +149,17 @@ The ESP32-S3 partition table contains two equal SPIFFS slots. A filesystem OTA u
 
 The classic 4 MB ESP32 keeps one SPIFFS partition because there is not enough flash for two useful slots. It uses the same incremental erase, size checks, and filesystem validation, but an interrupted upload can still damage its only filesystem. The firmware provides a dependency-free recovery page at `/recovery`; when SPIFFS cannot be mounted, `/` displays that page as well.
 
-Moving an existing ESP32-S3 installation from the old single SPIFFS partition to the dual-slot layout requires one USB deployment because application OTA does not update the partition table:
+The current `esp32dev` layout has a single factory application partition and
+does **not** support firmware OTA. Update its firmware over USB with
+`pio run -e esp32dev -t upload`. Filesystem OTA remains available for SPIFFS.
+The `esp32s3` layout has two application slots and supports firmware OTA as well
+as filesystem OTA.
+
+Moving an existing ESP32-S3 installation from the old single SPIFFS partition to the dual-slot layout requires one USB deployment because application OTA does not update the partition table. Complete the [configuration preservation steps](#preserve-configuration-before-a-filesystem-update) and prepare the image before running:
 
 ```bash
 pio run -e esp32s3 -t upload
-pio run -e esp32s3 -t uploadfs
+PLATFORMIO_DATA_DIR="$PWD/data_test_s3" pio run -e esp32s3 -t uploadfs
 ```
 
 After that migration, filesystem updates can use the web UI. Always upload the `spiffs.bin` built for the same hardware environment. The server requires the image size to match its target partition exactly: 589,824 bytes for `esp32dev` and 4,653,056 bytes for the dual-slot `esp32s3` layout.
@@ -110,3 +197,5 @@ The creators of this project disclaim all responsibility for any damages, injuri
 
 Failure to follow these recommendations may result in serious injury or death. Installation and use of the device are at the user’s own risk.
 Depending on the method chosen for implementing the hardware part, the project may require working with high voltages, such as 230V. This requires proper qualifications and adherence to regulations in the respective country.
+
+Adaptive optimal start: see [configuration, model and diagnostics](docs/ADAPTIVE_OPTIMAL_START.md).
