@@ -127,7 +127,8 @@ The current firmware applies these rules:
 EMS mode, not room temperature. Leave it blank to keep ordinary heating-curve
 control. When enabled rooms have different active boiler overrides, the controller
 uses the highest request. The request raises supply when necessary; it is not a
-way to lower supply below the ordinary curve.
+way to lower supply below the configured base temperature. Requests are bounded
+by the minimum and maximum heating temperatures.
 
 **Override valves** stores an exception-specific output selection. The current
 firmware reports that selection in room status, but physical valve control uses
@@ -176,9 +177,13 @@ heat while other rooms are heated.
 
 Open **Settings → Boiler and heating curve** to select the control mode,
 outdoor-temperature source, supply-temperature limits and valve preheating delay.
-ON/OFF mode requests heat through a relay; EMS also allows supply-temperature
-commands and boiler telemetry. The weather-assisted ON/OFF mode additionally
-uses the outdoor-temperature calculation for supply control through EMS.
+Choose **Relay ON/OFF** or **EMS** for heating control, then choose the supply
+policy separately. A relay can leave the water temperature at the **Boiler
+setting**, or send a **Fixed temperature via EMS** or **Weather curve via EMS**
+while switching heat through the relay. EMS heating control requires a fixed
+or weather-based supply temperature; it cannot recover an original user setting
+from a value previously written by this controller. Enable EMS in hardware
+settings whenever supply commands use it.
 
 ![Heating curve and editable supply points](img/ui/heating-curve.png)
 
@@ -192,9 +197,12 @@ review the chart and click **Save settings**.
 | Control | Behavior |
 |---|---|
 | `Valve preheating delay` | Boiler startup delay in seconds to allow actuators to open; zero disables the delay. |
-| `Minimum heating temperature` / `Maximum heating temperature` | Bounds used by the editor to constrain the curve-generation range; the maximum can also be constrained by boiler parameters. These fields do not replace the nine saved curve points. |
-| `Select boiler control mode` | Plain relay ON/OFF, relay ON/OFF plus weather-based supply commands, or EMS heating and supply commands. |
-| `Outdoor temperature source` | OpenWeather data or the boiler's outdoor sensor through EMS. Enable and configure that service separately. |
+| `Minimum heating temperature` / `Maximum heating temperature` | Runtime bounds for both base supply and program overrides, also used by the curve editor. EMS commands and AOS forecasts use the same bounds and truncate interpolated temperatures to whole °C. |
+| `Select boiler control mode` | Relay ON/OFF or EMS heating commands. Supply policy is selected separately. |
+| `Outdoor temperature source` | EMS, OpenWeather or automatic EMS → OpenWeather. Enable the services separately. Readings must be fresh and between −60°C and +60°C. |
+| `Supply temperature` | Boiler setting (plain relay only), fixed temperature via EMS, or weather curve via EMS. |
+| `Fixed / weather fallback temperature` | Required for fixed and curve policies. Enter an agreed temperature within the heating limits. Used directly in fixed mode and when all permitted weather sources fail in curve mode. |
+| `Allow the other weather source` | Explicitly allows a secondary source. Automatic source selection always permits EMS → OpenWeather; selecting OpenWeather otherwise keeps OpenWeather first. |
 | `Starting heating curve temperature` / `Ending heating curve temperature` | Supply-temperature range used for formula generation and the chart's upper axis. |
 | `Select predefined curve formula` | Copies a preset expression into `Edit formula`. |
 | `Edit formula` / `Generate` | Evaluates an expression to replace the nine curve points in the editor. |
@@ -214,11 +222,40 @@ Boiler and curve settings share **Save settings** and take effect after restart;
 the UI offers that restart after a successful save. The reload arrow restores
 the saved boiler configuration, replacing unsaved edits.
 
-In the current firmware, unavailable outdoor data makes boiler control try
-OpenWeather and then EMS as fallback sources. If neither has a value, it computes
-the curve at a substitute −20°C; that value is not an outdoor measurement. AOS
-uses separate freshness checks and does not learn from this substitute. The
-current UI does not expose a separate fixed supply/fallback-temperature setting.
+When weather is missing, stale or invalid, the curve switches to the configured
+fixed fallback. Fresh weather restores the curve on the next control cycle.
+The settings status shows the reason, source, base temperature, requested
+temperature and any applied shared program boost. The home screen also shows a
+weather-fallback or configuration-required notice. An actual −20°C measurement
+is valid; missing weather is never replaced by an invented measurement.
+
+EMS outdoor readings expire after 30 minutes. OpenWeather readings expire after
+twice the configured polling interval, bounded to 30–120 minutes; provider dates
+are checked when the device clock is valid. Fixed supply needs no weather reading.
+
+Existing `onoff` configurations retain boiler-controlled relay heating. Existing
+`onoff_outdoor` and `ems` configurations retain curve control, source preference
+and secondary-source fallback. Historical `outdoorSensor: "no"` retains the old
+OpenWeather-first selection with EMS as secondary. Migration does not guess a
+fixed temperature or use an EMS echo as the original setting. Until you save an
+explicit fallback, loss of all weather data shows **Configuration required**:
+relay control continues at the last written boiler setting, including any earlier
+program boost, without a new temperature write. Whole-warmup calibration is
+blocked while the ordinary supply baseline is unknown; basic learning from
+measured supply continues. EMS heat is disabled until weather returns or a fixed
+fallback is configured. Save the agreed value
+before relying on operation without weather. Settings take effect after reboot.
+
+The saved `boiler` object adds `supplyMode` (`boiler`, `fixed` or `curve`),
+`fixedSupplyTemperature` (whole °C) and `weatherFallback` (boolean).
+`outdoorSensor` accepts `ems`, `owm` or `auto`. Transport values remain `onoff`
+(boiler setting only), `onoff_outdoor` (relay with EMS supply commands) and `ems`.
+For example, a curve configuration may specify `supplyMode: "curve"`,
+`outdoorSensor: "owm"`, `weatherFallback: false` and
+`fixedSupplyTemperature: 48`. The 48°C value is illustrative: choose the value
+for your installation explicitly. The bundled legacy configuration does not
+silently assign a fallback. API writes reject unsupported combinations and
+out-of-range, fractional or missing required values before saving.
 
 ## Adaptive optimal start (AOS)
 
@@ -243,8 +280,9 @@ scheduled warmups, the model becomes `Calibrated`. Before that it can use a
 physical model or fallback prediction; neither implies validated accuracy.
 
 Completed warmups must satisfy the learner's duration, data-quality and confirmed
-heat requirements. The current implementation excludes a room's scheduled boiler
-supply override from whole-warmup calibration. Temporary overrides, manual tests,
+heat requirements. An applied shared boiler boost excludes
+whole-warmup calibration in every room, including rooms without an override. A
+request at or below the base supply does not count as a boost. Temporary overrides, manual tests,
 missing data and active AOS preheating also interrupt that observation. Ordinary
 boiler cycling is allowed. See the technical guide for the precise conditions;
 not every temperature increase adds a calibration cycle.

@@ -454,15 +454,17 @@
 		}
 
 		function showBoiler(emsStatus, boilerStatus) {
-			if (Object.keys(emsStatus).length == 0) {
+			if (Object.keys(emsStatus).length == 0 && !boilerStatus.supplyReason) {
 				return null;
 			}
 
 			let flowTemp = '';
 			let setTemp = '';
 			//		if ([emsStatus.heatingActive, emsStatus.currentFlowTemperature, emsStatus.currentWarmWaterTemperature, emsStatus.selectedFlowTemperature, emsStatus.selectedWarmWaterTemperature].every(function(x) { return x != null;} )) {
-			flowTemp = (emsStatus.warmWaterActive ? (emsStatus.currentWarmWaterTemperature / 10).toFixed(1) : (emsStatus.currentFlowTemperature / 10).toFixed(1));
-			setTemp = (emsStatus.warmWaterActive ? (emsStatus.selectedWarmWaterTemperature).toFixed(1) : (emsStatus.selectedFlowTemperature).toFixed(1));
+			const actual = emsStatus.warmWaterActive ? emsStatus.currentWarmWaterTemperature : emsStatus.currentFlowTemperature;
+			flowTemp = Number.isFinite(actual) ? (actual / 10).toFixed(1) : '';
+			const selected = emsStatus.warmWaterActive ? emsStatus.selectedWarmWaterTemperature : emsStatus.selectedFlowTemperature;
+			setTemp = Number.isFinite(selected) ? selected.toFixed(1) : '';
 			//		}
 
 			let pressure = emsStatus.pressure != null ? (emsStatus.pressure / 10).toFixed(1) : '';
@@ -605,6 +607,13 @@
 				tilesBoxElement.appendChild(showRoom(element, status.boiler, status.activeProgram));
 			});
 
+			$('#supplyNotice').remove();
+			const supply = status.boiler;
+			if (['weather_unavailable_fixed_fallback', 'configuration_required'].includes(supply.supplyReason)) {
+				$('<div id="supplyNotice" class="alert alert-warning w-100" role="status"></div>').text(
+					supply.supplyReason === 'configuration_required' ? 'Supply configuration required: enter a fixed weather fallback temperature in Boiler settings.' :
+					'Weather unavailable. Fixed supply fallback: ' + supply.baseSupplyTemperature + ' °C.').appendTo(tilesBoxElement);
+			}
 			let boiler = showBoiler(status.ems, status.boiler)
 			if (boiler) {
 				tilesBoxElement.appendChild(boiler);

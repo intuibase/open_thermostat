@@ -1,3 +1,4 @@
+#include "BoilerConfigEndpoint.h"
 #pragma once
 #include "AdaptiveStartConfig.h"
 #include "Logging.h"
@@ -598,42 +599,7 @@ private:
 
 	void configBoiler() {
 		DBGLOGFD(log_, logFeature_, "configBoiler METHOD %d\n", server_.method());
-
-		switch (server_.method()) {
-			default:
-			case HTTP_GET: {
-				File file = SPIFFS.open("/cfg/cfgboiler.json", FILE_READ);
-				if (!file) {
-					server_.send(404, "text/plain", "FileNotFound");
-					return;
-				}
-				server_.streamFile(file, "application/json");
-				file.close();
-				break;
-			}
-			case HTTP_POST: {
-				if (!server_.hasArg("plain")) {
-					server_.send(204);
-					break;
-				}
-				auto body = server_.arg("plain");
-				if (body.isEmpty()) {
-					server_.send(204);
-					break;
-				}
-
-				File file = SPIFFS.open("/cfg/cfgboiler.json", FILE_WRITE);
-				if (!file) {
-					DBGLOGFD(log_, logFeature_, "configBoiler. Can't open config file for write.\n");
-					server_.send(500, "text/plain", "Internal server error. Can't save boiler settings.");
-					break;
-				}
-				file.write((uint8_t *)body.c_str(), body.length());
-				file.close();
-				server_.send(201);
-				break;
-			}
-		}
+		handleBoilerConfiguration(server_, SPIFFS);
 	}
 
 	void temporaryOverride() {

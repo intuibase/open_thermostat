@@ -9,6 +9,7 @@
 #include <ctime>
 #include <cJSON.h>
 #include <memory>
+#include <functional>
 #include <mutex>
 
 namespace heating {
@@ -19,6 +20,7 @@ static void fetchTask(void *pvParameters);
 }
 
 class OpenWeather {
+	friend struct OpenWeatherTestPeer;
 public:
 	// ESP-IDF specifies task stack sizes in bytes. HTTP, JSON number parsing
 	// and formatted logging need more than the previous 2500-byte budget.
@@ -26,7 +28,7 @@ public:
 
 	ib::logger::LoggerInterface::LogFeatureType getLogFeature() const { return logFeature_; }
 	std::shared_ptr<ib::logger::LoggerInterface> getLogger() const { return log_; }
-	OpenWeather(std::shared_ptr<ib::logger::LoggerInterface> log, config::OpenWeatherConfig config) : log_(std::move(log)), config_(std::move(config)), query_(buildQuery()), lastFetch_(0) {
+	OpenWeather(std::shared_ptr<ib::logger::LoggerInterface> log, config::OpenWeatherConfig config, std::function<uint64_t()> nowMillis = ib::getTimeMillis, std::function<std::time_t()> wallNow = [] { return std::time(nullptr); }) : log_(std::move(log)), config_(std::move(config)), query_(buildQuery()), lastFetch_(0), nowMillis_(std::move(nowMillis)), wallNow_(std::move(wallNow)) {
 		if (log_) {
 			logFeature_ = log_->addFeature("OpenWeather");
 		}
@@ -83,9 +85,9 @@ public:
 	std::optional<int16_t> getFreshTemperature() {
 		std::lock_guard<std::mutex> lock(mutex_);
 		const auto maxAge = std::clamp<uint64_t>(static_cast<uint64_t>(config_.interval) * 2, 1800, 7200);
-		if (!outdoor_.valid || !lastValidReading_ || ib::getTimeMillis() - lastValidReading_ > maxAge * 1000 ||
+		if (!outdoor_.valid || !lastValidReading_ || nowMillis_() - lastValidReading_ > maxAge * 1000 ||
 			outdoor_.temp < -6000 || outdoor_.temp > 6000) return {};
-		const auto now = std::time(nullptr);
+		const auto now = wallNow_();
 		if (now > 1577836800 && (outdoor_.date > static_cast<uint64_t>(now + 300) || outdoor_.date + maxAge < static_cast<uint64_t>(now))) return {};
 		return outdoor_.temp;
 	}
@@ -104,13 +106,14 @@ private:
 
 		if (!cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(main, "temp")) || !cJSON_IsNumber(cJSON_GetObjectItemCaseSensitive(data.get(), "dt"))) return;
 		auto temp = json::getFloat(main, "temp"); // example 6.34 C
+		if (!std::isfinite(temp) || temp < -60 || temp > 60) return;
 
 		outdoor_.temp = static_cast<int16_t>(temp * 100); // example 634
 		outdoor_.pressure = static_cast<int16_t>(json::getInt(main, "pressure"));
 		outdoor_.humidity = static_cast<uint8_t>(json::getInt(main, "humidity"));
 		outdoor_.date = json::getInt(data.get(), "dt");
-		outdoor_.valid = std::isfinite(temp) && temp >= -60 && temp <= 60;
-		lastValidReading_ = ib::getTimeMillis();
+		outdoor_.valid = true;
+		lastValidReading_ = nowMillis_();
 	}
 
 	void getData() {
@@ -153,6 +156,8 @@ private:
 	config::OpenWeatherConfig config_;
 	std::string query_;
 	unsigned long lastFetch_;
+	std::function<uint64_t()> nowMillis_;
+	std::function<std::time_t()> wallNow_;
 	Outdoor outdoor_;
 	uint64_t lastValidReading_ = 0;
 	String payload_;
