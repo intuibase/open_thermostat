@@ -60,6 +60,26 @@ TEST_F(BoilerEndpoint, InvalidPostCannotTruncatePreviouslySavedConfig) {
   EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature,48);
  }
 }
+TEST_F(BoilerEndpoint, NonStringWeatherSourcesAreRejectedBeforePersistence) {
+	request(); ASSERT_EQ(server.status, 201);
+	for (const auto value : {"false", "42", "null", "[]", "{}"}) {
+		auto malformed = std::string(valid);
+		const auto position = malformed.find("\"owm\"");
+		malformed.replace(position, 5, value);
+		server.verb = HTTP_POST; server.body = malformed;
+		request(); EXPECT_EQ(server.status, 400) << value;
+		EXPECT_EQ(fs.writes, 1u);
+		server.verb = HTTP_GET; request(); EXPECT_EQ(server.response, valid);
+	}
+	// Missing-property legacy behavior is still supported.
+	auto root = cJSON_Parse(valid);
+	cJSON_DeleteItemFromObject(cJSON_GetObjectItem(root, "boiler"), "outdoorSensor");
+	auto text = cJSON_PrintUnformatted(root); server.body = text;
+	cJSON_free(text); cJSON_Delete(root);
+	server.verb = HTTP_POST; request(); EXPECT_EQ(server.status, 201);
+	EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.outdoorSensor, config::BoilerConfig::outdoorSensor_t::no);
+}
+
 TEST_F(BoilerEndpoint, LegacyPolicySurvivesSaveAndRestartWithoutInventedFallback) {
  auto root=cJSON_Parse(valid);
  auto boiler=cJSON_GetObjectItem(root,"boiler");

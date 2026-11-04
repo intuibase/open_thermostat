@@ -247,4 +247,30 @@ TEST_F(HeatingOperation, StaleEmsActivityAndStopCancelCalibrationInTheCorrectInt
  }
 }
 
+TEST_F(HeatingOperation, WeatherRecoveryResumesRoomsInsideHysteresisAfterValveDelay) {
+ auto &b=native_controller::boiler;
+ b.boiler.supplyMode=config::BoilerConfig::supplyMode_t::legacy;
+ b.boiler.fixedSupplyTemperature.reset();b.boiler.weatherFallback=false;b.boiler.valvePreheatingDelay=30;
+ b.heatingCurve.heatingCurve={20,25,30,35,45,55,65,75,80};
+ boot();controller->operate();now+=std::chrono::seconds(30);controller->operate();
+ auto &ems=Services::ems(*controller);ASSERT_TRUE(ems.enabled);
+ for(auto &r:Services::roomList(*controller)) { Peer::dropReading(*r);r->storeTemperature(2200); }
+ ems.state.outdoorTemperature.reset();controller->operate();ASSERT_FALSE(ems.enabled);
+ ems.state.outdoorTemperature=500;controller->operate();EXPECT_FALSE(ems.enabled);
+ now+=std::chrono::seconds(29);controller->operate();EXPECT_FALSE(ems.enabled);
+ now+=std::chrono::seconds(1);controller->operate();EXPECT_TRUE(ems.enabled);EXPECT_EQ(ems.flow,70);
+}
+TEST_F(HeatingOperation, DemandSatisfiedDuringWeatherOutageDoesNotResumeInHysteresis) {
+ auto &b=native_controller::boiler;
+ b.boiler.supplyMode=config::BoilerConfig::supplyMode_t::legacy;
+ b.boiler.fixedSupplyTemperature.reset();b.boiler.weatherFallback=false;
+ b.heatingCurve.heatingCurve={20,25,30,35,45,55,65,75,80};
+ boot();controller->operate();auto &ems=Services::ems(*controller);ASSERT_TRUE(ems.enabled);
+ ems.state.outdoorTemperature.reset();controller->operate();ASSERT_FALSE(ems.enabled);
+ for(auto &r:Services::roomList(*controller)) { Peer::dropReading(*r);r->storeTemperature(2300); }
+ controller->operate();
+ for(auto &r:Services::roomList(*controller)) { Peer::dropReading(*r);r->storeTemperature(2200); }
+ ems.state.outdoorTemperature=500;controller->operate();EXPECT_FALSE(ems.enabled);
+}
+
 }

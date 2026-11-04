@@ -18,6 +18,8 @@ inline bool parseBoilerSupply(cJSON *boiler, BoilerConfig &config) {
 	else if (!strcmp(mode, "onoff_outdoor")) config.boiler.controlMode = BoilerConfig::controlMode_t::onoff_outdoor;
 	else if (!strcmp(mode, "ems")) config.boiler.controlMode = BoilerConfig::controlMode_t::ems;
 	else return false;
+	auto sourceValue = cJSON_GetObjectItemCaseSensitive(boiler, "outdoorSensor");
+	if (sourceValue && !cJSON_IsString(sourceValue)) return false;
 	auto source = text("outdoorSensor");
 	if (!strcmp(source, "owm")) config.boiler.outdoorSensor = BoilerConfig::outdoorSensor_t::openweather;
 	else if (!strcmp(source, "ems")) config.boiler.outdoorSensor = BoilerConfig::outdoorSensor_t::ems;

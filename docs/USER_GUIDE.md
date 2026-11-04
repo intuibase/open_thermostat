@@ -243,7 +243,9 @@ relay control continues at the last written boiler setting, including any earlie
 program boost, without a new temperature write. Whole-warmup calibration is
 blocked while the ordinary supply baseline is unknown; basic learning from
 measured supply continues. EMS heat is disabled until weather returns or a fixed
-fallback is configured. Save the agreed value
+fallback is configured. An interrupted heating request is remembered while rooms
+still request continued heating; recovery respects the valve startup delay.
+Reaching the upper hysteresis threshold cancels that request. Save the agreed value
 before relying on operation without weather. Settings take effect after reboot.
 
 The saved `boiler` object adds `supplyMode` (`boiler`, `fixed` or `curve`),

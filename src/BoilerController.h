@@ -71,9 +71,21 @@ public:
 
 		DBGLOGFD(log_, logFeature_, "Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
 
-		if (!isBoilerStarted()) {
+		bool heatingDemand, weatherInhibited;
+		{
 			std::lock_guard<std::mutex> lock(mutex_);
+			// Hysteresis demand survives a temporary weather inhibit. Output state
+			// alone cannot remember a request once EMS has been stopped.
+			if (shouldStartBoiler) heatingDemand_ = true;
+			else if (!shouldBoilerContinue) heatingDemand_ = false;
+			heatingDemand = heatingDemand_;
 			supplyDecision_ = resolveSupply(config_, outdoorReading(), boilerHeatingTemperatureOverride);
+			weatherInhibited = config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems && !supplyDecision_.requested;
+		}
+		if (weatherInhibited) {
+			valvePreheating_ = false;
+			changeBoilerState(false, boilerHeatingTemperatureOverride);
+			return;
 		}
 		if (!shouldStartBoiler && !shouldBoilerContinue) valvePreheating_ = false;
 
@@ -84,7 +96,7 @@ public:
 			return;
 		}
 
-		if (shouldStartBoiler) {
+		if (shouldStartBoiler || (heatingDemand && !isBoilerStarted())) {
 			if (config_.boiler.valvePreheatingDelay > 0 && !isBoilerStarted()) {
 				if (valvePreheating_) {
 					auto remaining = std::chrono::seconds(config_.boiler.valvePreheatingDelay) - (now_() - lastPreheatTime_);
@@ -185,6 +197,8 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(mutex_);
 			manualTestActive_ = true;
+			heatingDemand_ = false;
+			valvePreheating_ = false;
 			manualTestEnd_ = now_() + std::chrono::seconds(durationSeconds);
 			currentBoilerState_ = boilerState;
 		}
@@ -202,6 +216,8 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(mutex_);
 			manualTestActive_ = false;
+			heatingDemand_ = false;
+			valvePreheating_ = false;
 		}
 		// Turn off boiler and open all valves for safety
 		boilerPort_->write(false);
@@ -331,6 +347,7 @@ private:
 	bool valvePreheating_ = false;
 	clock_t::time_point lastPreheatTime_;
 
+	bool heatingDemand_ = false;
 	bool currentBoilerState_ = false; // true - heating
 	std::optional<int16_t> currentHeatingTemperature_;
 	std::optional<int16_t> currentOutdoorTemperature_;

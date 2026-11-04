@@ -348,6 +348,61 @@ TEST_F(BoilerEmsTest, MissingLegacyFallbackNeverGuessesAnEmsSetpoint) {
 	EXPECT_NE(bc.getStatus().find("configuration_required"), std::string::npos);
 }
 
+TEST_F(BoilerEmsTest, WeatherRecoveryResumesLatchedHysteresisDemand) {
+	auto bc = makeController();
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled); // CONTINUE alone must not create a request.
+	bc.startBoilerOrContinue(true, false, {});
+	ASSERT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset();
+	bc.startBoilerOrContinue(false, true, {});
+	ASSERT_FALSE(lastEmsEnabled);
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_TRUE(lastEmsEnabled);
+	EXPECT_EQ(lastEmsFlowTemp, 35);
+}
+
+TEST_F(BoilerEmsTest, WeatherRecoveryRestartsValveDelayAndAllowsDemandCancellation) {
+	cfg.boiler.valvePreheatingDelay = 30;
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	now += std::chrono::seconds(30);
+	bc.startBoilerOrContinue(false, true, {});
+	ASSERT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	ASSERT_FALSE(lastEmsEnabled);
+	now += std::chrono::seconds(300);
+	bc.startBoilerOrContinue(false, true, {});
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+	now += std::chrono::seconds(29); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	outdoorTemp = 500; bc.startBoilerOrContinue(false, true, {});
+	now += std::chrono::seconds(29); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled); // Another outage restarts the full delay.
+	now += std::chrono::seconds(1); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	bc.startBoilerOrContinue(false, false, {}); // Demand ended while weather was absent.
+	outdoorTemp = 500; now += std::chrono::seconds(60);
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+}
+
+TEST_F(BoilerEmsTest, ManualTestClearsSuspendedHeatingDemand) {
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	bc.startManualTest(false, {}, 10);
+	bc.stopManualTest();
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+}
+
 TEST_F(BoilerEmsTest, FixedModeDoesNotNeedWeather) {
 	cfg.boiler.supplyMode = config::BoilerConfig::supplyMode_t::fixed;
 	cfg.boiler.fixedSupplyTemperature = 48;
