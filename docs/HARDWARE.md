@@ -1,3 +1,8 @@
+# Hardware
+
+For output mapping, supported expanders, circuit assignments and manual testing,
+see [Heating circuits, valves and I/O expanders](CIRCUITS_AND_IO.md).
+
 In building my project, I used the following components:
 
 - [EMS interface board v3.1 from BBQKEES](https://bbqkees-electronics.nl/product/ems-interface-board-v3-1/)
