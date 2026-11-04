@@ -32,9 +32,17 @@ void handleBoilerConfiguration(Server &server, Filesystem &filesystem) {
 				break;
 			}
 
-			std::unique_ptr<cJSON, decltype(&cJSON_Delete)> parsed(cJSON_Parse(body.c_str()), &cJSON_Delete);
+			const char *parseEnd = nullptr;
+			const char *documentEnd = body.c_str() + body.length();
+			std::unique_ptr<cJSON, decltype(&cJSON_Delete)> parsed(
+				cJSON_ParseWithLengthOpts(body.c_str(), body.length() + 1, &parseEnd, false), &cJSON_Delete);
+			// Accept only JSON whitespace after the root, including when the body
+			// contains embedded NUL bytes. A valid prefix is not a valid document.
+			if (parsed) {
+				while (parseEnd < documentEnd && (*parseEnd == ' ' || *parseEnd == '\t' || *parseEnd == '\r' || *parseEnd == '\n')) ++parseEnd;
+			}
 			config::BoilerConfig validated;
-			if (!config::parseBoilerConfig(parsed.get(), validated)) {
+			if (!parsed || parseEnd != documentEnd || !config::parseBoilerConfig(parsed.get(), validated)) {
 				server.send(400, "text/plain", "Invalid boiler settings. EMS temperature control requires fixedSupplyTemperature (20-90 C) within the heating limits; boiler setting is supported only with plain ON/OFF.");
 				return;
 			}

@@ -273,4 +273,31 @@ TEST_F(HeatingOperation, DemandSatisfiedDuringWeatherOutageDoesNotResumeInHyster
  ems.state.outdoorTemperature=500;controller->operate();EXPECT_FALSE(ems.enabled);
 }
 
+TEST_F(HeatingOperation, OutdoorInputRemainsAvailableWithFixedOrBoilerSettingSupply) {
+ for(bool boilerSetting:{false,true}) {
+  SetUp();auto &b=native_controller::boiler;
+  b.boiler.outdoorSensor=config::BoilerConfig::outdoorSensor_t::openweather;
+  b.boiler.weatherFallback=false;
+  b.boiler.controlMode=boilerSetting?config::BoilerConfig::controlMode_t::onoff:config::BoilerConfig::controlMode_t::ems;
+  b.boiler.supplyMode=boilerSetting?config::BoilerConfig::supplyMode_t::boiler:config::BoilerConfig::supplyMode_t::fixed;
+  for(auto &r:native_controller::rooms) r.temperatures_.clear();
+  boot();Services::ems(*controller).state.outdoorTemperature.reset();
+  heating::OpenWeatherTestPeer::receive(Services::weather(*controller),
+   "{\"main\":{\"temp\":12},\"dt\":1793808000}");
+  controller->operate();
+  EXPECT_TRUE(Services::boilerOutput(*controller).isBoilerStarted());
+  if(boilerSetting) EXPECT_EQ(Services::ems(*controller).commands,0u);
+  else EXPECT_EQ(Services::ems(*controller).flow,45);
+  for(auto &r:Services::roomList(*controller)) {
+   EXPECT_STREQ(Peer::context(*r).outdoorSource,"openweather");
+   auto status=cJSON_Parse(r->getStatus().c_str());ASSERT_NE(status,nullptr);
+   auto outdoor=cJSON_GetObjectItem(cJSON_GetObjectItem(status,"adaptiveStart"),"outdoorTemp");
+   ASSERT_TRUE(cJSON_IsNumber(outdoor));EXPECT_EQ(outdoor->valueint,12);
+   cJSON_Delete(status);
+   if(boilerSetting) EXPECT_TRUE(std::isnan(Peer::predictedSupply(*r)));
+   else EXPECT_EQ(Peer::predictedSupply(*r),45);
+  }
+ }
+}
+
 }

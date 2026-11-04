@@ -199,7 +199,7 @@ review the chart and click **Save settings**.
 | `Valve preheating delay` | Boiler startup delay in seconds to allow actuators to open; zero disables the delay. |
 | `Minimum heating temperature` / `Maximum heating temperature` | Runtime bounds for both base supply and program overrides, also used by the curve editor. EMS commands and AOS forecasts use the same bounds and truncate interpolated temperatures to whole °C. |
 | `Select boiler control mode` | Relay ON/OFF or EMS heating commands. Supply policy is selected separately. |
-| `Outdoor temperature source` | EMS, OpenWeather or automatic EMS → OpenWeather. Enable the services separately. Readings must be fresh and between −60°C and +60°C. |
+| `Outdoor temperature source` | EMS, OpenWeather or automatic EMS → OpenWeather. Available in every supply policy because AOS also uses the selected outdoor input for learning and forecasts. Enable the services separately. Readings must be fresh and between −60°C and +60°C. |
 | `Supply temperature` | Boiler setting (plain relay only), fixed temperature via EMS, or weather curve via EMS. |
 | `Fixed / weather fallback temperature` | Required for fixed and curve policies. Enter an agreed temperature within the heating limits. Used directly in fixed mode and when all permitted weather sources fail in curve mode. |
 | `Allow the other weather source` | Explicitly allows a secondary source. Automatic source selection always permits EMS → OpenWeather; selecting OpenWeather otherwise keeps OpenWeather first. |
@@ -256,7 +256,7 @@ For example, a curve configuration may specify `supplyMode: "curve"`,
 `outdoorSensor: "owm"`, `weatherFallback: false` and
 `fixedSupplyTemperature: 48`. The 48°C value is illustrative: choose the value
 for your installation explicitly. The bundled legacy configuration does not
-silently assign a fallback. API writes reject unsupported combinations and
+silently assign a fallback. API writes reject unsupported combinations, trailing non-JSON content and
 out-of-range, fractional or missing required values before saving.
 
 ## Adaptive optimal start (AOS)

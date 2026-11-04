@@ -275,8 +275,8 @@ function verifyBoilerControlMode() {
 	const mode = $('#SupplyMode').val();
 	$('#FixedSupplyTemperature').prop('disabled', mode === 'boiler').prop('required', mode !== 'boiler')
 		.prop('min', $('#minHeatingTemp').val()).prop('max', $('#maxHeatingTemp').val());
-	$('#OutdoorTemperatureSource').prop('disabled', mode !== 'curve');
-	$('#WeatherFallback').prop('disabled', mode !== 'curve' || $('#OutdoorTemperatureSource').val() === 'auto');
+	$('#OutdoorTemperatureSource').prop('disabled', false);
+	$('#WeatherFallback').prop('disabled', $('#OutdoorTemperatureSource').val() === 'auto');
 }
 
 function loadSupplyStatus() {

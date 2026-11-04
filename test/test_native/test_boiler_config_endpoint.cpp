@@ -60,6 +60,25 @@ TEST_F(BoilerEndpoint, InvalidPostCannotTruncatePreviouslySavedConfig) {
   EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature,48);
  }
 }
+TEST_F(BoilerEndpoint, TrailingDataIsRejectedWithoutChangingTheSavedDocument) {
+	request(); ASSERT_EQ(server.status, 201);
+	std::vector<std::string> suffixes = {"trailing", " {}", " null", "\v", "\f", std::string("\0junk", 5)};
+	for (const auto &suffix : suffixes) {
+		server.verb = HTTP_POST; server.body = std::string(valid) + suffix;
+		request(); EXPECT_EQ(server.status, 400);
+		EXPECT_EQ(fs.writes, 1u);
+		server.verb = HTTP_GET; request(); EXPECT_EQ(server.status, 200);
+		EXPECT_EQ(server.response, valid);
+		EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
+	}
+}
+TEST_F(BoilerEndpoint, JsonWhitespaceSurvivesPostGetAndReboot) {
+	server.body = std::string(" \r\n\t") + valid + " \r\n\t";
+	request(); ASSERT_EQ(server.status, 201);
+	server.verb = HTTP_GET; request(); EXPECT_EQ(server.response, server.body);
+	EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
+}
+
 TEST_F(BoilerEndpoint, NonStringWeatherSourcesAreRejectedBeforePersistence) {
 	request(); ASSERT_EQ(server.status, 201);
 	for (const auto value : {"false", "42", "null", "[]", "{}"}) {
