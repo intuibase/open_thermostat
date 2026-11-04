@@ -1,4 +1,6 @@
 #include "config.h"
+#include "AdaptiveStartConfig.h"
+#include <algorithm>
 #include "BeaconBleAddress.h"
 #include "Logging.h"
 #include "TimeUtils.h"
@@ -117,6 +119,14 @@ heating::RoomConfig parseRoomDefinition(cJSON *obj) {
 	room.id_ = json::getString(obj, "id");
 	room.sensorAddress_ = heating::BLEAddresFromString(json::getString(obj, "sensor"));
 	room.valves_ = parseValves(obj);
+	auto aos = cJSON_GetObjectItemCaseSensitive(obj, "adaptive_start");
+	if (cJSON_IsObject(aos)) {
+		room.adaptiveStart_.thermalLearningEnabled = json::getBool(aos, "thermalLearningEnabled");
+		room.adaptiveStart_.optimalStartEnabled = json::getBool(aos, "optimalStartEnabled");
+		room.adaptiveStart_.shadowMode = !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(aos, "shadowMode"));
+		room.adaptiveStart_.maxLeadMinutes = std::clamp(json::getOptInt<int>(aos, "maxLeadMinutes").value_or(240), 60, 720);
+		room.adaptiveStart_.marginMinutes = std::clamp(json::getOptInt<int>(aos, "marginMinutes").value_or(10), 0, 60);
+	}
 	return room;
 }
 
@@ -665,6 +675,7 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	std::vector<heating::RoomConfig> rooms;
 	std::unordered_map<std::string, size_t> roomPositions;
 	std::set<std::string> roomNames;
+	unsigned adaptiveRooms = 0;
 	std::set<std::string> availableValves;
 	auto pins = getValvePins();
 	for (size_t i = 0; i < pins.size(); ++i) {
@@ -673,7 +684,7 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 	}
 	for (auto i = 0; i < cJSON_GetArraySize(catalog.get()); ++i) {
 		auto item = cJSON_GetArrayItem(catalog.get(), i);
-		if (!cJSON_IsObject(item)) return {};
+		if (!cJSON_IsObject(item) || !heating::aos::validConfigJson(item)) return {};
 		auto id = json::getString(item, "id");
 		auto name = json::getString(item, "name");
 		if (id.size() != 8 || id.find_first_not_of("0123456789abcdef") != std::string::npos || roomPositions.count(id) || name.empty() || !roomNames.insert(name).second || !cJSON_IsString(cJSON_GetObjectItemCaseSensitive(item, "sensor")) || !cJSON_IsArray(cJSON_GetObjectItemCaseSensitive(item, "valves"))) {
@@ -694,6 +705,10 @@ std::vector<heating::RoomConfig> getRoomsConfig(std::string const &program) {
 		}
 		roomPositions.emplace(id, rooms.size());
 		rooms.emplace_back(helper::parseRoomDefinition(item));
+		if ((rooms.back().adaptiveStart_.thermalLearningEnabled || rooms.back().adaptiveStart_.optimalStartEnabled) && ++adaptiveRooms > 8) {
+			rooms.back().adaptiveStart_.thermalLearningEnabled = false;
+			rooms.back().adaptiveStart_.optimalStartEnabled = false;
+		}
 	}
 
 	std::string filename = "/programs/" + program + ".json";

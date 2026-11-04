@@ -158,7 +158,10 @@ void WifiSetUp(config::WiFiConfig const &wifiConfig, config::NetworkConfig const
 	if (networkConfig.loggerEnabled && !networkConfig.loggerHost.empty()) {
 		heating::logger->attachSink(std::make_shared<ib::logger::LoggerSocketSink>(
 			ib::logger::LoggerInterface::LogLevel::TRACE, networkConfig.loggerHost, networkConfig.loggerPort,
-			ib::logger::LoggerSocketSink::MemoryPreference::PreferPsram));
+			// AOS_DIAG JSON records exceed the sink's default 512-byte record limit.
+			// Keep complete records in the stream, including on internal-RAM fallback.
+			ib::logger::LoggerSocketSink::MemoryPreference::PreferPsram,
+			1000, 16 * 1024, 64 * 1024, heating::aos::diagnosticMaxRecordBytes));
 	}
 }
 

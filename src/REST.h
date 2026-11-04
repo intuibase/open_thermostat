@@ -1,4 +1,5 @@
 #pragma once
+#include "AdaptiveStartConfig.h"
 #include "Logging.h"
 
 #include <esp_ota_ops.h>
@@ -87,6 +88,20 @@ public:
 		server_.on("/config/temporary", HTTP_POST, [this]() { temporaryOverride(); }); // GET/POST/DELETE name without .json, case sensitive
 
 		server_.on(UriBraces("/config/programs/{}"), [this]() { configPrograms(); }); // GET/POST/DELETE name without .json, case sensitive
+		server_.on(UriBraces("/config/rooms/{}/thermal-model"), [this]() {
+			if (server_.method() == HTTP_OPTIONS) {
+				server_.sendHeader("Allow", "OPTIONS, DELETE");
+				server_.sendHeader("Access-Control-Allow-Methods", "OPTIONS, DELETE");
+				server_.send(204); return;
+			}
+			if (server_.method() != HTTP_DELETE) { server_.send(405, "text/plain", "Method not allowed"); return; }
+			const std::string id = server_.pathArg(0).c_str();
+			if (!validRoomId(id)) { server_.send(400, "text/plain", "Invalid room ID"); return; }
+			const auto ids = controller_.getRoomIds();
+			if (std::find(ids.begin(), ids.end(), id) == ids.end()) { server_.send(404, "text/plain", "Room not found"); return; }
+			if (!controller_.resetThermalModel(id)) { server_.send(500, "text/plain", "Could not reset model"); return; }
+			server_.send(204);
+		});
 		server_.on("/config/rooms", [this]() { configRooms(); });
 		server_.on("/config/wifi", [this]() { configWiFi(); });
 		server_.on("/config/device", [this]() { configDevice(); });
@@ -685,7 +700,13 @@ private:
 			availableValves.insert(std::to_string(i));
 			if (!pins[i].label.empty()) availableValves.insert(pins[i].label);
 		}
+		unsigned adaptiveRooms = 0;
 		for (auto item = root->child; item; item = item->next) {
+			if (!aos::validConfigJson(item)) return false;
+			auto adaptive = cJSON_GetObjectItemCaseSensitive(item, "adaptive_start");
+			if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(adaptive, "thermalLearningEnabled")) || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(adaptive, "optimalStartEnabled"))) {
+				if (++adaptiveRooms > 8) return false;
+			}
 			auto id = cJSON_GetObjectItemCaseSensitive(item, "id");
 			auto name = cJSON_GetObjectItemCaseSensitive(item, "name");
 			auto sensor = cJSON_GetObjectItemCaseSensitive(item, "sensor");

@@ -113,10 +113,44 @@ public:
 		boilerHeatingTemperatureOverride_t boilerHeatingTempOverride;
 
 		std::set<uint8_t> valvesWhichShouldBeClosed;
+		std::optional<float> outdoor, supply, predictedSupply;
+		std::optional<bool> emsHeating;
+		const char *aosOutdoorSource = "missing";
+		{
+			auto &state = ems_.getBoilerState();
+			std::lock_guard<std::mutex> lock(state.mutex);
+			const auto now = ib::getTimeMillis();
+			if (state.aosOutdoorUpdated && now - state.aosOutdoorUpdated <= 30 * 60 * 1000 && state.outdoorTemperature &&
+				*state.outdoorTemperature >= -6000 && *state.outdoorTemperature <= 6000) { outdoor = *state.outdoorTemperature / 100.0f; aosOutdoorSource = "ems"; }
+			if (state.aosSupplyUpdated && now - state.aosSupplyUpdated <= 180000 && state.currentFlowTemperature) supply = *state.currentFlowTemperature / 10.0f;
+			if (state.aosHeatingUpdated && now - state.aosHeatingUpdated <= 180000) emsHeating = state.heatingActive;
+		}
+		auto weather = openWeather_.getFreshTemperature();
+		if (weather && (!outdoor || boilerConfig_.boiler.outdoorSensor == config::BoilerConfig::outdoorSensor_t::openweather)) { outdoor = *weather / 100.0f; aosOutdoorSource = "openweather"; }
+		if (outdoor && boilerConfig_.boiler.controlMode != config::BoilerConfig::controlMode_t::onoff) {
+			predictedSupply = calcHeatingTemperature(static_cast<int16_t>(*outdoor * 100), boilerConfig_.heatingCurve.heatingCurve) / 100.0f;
+		}
+		const bool commanded = boiler_.isBoilerStarted();
+		const bool manual = boiler_.isManualTestActive();
+
 
 		{ // mutex scope
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		for (auto const &room : rooms_) {
+			bool valveOpen = room->getValves().empty();
+			for (const auto &valve : room->getValves()) {
+				auto found = valveLabelMap_.find(valve);
+				if (found != valveLabelMap_.end() && boiler_.isValveOpen(found->second)) valveOpen = true;
+			}
+			const bool useEms = boilerConfig_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems;
+			const bool available = useEms ? emsHeating.value_or(false) : commanded;
+			const bool trustworthy = !manual && !(useEms && commanded && (!emsHeating || !*emsHeating || !supply));
+			aos::HeatContext context;
+			context.program = currentProgram_;
+			context.boilerCommanded = commanded; context.valveOpen = valveOpen; context.emsHeating = emsHeating;
+			context.manualTest = manual; context.usesEms = useEms; context.outdoorSource = aosOutdoorSource;
+			context.invalidReason = manual ? "manual_test" : !emsHeating ? "ems_activity_missing" : !*emsHeating ? "ems_not_heating" : "ems_supply_missing";
+			room->updateThermalContext(outdoor, supply, predictedSupply, valveOpen && available, trustworthy, context);
 			if (room->isEnabled()) {
 				auto [roomStatus, roomBoilerHeatingTempOverride] = room->shouldStartBoilerAndHeat();
 
@@ -150,6 +184,7 @@ public:
 					 //				valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
 			}
 
+			room->logAdaptiveSnapshot();
 			if (bluetoothScan_) {
 				resetIfNoDataForLongTime();
 			}
@@ -337,9 +372,18 @@ public:
 		DBGLOGFD(log_, logFeature_, "reloadConfiguration%s\n", "");
 		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
 		currentProgram_ = config::getCurrentProgram();
-		rooms_ = buildRoomsFromConfig();
+		auto updated = buildRoomsFromConfig();
+		for (auto &room : updated) {
+			for (auto &old : rooms_) if (room->getId() == old->getId()) room->inheritThermalState(*old);
+		}
+		rooms_ = std::move(updated);
 	}
 
+	bool resetThermalModel(const std::string &id) {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		for (auto &room : rooms_) if (room->getId() == id) return room->resetThermalModel();
+		return false;
+	}
 private:
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
 	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
