@@ -4,8 +4,11 @@
 #include "BeaconBleAddress.h"
 #include "CircularBuffer.h"
 #include "Logging.h"
+#include "ThermalPersistence.h"
+#include "AosDiagnostics.h"
 
 #include <atomic>
+#include <functional>
 #include <chrono>
 #include <memory>
 #include <sstream>
@@ -22,10 +25,14 @@ public:
 
 	enum class TemperatureStatus : uint8_t { MISSING_TEMPERATURE, TEMPERATURE_OK, START_HEATING, CONTINUE_HEATING };
 
-	Room(std::shared_ptr<ib::logger::LoggerInterface> log, RoomConfig config) : log_(std::move(log)), config_(std::move(config)) {
+	Room(std::shared_ptr<ib::logger::LoggerInterface> log, RoomConfig config, std::function<std::time_t()> wallClock = [] { return std::time(nullptr); })
+		: log_(std::move(log)), wallClock_(std::move(wallClock)), config_(std::move(config)) {
+		modelLoaded_ = aos::loadModel(config_.id_, config_.sensorAddress_, thermalModel_.state);
 		if (log_) {
 			logFeature_ = log_->addFeature("Room");
+			aosLogFeature_ = log_->addFeature("AOS");
 		}
+		logAdaptiveDiagnostic("config", modelLoaded_ ? "model_restored" : "default_model");
 	}
 
 	Room(Room &&r) = default;
@@ -63,6 +70,12 @@ public:
 	std::tuple<TemperatureStatus, std::optional<uint8_t>> shouldStartBoilerAndHeat();
 
 	bool isEnabled() const;
+	void updateThermalContext(std::optional<float> outdoor, std::optional<float> actualSupply,
+		std::optional<float> predictedSupply, bool deliveredHeat, bool trustworthy, aos::HeatContext context = {});
+	void logAdaptiveSnapshot();
+	bool resetThermalModel();
+	void inheritThermalState(Room &previous);
+
 
 	const std::string &getName() const { return config_.name_; }
 	const std::string &getId() const { return config_.id_; }
@@ -77,7 +90,7 @@ public:
 
 private:
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
-	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{}, aosLogFeature_{};
 	bool isTemperatureValid() const;
 	std::pair<int16_t, const RoomConfig::TemperatureSetting *> getTemperatureSet(uint16_t currentTime, uint8_t dayOfTheWeek) const; // HH:MM 	// returns temperature set for current time - maximum one from all, but always overrides base temp
 	int16_t getTemperatureMarginUp() const;
@@ -87,7 +100,35 @@ private:
 
 	auto getMaxSampleAgeMs() const { return std::chrono::minutes(3); }
 
+	std::function<std::time_t()> wallClock_;
 	RoomConfig config_;
+	bool modelLoaded_ = false;
+	aos::HeatContext heatContext_;
+	bool deliveredHeat_ = false, trustworthyHeat_ = false;
+	const char *intervalReason_ = "ok", *sampleReason_ = "not_sampled";
+	aos::DiagnosticCadence diagnosticCadence_;
+	std::optional<aos::OptimalStartScheduler::Status> lastLoggedStatus_;
+	int64_t lastLoggedTarget_ = 0;
+	void logAdaptiveDiagnostic(const char *event, const char *reason = "ok") const;
+	aos::ThermalModel thermalModel_;
+	std::unique_ptr<aos::ThermalHistory> thermalHistory_;
+	aos::OptimalStartScheduler optimalStart_;
+	aos::Event nextEvent_;
+	bool thermalContextSeen_ = false, lastDeliveredHeat_ = false, thermalIntervalValid_ = true;
+	float outdoor_ = NAN, actualSupply_ = NAN, predictedSupply_ = NAN;
+	int64_t lastScheduleCheck_ = 0, lastWallTime_ = 0, lastMonotonic_ = 0, lastPersist_ = 0;
+	long lastUtcOffset_ = 0;
+	int16_t effectiveSet_ = 0;
+	struct PredictionCycle {
+		int64_t targetTime = 0, startTime = 0;
+		int16_t target = 0;
+		int predictedMinutes = 0;
+		bool clean = true;
+		std::optional<int64_t> reached;
+	} predictionCycle_;
+	void updateOptimalStart(int16_t &set, int16_t roomTemperature);
+	void writeAdaptiveStatus(std::ostream &ss) const;
+
 	std::unique_ptr<TemporaryOverride> temporaryOverride_;
 	ib::CircularBuffer<temperatureData_t, 10> temperatureData_;
 	mutable std::mutex mutex_;

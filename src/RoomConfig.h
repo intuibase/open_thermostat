@@ -1,5 +1,6 @@
 #pragma once
 #include "Logging.h"
+#include "OptimalStart.h"
 
 #include <array>
 #include <optional>
@@ -36,6 +37,7 @@ struct RoomConfig {
 		std::array<bool, 7> days_ = {{true, true, true, true, true, true, true}}; // TODO memory use bitfields
 	};
 
+	aos::Config adaptiveStart_;
 	bool enabled_ = false;
 
 	uint16_t baseTemperature_ = 2100;  // 21.00 deg

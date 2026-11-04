@@ -48,12 +48,16 @@ EmsController::EmsController(std::shared_ptr<ib::logger::LoggerInterface> log) :
 		telegram->logData(*log_, logFeature_);
 		std::lock_guard<std::mutex> lock(s.mutex);
 		UPDATE_IF_SET(s.selectedFlowTemperature, getSelectedFlowTemperature)
-		UPDATE_IF_SET(s.currentFlowTemperature, getCurrentFlowTemperature)
+		if (auto value = telegram->getCurrentFlowTemperature(); value && *value <= 1000) {
+			s.currentFlowTemperature = *value; s.aosSupplyUpdated = ib::getTimeMillis();
+		}
 		UPDATE_IF_SET(s.burningGas, getBurningGas)
 		UPDATE_IF_SET(s.pumpEnabled, getPumpEnabled)
 		UPDATE_IF_SET(s.pressure, getPressure)
 		UPDATE_IF_SET(s.currentBurnerPower, getCurrentBurnerPower)
-		UPDATE_IF_SET(s.heatingActive, getHeatingActive)
+		if (auto value = telegram->getHeatingActive()) {
+			s.heatingActive = *value; s.aosHeatingUpdated = ib::getTimeMillis();
+		}
 		UPDATE_IF_SET(s.warmWaterActive, getWarmWaterActive)
 		UPDATE_IF_SET(s.fillingSiphon, getSiphonFilling)
 		UPDATE_IF_SET(s.serviceCode, getServiceCode);
@@ -109,6 +113,7 @@ EmsController::EmsController(std::shared_ptr<ib::logger::LoggerInterface> log) :
 		std::lock_guard<std::mutex> lock(s.mutex);
 		s.outdoorTemperature = telegram->getOutdoorTemperature();
 		if (s.outdoorTemperature.has_value()) {
+			s.aosOutdoorUpdated = *s.outdoorTemperature >= -600 && *s.outdoorTemperature <= 600 ? ib::getTimeMillis() : 0;
 			s.outdoorTemperature.value() *= 10;
 		}
 	});

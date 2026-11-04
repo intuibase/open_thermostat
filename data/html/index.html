@@ -664,6 +664,7 @@
 				programName = "Temporary (" + getTimeLeftFromSecs(room.temporaryProgramSecondsLeft) + ")";
 			}
 
+			if (room.adaptiveStart?.status === 'PREHEATING') programName = 'Optimal start';
 			let lowBatteryStyle = '';
 			if (room.batteryLevel !== undefined && room.batteryLevel < 6) {
 				lowBatteryStyle = 'fill: red; animation: blink 1s linear infinite alternate;';

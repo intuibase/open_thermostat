@@ -47,6 +47,9 @@ public:
 		for (size_t room = 0; room < roomIds.size(); ++room) {
 			auto const &roomId = roomIds[room];
 			const auto field = "rooms[" + std::to_string(room) + "].";
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_aos_status", "Optimal start status"sv, field + "adaptiveStart.status", ""sv, ""sv, ""sv, ""sv, "diagnostic"sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_aos_duration", "Predicted heating duration"sv, field + "adaptiveStart.predictedMinutes", ""sv, "min"sv, ""sv, "duration"sv, "diagnostic"sv);
+			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_aos_mae", "Optimal start mean absolute error"sv, field + "adaptiveStart.maeMinutes", ""sv, "min"sv, ""sv, "duration"sv, "diagnostic"sv);
 			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_heating_enabled", "Heating enabled"sv, field + "enabledState", ""sv, ""sv);
 			publish.publishAutoDiscoveryBinarySensor("room_data"sv, roomId + "_heating", "Room is being heated"sv, field + "isBeingHeatedState", ""sv, ""sv);
 			publish.publishAutoDiscoverySensor("room_data"sv, roomId + "_current_temperature", "Current temperature"sv, field + "currentTemp", "/ 100"sv, "°C"sv, "measurement"sv, "temperature"sv, {});

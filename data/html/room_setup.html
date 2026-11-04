@@ -36,6 +36,19 @@
           <select id="physicalRoomValves" multiple="multiple"></select>
         </div>
       </div>
+      <fieldset class="border rounded p-3 my-3">
+        <legend class="w-auto px-2">Adaptive optimal start</legend>
+        <div class="form-check"><input type="checkbox" class="form-check-input" id="thermalLearning"><label for="thermalLearning" class="form-check-label">Learn thermal model during normal heating</label></div>
+        <div class="form-check"><input type="checkbox" class="form-check-input" id="optimalStart"><label for="optimalStart" class="form-check-label">Enable optimal start predictions</label></div>
+        <div class="form-check"><input type="checkbox" class="form-check-input" id="optimalShadow"><label for="optimalShadow" class="form-check-label">Shadow mode (observe predictions)</label></div>
+        <div class="form-row mt-2">
+          <div class="col"><label for="optimalLead">Maximum advance (minutes, 60–720)</label><input type="number" min="60" max="720" step="1" class="form-control" id="optimalLead"></div>
+          <div class="col"><label for="optimalMargin">Safety margin (minutes, 0–60)</label><input type="number" min="0" max="60" step="1" class="form-control" id="optimalMargin"></div>
+        </div>
+        <p class="text-muted mt-2">Active preheating requires disabling shadow mode. The boiler supply temperature follows normal control.</p>
+        <pre id="optimalDiagnostics" class="small" style="white-space:pre-wrap"></pre>
+        <button type="button" class="btn btn-outline-secondary" id="resetThermalModel">Reset learned model</button>
+      </fieldset>
       <small class="text-muted">Room ID: <span id="physicalRoomId"></span>. This ID remains unchanged when you rename the room.</small>
     </div>
   </div>
@@ -59,6 +72,14 @@
       const room = currentRoom();
       details.style.display = room ? '' : 'none';
       if (!room) return;
+      const config = room.adaptive_start || {};
+      document.getElementById('thermalLearning').checked = config.thermalLearningEnabled === true;
+      document.getElementById('optimalStart').checked = config.optimalStartEnabled === true;
+      document.getElementById('optimalShadow').checked = config.shadowMode !== false;
+      document.getElementById('optimalLead').value = config.maxLeadMinutes ?? 240;
+      document.getElementById('optimalMargin').value = config.marginMinutes ?? 10;
+      document.getElementById('optimalDiagnostics').textContent = '';
+      loadDiagnostics(room.id);
       name.value = room.name;
       sensor.value = room.sensor;
       document.getElementById('physicalRoomId').textContent = room.id;
@@ -66,6 +87,53 @@
       for (const option of valves.options) option.selected = selected.includes(option.value);
       $(valves).multiselect('refresh');
     }
+
+    async function loadDiagnostics(id) {
+      try {
+        const response = await fetch(hostName + '/status/rooms');
+        if (!response.ok) throw new Error(response.statusText);
+        const status = (await response.json()).find(room => room.id === id)?.adaptiveStart;
+        if (select.value !== id || !card.isConnected) return;
+        if (!status) return;
+        const time = value => value ? new Date(value * 1000).toLocaleString() : '—';
+        document.getElementById('optimalDiagnostics').textContent =
+          'Status: ' + status.status + ' | Model: ' + status.modelStatus +
+          '\nTarget: ' + (status.targetTime ? (status.targetTemp / 100).toFixed(2) + '°C at ' + time(status.targetTime) : '—') +
+          '\nStart: ' + time(status.startTime) + ' | Predicted: ' + status.predictedMinutes + ' min' +
+          '\nDelay: ' + status.delayMinutes.toFixed(1) + ' min | Margin: ' + status.marginMinutes + ' min' +
+          '\nFallback: ' + status.fallback + ' | Limited: ' + status.limited + ' | Unreachable: ' + status.unreachable +
+          '\nTraining windows (heating/cooling): ' + status.heatingWindows + '/' + status.coolingWindows +
+          '\nScheduled warmups: ' + (status.warmupWindows ?? 0) + ' | Warming rate: ' + (status.warmupRate ?? 0).toFixed(2) + '°C/h' +
+          '\nCoverage: ' + status.confidence + '% (12 heating + 6 cooling windows = 100%)' +
+          '\nObserved targets: ' + status.predictions + ' | Mean error: ' + status.meanErrorMinutes.toFixed(1) +
+          ' min | MAE: ' + status.maeMinutes.toFixed(1) + ' min' +
+          '\nOutdoor: ' + (status.outdoorTemp ?? '—') + '°C | Actual supply: ' + (status.actualSupplyTemp ?? '—') + '°C';
+      } catch (error) {
+        if (select.value === id) document.getElementById('optimalDiagnostics').textContent = 'Diagnostics unavailable';
+      }
+    }
+    const diagnosticTimer = setInterval(() => {
+      if (!card.isConnected) { clearInterval(diagnosticTimer); return; }
+      if (currentRoom()) loadDiagnostics(currentRoom().id);
+    }, 10000);
+    for (const [id, field] of [['thermalLearning', 'thermalLearningEnabled'], ['optimalStart', 'optimalStartEnabled'], ['optimalShadow', 'shadowMode'], ['optimalLead', 'maxLeadMinutes'], ['optimalMargin', 'marginMinutes']]) {
+      document.getElementById(id).addEventListener('change', event => {
+        const room = currentRoom();
+        if (!room) return;
+        if (!event.target.checkValidity()) { event.target.reportValidity(); return; }
+        room.adaptive_start = room.adaptive_start || {thermalLearningEnabled: false, optimalStartEnabled: false, shadowMode: true, maxLeadMinutes: 240, marginMinutes: 10};
+        room.adaptive_start[field] = event.target.type === 'checkbox' ? event.target.checked : Number(event.target.value);
+      });
+    }
+    document.getElementById('resetThermalModel').addEventListener('click', async () => {
+      const room = currentRoom();
+      if (!room || !confirm('Reset the learned model for ' + room.name + '?')) return;
+      try {
+        const response = await fetch(hostName + '/config/rooms/' + room.id + '/thermal-model', {method: 'DELETE'});
+        if (!response.ok) throw new Error(await response.text());
+        loadDiagnostics(room.id);
+      } catch (error) { alert('Cannot reset model: ' + error); }
+    });
 
     function refresh(selectedId) {
       select.replaceChildren();
@@ -83,6 +151,7 @@
     }
 
     async function saveRooms() {
+      for (const id of ['optimalLead', 'optimalMargin']) { if (!document.getElementById(id).reportValidity()) throw new Error('Invalid optimal start settings'); }
       if (rooms.some(room => !room.name.trim())) throw new Error('Every room needs a name');
       const response = await fetch(hostName + '/config/rooms', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(rooms)
@@ -209,6 +278,7 @@
           }
         });
         refresh();
+        loading.classList.remove('d-flex');
         loading.classList.add('d-none');
         loadingMessage.classList.add('d-none');
         card.classList.remove('d-none');

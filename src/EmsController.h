@@ -20,6 +20,8 @@ namespace heating::ems {
 struct EmsBoilerState {
 	mutable std::mutex mutex;
 
+	uint64_t aosSupplyUpdated = 0, aosHeatingUpdated = 0, aosOutdoorUpdated = 0;
+
 	// params plus
 	std::optional<bool> heatingEnabled;
 	//outdoor
