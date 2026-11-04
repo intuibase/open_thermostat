@@ -89,10 +89,16 @@ ON/OFF rate (initially 1°C/hour) plus response delay (initially 10 minutes).
 The model also observes **ordinary scheduled temperature increases**, including
 the boiler's on/off pauses. A completed warmup must last 30 minutes to 12 hours,
 begin at least 0.2°C below the new target, reach within 0.05°C, and have confirmed
-heat at both ends of intervals covering at least 20% of its duration. Missing
-room readings, manual tests, overrides, active preheating, gaps over six minutes,
-temperature jumps, clock/config changes and intervening setpoint changes cancel
-the observation. These measurements do not require active AOS.
+heat at both ends of intervals covering at least 20% of its duration. Confirmed
+heat requires trustworthy delivery and a measured supply more than 5°C above
+room temperature. Ordinary heat-off pauses remain part of the cycle. A schedule
+with a boiler supply override is excluded from this calibration, so boosted
+heating cannot train a rate referenced to the ordinary curve. Missing room
+readings, manual tests, overrides and active preheating cancel the observation
+on every controller tick, including between learning samples. Gaps over six minutes,
+temperature jumps, clock/config changes and intervening setpoint changes also
+cancel the observation. These measurements do not require active AOS. Normal
+heat transitions do not invalidate AOS arrival-error metrics.
 
 After three completed warmups, `modelStatus` becomes `Calibrated`. The mean
 observed rate (excluding the estimated initial response delay) anchors forecasts.
@@ -247,7 +253,9 @@ Every record carries:
 - Boiler command, valve state, fresh EMS heating state, manual-test flag,
   delivered heat and trust/quality reasons. `ems_activity_missing`,
   `ems_not_heating`, `ems_supply_missing`, `stale_room` and `heat_state_changed`
-  distinguish common reasons for rejecting input.
+  distinguish common reasons for rejecting input. `warmup_eligible` and
+  `confirmed_heat` expose calibration inputs; `warmup_reset` retains cancellation
+  between samples so offline replay can reproduce it.
 - Learning/AOS/shadow flags; scheduled/effective room setpoints and hysteresis;
   override lifetime; status, application flag, next target, previous boundary,
   proposed start, forecast, margin, advance cap, fallback/limit/impossibility.

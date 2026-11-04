@@ -38,9 +38,9 @@ int main(int argc, char **argv) {
 	std::map<std::string, Replay> rooms;
 	std::string key, room, outdoor, supply, target, curve;
 	int64_t time;
-	bool heating, valid, warmupValid, cancel;
+	bool heating, valid, warmupValid, cancel, confirmedHeat;
 	std::cout << std::setprecision(9);
-	while (std::cin >> key >> time >> room >> outdoor >> supply >> heating >> valid >> target >> curve >> warmupValid >> cancel) {
+	while (std::cin >> key >> time >> room >> outdoor >> supply >> heating >> valid >> target >> curve >> warmupValid >> cancel >> confirmedHeat) {
 		auto &r = rooms[key];
 		if (!r.history.push({time, std::stof(room), std::stof(outdoor), std::stof(supply), heating, valid}) ||
 			!r.candidateHistory.push({time, std::stof(room), std::stof(outdoor), std::stof(supply), heating, valid}))
@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
 		r.baseline.observe(r.history);
 		r.candidate.observe(r.candidateHistory);
 		if (cancel) r.candidate.cancelWarmup();
-		r.candidate.observeWarmup(time, std::stof(room), std::stof(target), std::stof(outdoor), std::stof(curve), warmupValid, heating);
+		r.candidate.observeWarmup(time, std::stof(room), std::stof(target), std::stof(outdoor), std::stof(curve), warmupValid, confirmedHeat);
 		emit(r.baseline);
 		emit(r.candidate);
 		std::cout << '\n';

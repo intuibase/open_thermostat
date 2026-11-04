@@ -18,7 +18,13 @@ def capture(bind, port, output, seconds=0, device=None):
         partial_line = False
         total = 0
         try:
-            with open(output, 'ab') as log:
+            with open(output, 'a+b') as log:
+                log.seek(0, 2)
+                if log.tell():
+                    log.seek(-1, 2)
+                    if log.read(1) != b'\n':
+                        log.write(b'\n')
+                        log.flush()
                 while deadline is None or time.monotonic() < deadline:
                     wait = min(1, max(0, deadline - time.monotonic())) if deadline else 1
                     watched = [listener] + ([connection] if connection is not None else [])

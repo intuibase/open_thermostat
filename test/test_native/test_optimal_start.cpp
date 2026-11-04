@@ -493,3 +493,121 @@ TEST(OptimalStart, BenchmarkAgainstScheduleAndFixedTwoHourAdvance) {
 	EXPECT_LT(adaptiveAbsolute, scheduledAbsolute);
 	EXPECT_LE(adaptiveAbsolute, 3);
 }
+
+namespace heating {
+struct RoomTestPeer {
+	static int64_t now() { return std::chrono::duration_cast<std::chrono::seconds>(Room::clock_t::now().time_since_epoch()).count(); }
+	static void seedWarmup(Room &r) {
+		r.thermalModel_.observeWarmup(now() - 900, 20, 20, 0, 45, true, true);
+		r.thermalModel_.observeWarmup(now() - 600, 20, 21, 0, 45, true, true);
+		r.thermalModel_.observeWarmup(now() - 300, 20.2f, 21, 0, 45, true, true);
+	}
+	static unsigned finishWarmup(Room &r) {
+		for (int i = 0; i <= 4; ++i)
+			r.thermalModel_.observeWarmup(now() + i * 300, 20.36f + i * .16f, 21, 0, 45, true, true);
+		return r.thermalModel_.state.warmupWindows;
+	}
+	static void forceSample(Room &r) { r.thermalHistory_.reset(); }
+	static bool pendingReset(Room &r) { return r.warmupResetPending_; }
+	static bool confirmed(Room &r) { return r.confirmedHeat_; }
+	static void seedPrediction(Room &r) { r.predictionCycle_.targetTime = 12345; r.predictionCycle_.clean = true; }
+	static bool clean(Room &r) { return r.predictionCycle_.clean; }
+	static void dropReading(Room &r) { r.temperatureData_ = {}; }
+	static int64_t cacheStamp(Room &r) { return r.lastScheduleCheck_; }
+	static void markCache(Room &r) { r.lastScheduleCheck_ = now() - 1; }
+	static void setWindows(Room &r) { r.thermalModel_.state.heatingWindows = 12; }
+	static unsigned windows(Room &r) { return r.thermalModel_.state.heatingWindows; }
+};
+}
+
+TEST(AdaptiveRoom, BriefDisturbancesCancelWarmupBetweenSamples) {
+	using Peer = heating::RoomTestPeer;
+	for (int disturbance = 0; disturbance < 6; ++disturbance) {
+		auto config = roomConfig(true);
+		config.adaptiveStart_.thermalLearningEnabled = true;
+		config.temperatures_.clear();
+		if (disturbance == 5) {
+			auto boosted = setting(0, 2359, 2100);
+			boosted.heatingTemperatureOverride_ = 70;
+			config.temperatures_.push_back(boosted);
+		}
+		heating::Room room({}, config);
+		room.storeTemperature(2000);
+		room.updateThermalContext(0, 45, 45, true, true);
+		Peer::seedWarmup(room);
+		Peer::seedPrediction(room);
+		if (disturbance == 0) room.createTemporaryOverride(1900, 600);
+		if (disturbance == 1) Peer::dropReading(room);
+		heating::aos::HeatContext context;
+		context.manualTest = disturbance == 2;
+		room.updateThermalContext(0, disturbance == 3 ? std::optional<float>{} : disturbance == 4 ? 22 : 45,
+			45, true, true, context);
+		EXPECT_TRUE(Peer::pendingReset(room)) << disturbance;
+		EXPECT_EQ(Peer::finishWarmup(room), 0u) << disturbance;
+		// No five-minute sample was added by the disturbance tick.
+		EXPECT_NE(room.getStatus().find("\"historySamples\": 1"), std::string::npos);
+	}
+}
+
+TEST(AdaptiveRoom, NormalHeatTransitionsKeepArrivalMetricsClean) {
+	using Peer = heating::RoomTestPeer;
+	auto config = roomConfig(true);
+	config.adaptiveStart_.thermalLearningEnabled = true;
+	heating::Room room({}, config);
+	room.storeTemperature(2000);
+	room.updateThermalContext(0, 45, 45, true, true);
+	Peer::seedPrediction(room);
+	HeatContext context;
+	context.usesEms = true;
+	context.emsHeating = false;
+	context.invalidReason = "ems_not_heating";
+	Peer::forceSample(room);
+	room.updateThermalContext(0, 30, 45, false, false, context);
+	EXPECT_TRUE(Peer::clean(room));
+	EXPECT_FALSE(Peer::pendingReset(room));
+	EXPECT_FALSE(Peer::confirmed(room));
+	room.updateThermalContext(0, 45, 45, true, true);
+	EXPECT_TRUE(Peer::clean(room));
+	EXPECT_TRUE(Peer::confirmed(room));
+	room.updateThermalContext(0, {}, 45, true, false);
+	EXPECT_FALSE(Peer::clean(room));
+	EXPECT_FALSE(Peer::confirmed(room));
+}
+
+TEST(AdaptiveRoom, ReloadReleasesDisabledHistoriesAndKeepsParameters) {
+	using Peer = heating::RoomTestPeer;
+	for (bool roomDisabled : {false, true}) {
+		auto config = roomConfig();
+		config.adaptiveStart_.thermalLearningEnabled = true;
+		heating::Room previous({}, config);
+		previous.storeTemperature(2000);
+		previous.updateThermalContext(0, 45, 45, true, true);
+		Peer::setWindows(previous);
+		if (roomDisabled) config.enabled_ = false;
+		else config.adaptiveStart_.thermalLearningEnabled = false;
+		heating::Room updated({}, config);
+		updated.inheritThermalState(previous);
+		EXPECT_EQ(Peer::windows(updated), 12u);
+		EXPECT_NE(updated.getStatus().find("\"historySamples\": 0"), std::string::npos);
+		EXPECT_NE(previous.getStatus().find("\"historySamples\": 0"), std::string::npos);
+	}
+}
+
+TEST(AdaptiveRoom, NoEventUsesScheduleCache) {
+	using Peer = heating::RoomTestPeer;
+	auto config = roomConfig();
+	config.temperatures_.clear();
+	heating::Room room({}, config);
+	room.storeTemperature(2000);
+	room.shouldStartBoilerAndHeat();
+	Peer::markCache(room);
+	const auto stamp = Peer::cacheStamp(room);
+	room.shouldStartBoilerAndHeat();
+	EXPECT_EQ(Peer::cacheStamp(room), stamp);
+}
+
+TEST(AdaptiveRoom, UndisturbedWarmupControlLearns) {
+	heating::Room room({}, roomConfig(true));
+	heating::RoomTestPeer::seedWarmup(room);
+	EXPECT_EQ(heating::RoomTestPeer::finishWarmup(room), 1u);
+}

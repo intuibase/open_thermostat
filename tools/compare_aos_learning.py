@@ -43,6 +43,28 @@ def compile_replay(directory):
     return binary, hashlib.sha256(source.encode()).hexdigest()
 
 
+def confirmed_heat(r):
+    if 'confirmed_heat' in r:
+        return r['confirmed_heat']
+    return (bool(r.get('heat_delivered')) and r.get('heat_trustworthy', True)
+            and all(type(r.get(k)) in (int, float) and math.isfinite(r[k])
+                    for k in ('room_c', 'actual_supply_c'))
+            and r['actual_supply_c'] > r['room_c'] + 5)
+
+
+def warmup_eligible(r):
+    if 'warmup_eligible' in r:
+        return r['warmup_eligible']
+    delivered = bool(r.get('heat_delivered'))
+    ordinary_pause = (not delivered and r.get('uses_ems')
+                      and r.get('ems_heating') is False and not r.get('manual_test'))
+    return (bool(r.get('room_fresh')) and r.get('time_valid', True)
+            and not r.get('override_s') and not r.get('manual_test') and not r.get('apply')
+            and r.get('room_c') is not None and -10 <= r['room_c'] <= 50
+            and (r.get('heat_trustworthy', True) or ordinary_pause)
+            and (not delivered or confirmed_heat(r)))
+
+
 def replay(samples, binary):
     def number(value):
         return 'nan' if value is None else str(value)
@@ -53,10 +75,9 @@ def replay(samples, binary):
             *[number(r.get(k)) for k in ('room_c', 'outdoor_c', 'actual_supply_c')],
             str(int(r['heat_delivered'])), str(int(r['sample_valid'])),
             number(r.get('scheduled_set_c')), number(r.get('predicted_supply_c')),
-            str(int(bool(r.get('room_fresh')) and not r.get('override_s')
-                    and not r.get('manual_test') and not r.get('apply')
-                    and r.get('room_c') is not None and -10 <= r['room_c'] <= 50)),
+            str(int(warmup_eligible(r))),
             str(int(r.get('warmup_reset', False))),
+            str(int(confirmed_heat(r))),
         ]))
     result = subprocess.run([str(binary)], input='\n'.join(lines) + '\n',
                             capture_output=True, text=True, check=True)
@@ -200,7 +221,10 @@ def read_samples(paths, rooms, timeline=None):
             timeline.append(r)
         if r['event'] in ('reset', 'reload'):
             raise ValueError('Reset/reload replay is unsupported; use an uninterrupted capture')
-        if r['event'] == 'clock_changed':
+        if (r['event'] == 'clock_changed' or r.get('warmup_reset')
+                or r.get('warmup_eligible') is False
+                or r.get('override_s') or r.get('manual_test') or r.get('apply')
+                or r.get('room_fresh') is False):
             reset_warmup.add((r['boot'], r['room_id']))
         if r['event'] == 'sample':
             if not r.get('time_valid') or r.get('ts') is None:
@@ -235,7 +259,7 @@ def schedule_warmups(timeline, cutoff):
         if r['event'] == 'sample':
             latest[key] = r
             continue
-        if r['event'] != 'snapshot' or r.get('ts') is None:
+        if r['event'] not in ('snapshot', 'decision') or r.get('ts') is None:
             continue
         p = previous.get(key)
         previous[key] = r

@@ -12,6 +12,7 @@ class CaptureTest(unittest.TestCase):
     def test_reconnect_replaces_half_open_connection(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / 'capture.log'
+            log.write_bytes(b'old truncated record')
             with socket.socket() as reserve:
                 reserve.bind(('127.0.0.1', 0))
                 port = reserve.getsockname()[1]
@@ -32,7 +33,7 @@ class CaptureTest(unittest.TestCase):
                         time.sleep(0.02)
                 clients.append(first)
                 first.sendall('pierwszy Ł\n'.encode())
-                while not log.exists() or b'\n' not in log.read_bytes():
+                while 'pierwszy Ł\n'.encode() not in log.read_bytes():
                     if time.monotonic() >= deadline:
                         self.fail('First record not captured')
                     time.sleep(0.01)
@@ -48,7 +49,7 @@ class CaptureTest(unittest.TestCase):
                 second.close()
                 code = process.wait(timeout=4)
                 self.assertEqual(code, 0)
-                self.assertEqual(log.read_text(), 'pierwszy Ł\nnext boot\n')
+                self.assertEqual(log.read_text(), 'old truncated record\npierwszy Ł\nnext boot\n')
             finally:
                 for client in clients:
                     client.close()

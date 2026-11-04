@@ -89,6 +89,7 @@ public:
 
 
 private:
+	friend struct RoomTestPeer;
 	std::shared_ptr<ib::logger::LoggerInterface> log_;
 	ib::logger::LoggerInterface::LogFeatureType logFeature_{}, aosLogFeature_{};
 	bool isTemperatureValid() const;
@@ -105,6 +106,7 @@ private:
 	bool modelLoaded_ = false;
 	aos::HeatContext heatContext_;
 	bool deliveredHeat_ = false, trustworthyHeat_ = false;
+	bool warmupEligible_ = false, confirmedHeat_ = false, warmupResetPending_ = false;
 	const char *intervalReason_ = "ok", *sampleReason_ = "not_sampled";
 	aos::DiagnosticCadence diagnosticCadence_;
 	std::optional<aos::OptimalStartScheduler::Status> lastLoggedStatus_;

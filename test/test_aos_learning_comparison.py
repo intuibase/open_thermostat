@@ -1,10 +1,12 @@
 """Causal evaluation and safety checks for the offline-only learning variant."""
 import copy
+import json
+from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-from tools.compare_aos_learning import compile_replay, evaluate, replay, windows, schedule_warmups, predict_cycles
+from tools.compare_aos_learning import compile_replay, evaluate, replay, windows, schedule_warmups, predict_cycles, read_samples
 
 
 class LearningComparisonTest(unittest.TestCase):
@@ -125,6 +127,50 @@ class LearningComparisonTest(unittest.TestCase):
             cycles = schedule_warmups(timeline, 0)
             self.assertEqual(cycles[0]['outcome'], outcome)
             self.assertIsNone(cycles[0]['reached_min'])
+
+    def test_decisions_observe_schedule_rise_and_brief_disturbance(self):
+        timeline = self.schedule_timeline()
+        timeline[2]['event'] = 'decision'  # first rising target
+        cycles = schedule_warmups(timeline, 0)
+        self.assertEqual(cycles[0]['reached_min'], 2)
+        disturbance = dict(timeline[2], event='decision', uptime_s=90, ts=10090,
+                           manual_test=True)
+        timeline.insert(3, disturbance)
+        cycles = schedule_warmups(timeline, 0)
+        self.assertEqual(cycles[0]['outcome'], 'interrupted')
+        self.assertIsNone(cycles[0]['reached_min'])
+
+    def test_unconfirmed_delivery_does_not_calibrate(self):
+        for supply, trustworthy in [(None, True), (22, True), (42, False)]:
+            rows = self.samples(count=40)
+            for i, r in enumerate(rows):
+                r.update(room_fresh=True, room_c=20 + max(0, i - 2) / 36,
+                         scheduled_set_c=20 if i < 2 else 21,
+                         actual_supply_c=supply, heat_trustworthy=trustworthy)
+            replay(rows, self.binary)
+            self.assertEqual(rows[-1]['candidate']['warmup_windows'], 0)
+
+    def test_decision_disturbance_resets_next_sample(self):
+        records = [dict(v=1, boot=1, seq=1, event='decision', room_id='a0000001',
+                        manual_test=True),
+                   dict(v=1, boot=1, seq=2, event='sample', room_id='a0000001',
+                        ts=10000, time_valid=True)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'capture.log'
+            path.write_text(''.join('AOS_DIAG ' + json.dumps(r) + '\n' for r in records))
+            rows, errors = read_samples([path], ['a0000001'])
+        self.assertFalse(errors)
+        self.assertTrue(rows[0]['warmup_reset'])
+
+    def test_explicit_boost_exclusion_prevents_calibration(self):
+        rows = self.samples(count=40)
+        for i, r in enumerate(rows):
+            r.update(room_fresh=True, room_c=20 + max(0, i - 2) / 36,
+                     scheduled_set_c=20 if i < 2 else 21,
+                     actual_supply_c=70, predicted_supply_c=42,
+                     warmup_eligible=i < 2)
+        replay(rows, self.binary)
+        self.assertEqual(rows[-1]['candidate']['warmup_windows'], 0)
 
     def test_replay_learns_whole_schedule_cycles_including_heat_pauses(self):
         rows = self.samples(count=400)

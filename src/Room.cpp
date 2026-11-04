@@ -270,7 +270,25 @@ void Room::updateThermalContext(std::optional<float> outdoor, std::optional<floa
 	actualSupply_ = actualSupply.value_or(NAN);
 	predictedSupply_ = predictedSupply.value_or(NAN);
 	if (!config_.enabled_ || !config_.adaptiveStart_.thermalLearningEnabled) return;
-	if (!trustworthy) predictionCycle_.clean = false;
+	const auto room = getAverageTemperature();
+	const std::time_t wall = wallClock_();
+	struct tm local{};
+	localtime_r(&wall, &local);
+	const auto scheduled = getTemperatureSet(local.tm_hour * 100 + local.tm_min, local.tm_wday);
+	const bool roomValid = room && isTemperatureValid() && *room >= -1000 && *room <= 5000;
+	const bool confirmedHeat = deliveredHeat && trustworthy && roomValid &&
+		std::isfinite(actualSupply_) && actualSupply_ > *room / 100.0f + 5;
+	// EMS burner cycling is a normal pause, even while heat is requested.
+	const bool ordinaryPause = !deliveredHeat && heatContext_.usesEms &&
+		heatContext_.emsHeating == false && !heatContext_.manualTest;
+	const bool contextValid = (trustworthy || ordinaryPause) && (!deliveredHeat || confirmedHeat);
+	warmupEligible_ = roomValid && local.tm_year >= 120 && contextValid &&
+		!heatContext_.manualTest && !(temporaryOverride_ && temporaryOverride_->isValid()) &&
+		!optimalStart_.decision.apply && !(scheduled.second && scheduled.second->getHeatingTemperatureOverride());
+	confirmedHeat_ = confirmedHeat;
+	// Disturbances must survive the five-minute sampling gate.
+	if (!warmupEligible_) { thermalModel_.cancelWarmup(); warmupResetPending_ = true; }
+	if (!roomValid || !contextValid || heatContext_.manualTest) predictionCycle_.clean = false;
 	if (thermalContextSeen_ && deliveredHeat != lastDeliveredHeat_) {
 		thermalIntervalValid_ = false; intervalReason_ = "heat_state_changed";
 	}
@@ -280,7 +298,6 @@ void Room::updateThermalContext(std::optional<float> outdoor, std::optional<floa
 	lastDeliveredHeat_ = deliveredHeat;
 	if (!thermalHistory_) thermalHistory_ = std::make_unique<aos::ThermalHistory>();
 	const auto now = std::chrono::duration_cast<std::chrono::seconds>(clock_t::now().time_since_epoch()).count();
-	const auto room = getAverageTemperature();
 	aos::Sample sample{now, room ? *room / 100.0f : NAN, outdoor_, actualSupply_, deliveredHeat,
 		thermalIntervalValid_ && room.has_value() && *room >= -1000 && *room <= 5000 && isTemperatureValid() &&
 		(!deliveredHeat || !actualSupply || *actualSupply > *room / 100.0f + 5)};
@@ -291,17 +308,11 @@ void Room::updateThermalContext(std::optional<float> outdoor, std::optional<floa
 			(deliveredHeat && actualSupply && *actualSupply <= *room / 100.0f + 5) ? "supply_not_hot" : "ok";
 		thermalIntervalValid_ = true; intervalReason_ = "ok";
 		thermalModel_.observe(*thermalHistory_);
-		const std::time_t wall = wallClock_();
-		struct tm local{};
-		localtime_r(&wall, &local);
-		const float scheduled = getTemperatureSet(local.tm_hour * 100 + local.tm_min, local.tm_wday).first / 100.0f;
-		thermalModel_.observeWarmup(now, sample.room, scheduled, outdoor_, predictedSupply_,
-			room.has_value() && isTemperatureValid() && *room >= -1000 && *room <= 5000 && local.tm_year >= 120 &&
-			!heatContext_.manualTest && !(temporaryOverride_ && temporaryOverride_->isValid()) && !optimalStart_.decision.apply,
-			deliveredHeat);
-		if (!sample.valid) predictionCycle_.clean = false;
+		thermalModel_.observeWarmup(now, sample.room, scheduled.first / 100.0f, outdoor_, predictedSupply_,
+			warmupEligible_, confirmedHeat);
 		if (thermalHistory_->size() > 1 && std::abs(sample.room - thermalHistory_->at(1).room) > 0.6f) predictionCycle_.clean = false;
 		logAdaptiveDiagnostic("sample", thermalModel_.observation.reason);
+		warmupResetPending_ = false;
 	}
 	// At most one flash write per six hours, only after model/statistics changed.
 	if (thermalModel_.dirty && now - lastPersist_ >= 6 * 3600) {
@@ -355,7 +366,7 @@ void Room::updateOptimalStart(int16_t &set, int16_t roomTemperature) {
 		}
 	}
 	if (config_.adaptiveStart_.optimalStartEnabled && validTime &&
-		(!lastScheduleCheck_ || monotonic - lastScheduleCheck_ >= 180 || nextEvent_.targetTime <= now)) {
+		(!lastScheduleCheck_ || monotonic - lastScheduleCheck_ >= 180 || (nextEvent_.targetTime && nextEvent_.targetTime <= now))) {
 		lastScheduleCheck_ = monotonic;
 		nextEvent_ = aos::nextIncrease(now, [this](int64_t instant) {
 			const std::time_t t = instant;
@@ -393,7 +404,12 @@ void Room::inheritThermalState(Room &previous) {
 	if (config_.sensorAddress_ != previous.config_.sensorAddress_) return;
 	thermalModel_ = previous.thermalModel_;
 	thermalModel_.cancelWarmup();
-	thermalHistory_ = std::move(previous.thermalHistory_);
+	if (config_.enabled_ && config_.adaptiveStart_.thermalLearningEnabled)
+		thermalHistory_ = std::move(previous.thermalHistory_);
+	else {
+		thermalHistory_.reset();
+		previous.thermalHistory_.reset();
+	}
 	thermalContextSeen_ = false; thermalIntervalValid_ = false;
 	temperatureData_ = previous.temperatureData_;
 	temporaryOverride_ = std::move(previous.temporaryOverride_);
@@ -478,6 +494,8 @@ void Room::logAdaptiveDiagnostic(const char *event, const char *reason) const {
 	j.boolean("boiler_commanded", heatContext_.boilerCommanded); j.boolean("valve_open", heatContext_.valveOpen);
 	j.boolean("uses_ems", heatContext_.usesEms); j.boolean("ems_heating", heatContext_.emsHeating);
 	j.boolean("manual_test", heatContext_.manualTest); j.boolean("heat_delivered", deliveredHeat_);
+	j.boolean("warmup_eligible", warmupEligible_); j.boolean("confirmed_heat", confirmedHeat_);
+	j.boolean("warmup_reset", warmupResetPending_);
 	j.boolean("heat_trustworthy", trustworthyHeat_); j.text("heat_reason", trustworthyHeat_ ? "ok" : heatContext_.invalidReason);
 	j.boolean("interval_valid", thermalIntervalValid_); j.text("interval_reason", intervalReason_);
 	j.text("sample_reason", sampleReason_);
