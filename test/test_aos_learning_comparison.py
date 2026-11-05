@@ -162,6 +162,37 @@ class LearningComparisonTest(unittest.TestCase):
         self.assertFalse(errors)
         self.assertTrue(rows[0]['warmup_reset'])
 
+    def test_shared_boost_between_samples_resets_replay(self):
+        for field in ('manual_test', 'supply_boost_applied', 'supply_baseline_unknown'):
+            records = [dict(v=1, boot=1, seq=1, event='decision', room_id='a0000001', **{field: True}),
+                       dict(v=1, boot=1, seq=2, event='decision', room_id='a0000001', **{field: False}),
+                       dict(v=1, boot=1, seq=3, event='sample', room_id='a0000001', ts=10000, time_valid=True)]
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / 'capture.log'
+                path.write_text(''.join('AOS_DIAG ' + json.dumps(r) + '\n' for r in records))
+                rows, errors = read_samples([path], ['a0000001'])
+            self.assertFalse(errors)
+            self.assertTrue(rows[0]['warmup_reset'])
+
+    def test_shared_boost_prevents_warmup_but_keeps_basic_learning(self):
+        rows = self.samples(count=40, slope=.03)
+        for i, r in enumerate(rows):
+            r.update(room_fresh=True, scheduled_set_c=20 if i < 2 else 22,
+                     supply_boost_applied=True, actual_supply_c=70, predicted_supply_c=42)
+        replay(rows, self.binary)
+        self.assertEqual(rows[-1]['candidate']['warmup_windows'], 0)
+        self.assertGreater(rows[-1]['candidate']['heating_windows'], 0)
+
+    def test_unknown_supply_baseline_blocks_calibration_but_keeps_basic_learning(self):
+        rows = self.samples(count=40, slope=.03)
+        for i, r in enumerate(rows):
+            r.update(room_fresh=True, scheduled_set_c=20 if i < 2 else 22,
+                     supply_baseline_unknown=True, warmup_eligible=True,
+                     actual_supply_c=70, predicted_supply_c=None)
+        replay(rows, self.binary)
+        self.assertEqual(rows[-1]['candidate']['warmup_windows'], 0)
+        self.assertGreater(rows[-1]['candidate']['heating_windows'], 0)
+
     def test_explicit_boost_exclusion_prevents_calibration(self):
         rows = self.samples(count=40)
         for i, r in enumerate(rows):

@@ -53,6 +53,8 @@ def confirmed_heat(r):
 
 
 def warmup_eligible(r):
+    if r.get('supply_boost_applied') or r.get('supply_baseline_unknown'):
+        return False
     if 'warmup_eligible' in r:
         return r['warmup_eligible']
     delivered = bool(r.get('heat_delivered'))
@@ -222,7 +224,8 @@ def read_samples(paths, rooms, timeline=None):
         if r['event'] in ('reset', 'reload'):
             raise ValueError('Reset/reload replay is unsupported; use an uninterrupted capture')
         if (r['event'] == 'clock_changed' or r.get('warmup_reset')
-                or r.get('warmup_eligible') is False
+                or r.get('warmup_eligible') is False or r.get('supply_boost_applied')
+                or r.get('supply_baseline_unknown')
                 or r.get('override_s') or r.get('manual_test') or r.get('apply')
                 or r.get('room_fresh') is False):
             reset_warmup.add((r['boot'], r['room_id']))

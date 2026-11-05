@@ -1,3 +1,4 @@
+#include "BoilerController.h"
 #include <gtest/gtest.h>
 #include "OptimalStart.h"
 #include "ThermalPersistence.h"
@@ -494,35 +495,11 @@ TEST(OptimalStart, BenchmarkAgainstScheduleAndFixedTwoHourAdvance) {
 	EXPECT_LE(adaptiveAbsolute, 3);
 }
 
-namespace heating {
-struct RoomTestPeer {
-	static int64_t now() { return std::chrono::duration_cast<std::chrono::seconds>(Room::clock_t::now().time_since_epoch()).count(); }
-	static void seedWarmup(Room &r) {
-		r.thermalModel_.observeWarmup(now() - 900, 20, 20, 0, 45, true, true);
-		r.thermalModel_.observeWarmup(now() - 600, 20, 21, 0, 45, true, true);
-		r.thermalModel_.observeWarmup(now() - 300, 20.2f, 21, 0, 45, true, true);
-	}
-	static unsigned finishWarmup(Room &r) {
-		for (int i = 0; i <= 4; ++i)
-			r.thermalModel_.observeWarmup(now() + i * 300, 20.36f + i * .16f, 21, 0, 45, true, true);
-		return r.thermalModel_.state.warmupWindows;
-	}
-	static void forceSample(Room &r) { r.thermalHistory_.reset(); }
-	static bool pendingReset(Room &r) { return r.warmupResetPending_; }
-	static bool confirmed(Room &r) { return r.confirmedHeat_; }
-	static void seedPrediction(Room &r) { r.predictionCycle_.targetTime = 12345; r.predictionCycle_.clean = true; }
-	static bool clean(Room &r) { return r.predictionCycle_.clean; }
-	static void dropReading(Room &r) { r.temperatureData_ = {}; }
-	static int64_t cacheStamp(Room &r) { return r.lastScheduleCheck_; }
-	static void markCache(Room &r) { r.lastScheduleCheck_ = now() - 1; }
-	static void setWindows(Room &r) { r.thermalModel_.state.heatingWindows = 12; }
-	static unsigned windows(Room &r) { return r.thermalModel_.state.heatingWindows; }
-};
-}
+#include "RoomTestPeer.h"
 
 TEST(AdaptiveRoom, BriefDisturbancesCancelWarmupBetweenSamples) {
 	using Peer = heating::RoomTestPeer;
-	for (int disturbance = 0; disturbance < 6; ++disturbance) {
+	for (int disturbance = 0; disturbance < 7; ++disturbance) {
 		auto config = roomConfig(true);
 		config.adaptiveStart_.thermalLearningEnabled = true;
 		config.temperatures_.clear();
@@ -540,6 +517,8 @@ TEST(AdaptiveRoom, BriefDisturbancesCancelWarmupBetweenSamples) {
 		if (disturbance == 1) Peer::dropReading(room);
 		heating::aos::HeatContext context;
 		context.manualTest = disturbance == 2;
+		context.supplyBoostApplied = disturbance == 5;
+		context.supplyBaselineUnknown = disturbance == 6;
 		room.updateThermalContext(0, disturbance == 3 ? std::optional<float>{} : disturbance == 4 ? 22 : 45,
 			45, true, true, context);
 		EXPECT_TRUE(Peer::pendingReset(room)) << disturbance;
@@ -610,4 +589,79 @@ TEST(AdaptiveRoom, UndisturbedWarmupControlLearns) {
 	heating::Room room({}, roomConfig(true));
 	heating::RoomTestPeer::seedWarmup(room);
 	EXPECT_EQ(heating::RoomTestPeer::finishWarmup(room), 1u);
+}
+
+TEST(AdaptiveRoom, SharedAppliedBoostCancelsEveryRoomBetweenSamples) {
+	using Peer = heating::RoomTestPeer;
+	for (bool reverse : {false, true}) {
+		auto config = roomConfig(true);
+		config.adaptiveStart_.thermalLearningEnabled = true;
+		config.temperatures_.clear();
+		config.adaptiveStart_.optimalStartEnabled = false;
+		config.baseTemperature_ = 2100;
+		auto boostedConfig = config;
+		auto boosted = setting(0, 2359, 2200);
+		boosted.heatingTemperatureOverride_ = 70;
+		boostedConfig.temperatures_.push_back(boosted);
+		heating::Room a({}, boostedConfig), b({}, config);
+		std::array<heating::Room *, 2> rooms = reverse ? std::array{&b, &a} : std::array{&a, &b};
+		for (auto room : rooms) {
+			room->storeTemperature(2000);
+			room->updateThermalContext(0, 45, 45, true, true);
+			Peer::seedWarmup(*room);
+		}
+		struct Output : gpio::GpioPort {
+			void initOutput() override {}
+			void write(bool) override {}
+		};
+		config::BoilerConfig boilerConfig;
+		boilerConfig.boiler.controlMode = config::BoilerConfig::controlMode_t::ems;
+		boilerConfig.boiler.supplyMode = config::BoilerConfig::supplyMode_t::fixed;
+		boilerConfig.boiler.fixedSupplyTemperature = 45;
+		bool enabled = false;
+		uint8_t flow = 0;
+		heating::BoilerController boiler({}, boilerConfig, [] { return std::nullopt; },
+			[&](bool on, uint8_t temp) { enabled = on; flow = temp; }, [](uint8_t) {},
+			std::make_unique<Output>(), {}, {});
+		std::optional<uint8_t> request;
+		for (auto room : rooms) {
+			const auto [status, overrideTemperature] = room->shouldStartBoilerAndHeat();
+			EXPECT_EQ(status, heating::Room::TemperatureStatus::START_HEATING);
+			if (overrideTemperature) request = std::max(request.value_or(0), *overrideTemperature);
+		}
+		boiler.startBoilerOrContinue(true, false, request);
+		ASSERT_TRUE(enabled);
+		ASSERT_EQ(flow, 70);
+		heating::aos::HeatContext applied;
+		applied.supplyBoostApplied = boiler.isSupplyBoostApplied();
+		ASSERT_TRUE(applied.supplyBoostApplied);
+		for (auto room : rooms) room->updateThermalContext(0, 70, 45, true, true, applied);
+		boiler.startBoilerOrContinue(false, true, 30);
+		EXPECT_EQ(flow, 45);
+		applied.supplyBoostApplied = boiler.isSupplyBoostApplied();
+		EXPECT_FALSE(applied.supplyBoostApplied); // Both edges occur before the next sample.
+		for (auto room : rooms) {
+			room->updateThermalContext(0, 45, 45, true, true, applied);
+			EXPECT_TRUE(Peer::pendingReset(*room));
+			EXPECT_EQ(Peer::finishWarmup(*room), 0u);
+			Peer::seedWarmup(*room);
+			EXPECT_EQ(Peer::finishWarmup(*room), 1u); // Next clean cycle can learn.
+		}
+	}
+}
+
+TEST(AdaptiveRoom, UnappliedScheduledOverrideDoesNotCancelCalibration) {
+	using Peer = heating::RoomTestPeer;
+	auto config = roomConfig(true);
+	config.adaptiveStart_.thermalLearningEnabled = true;
+	config.temperatures_.clear();
+	auto scheduled = setting(0, 2359, 2100);
+	scheduled.heatingTemperatureOverride_ = 30; // Below the 45 C baseline.
+	config.temperatures_.push_back(scheduled);
+	heating::Room room({}, config);
+	room.storeTemperature(2000);
+	room.updateThermalContext(0, 45, 45, true, true);
+	Peer::seedWarmup(room);
+	room.updateThermalContext(0, 45, 45, true, true);
+	EXPECT_EQ(Peer::finishWarmup(room), 1u);
 }

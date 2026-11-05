@@ -14,6 +14,7 @@
 		<span class="align-middle">Boiler and heating curve settings</span><button type="button" class="btn px-1 py-0 m-0 btn-outline-info" onclick="loadBoilerSettings();">&#x2b6f;</button>
 	</div>
 	<div class="card-body">
+		<div id="SupplyStatus" class="alert alert-info" role="status"></div>
 		<ul class="nav nav-pills mb-3" id="pills-tab" role="tablist">
 			<li class="nav-item"><a class="nav-link active" id="pills-boiler-tab" data-toggle="pill" href="#pills-boiler" role="tab" aria-controls="pills-boiler" aria-selected="true">Boiler</a></li>
 			<li class="nav-item"><a class="nav-link" id="pills-curve-tab" data-toggle="pill" href="#pills-curve" role="tab" aria-controls="pills-curve" aria-selected="false">Heating curve</a></li>
@@ -54,17 +55,34 @@
 						<div class="col-md mb-2">
 							<label for="BoilerControlMode">Select boiler control mode</label>
 							<select class="form-control" id="BoilerControlMode">
-								<option value="onoff">ON/OFF (don't use heating curve)</option>
-								<option value="onoff_outdoor">ON/OFF + flow temperature based on outdoor temperature</option>
-								<option value="ems">EMS + flow temperature based on outdoor temperature</option>
+								<option value="onoff">Relay ON/OFF</option>
+								<option value="ems">EMS</option>
 							</select>
+						</div>
+						<div class="col-md mb-2">
+							<label for="SupplyMode">Supply temperature</label>
+							<select class="form-control" id="SupplyMode">
+								<option value="boiler">Boiler setting (relay only)</option>
+								<option value="fixed">Fixed temperature via EMS</option>
+								<option value="curve">Weather curve via EMS</option>
+							</select>
+						</div>
+					</div>
+					<div class="form-row">
+						<div class="col-md mb-2">
+							<label for="FixedSupplyTemperature">Fixed / weather fallback temperature (&deg;C)</label>
+							<input type="number" class="form-control" id="FixedSupplyTemperature" min="20" max="90" step="1">
+							<small class="form-text text-muted">Enter your installation's agreed temperature. No original boiler setting is inferred from EMS.</small>
 						</div>
 						<div class="col-md mb-2">
 							<label for="OutdoorTemperatureSource">Outdoor temperature source</label>
 							<select class="form-control" id="OutdoorTemperatureSource">
 								<option value="owm">Internet - OpenWeatherMap</option>
 								<option value="ems">Boiler outdoor temperature sensor (EMS)</option>
+								<option value="auto">Automatic: EMS, then OpenWeather</option>
 							</select>
+							<label class="mt-2"><input type="checkbox" id="WeatherFallback"> Allow the other weather source if the selected source is unavailable</label>
+
 						</div>
 					</div>
 				</div>
@@ -251,17 +269,30 @@ function updateChart(heatingCurvePoints) {
 }
 
 function verifyBoilerControlMode() {
-	let disable = ($('#BoilerControlMode').val() == "simple" || $('#BoilerControlMode').val() == "simple_outdoor");
-	$("#OutdoorTemperatureSource option:contains('EMS')").prop("disabled", disable );
+	const ems = $('#BoilerControlMode').val() === 'ems';
+	if (ems && $('#SupplyMode').val() === 'boiler') $('#SupplyMode').val('fixed');
+	$('#SupplyMode option[value="boiler"]').prop('disabled', ems);
+	const mode = $('#SupplyMode').val();
+	$('#FixedSupplyTemperature').prop('disabled', mode === 'boiler').prop('required', mode !== 'boiler')
+		.prop('min', $('#minHeatingTemp').val()).prop('max', $('#maxHeatingTemp').val());
+	$('#OutdoorTemperatureSource').prop('disabled', false);
+	$('#WeatherFallback').prop('disabled', $('#OutdoorTemperatureSource').val() === 'auto');
+}
 
-	// if disabled option is selected - change to active one
-	if ($("#OutdoorTemperatureSource option:contains('EMS')").prop("selected")) {
-		$("#OutdoorTemperatureSource > option").each(function() {
-			if (!this.disabled) {
-				$(this).prop("selected", true);
-			}
-		});
-	}
+function loadSupplyStatus() {
+	fetch(hostName + '/status/boiler').then(validateResponse).then(res => res.json()).then(status => {
+		const reasons = {boiler_setting: 'Supply temperature is set on the boiler.', fixed: 'Fixed supply temperature.',
+			curve: 'Weather curve is active.', weather_unavailable_fixed_fallback: 'Weather unavailable: fixed fallback is active.',
+			configuration_required: 'Configuration required: enter a fixed / weather fallback temperature. No weather reading is available.'};
+		let text = reasons[status.supplyReason] || 'Supply status is available after the next controller cycle.';
+		if (status.outdoorSource && status.outdoorSource !== 'missing') text += ' Weather source: ' + status.outdoorSource + '.';
+		if (status.baseSupplyTemperature != null) text += ' Base: ' + status.baseSupplyTemperature + ' °C.';
+		if (status.requestedSupplyTemperature != null) text += ' Requested: ' + status.requestedSupplyTemperature + ' °C.';
+		if (status.outdoorQuality === 'fresh_secondary') text += ' Using the permitted secondary weather source.';
+		if (status.appliedSupplyTemperature != null) text += ' Applied: ' + status.appliedSupplyTemperature + ' °C.';
+		if (status.supplyBoostApplied) text += ' Shared program boost is active.';
+		$('#SupplyStatus').text(text);
+	}).catch(() => $('#SupplyStatus').text('Supply status is unavailable.'));
 }
 
 function updateHeatingCurveMinMax() {
@@ -428,7 +459,7 @@ $(document).ready(function() {
 		}
 	});
 
-	$('#BoilerControlMode').change(verifyBoilerControlMode)
+	$('#BoilerControlMode, #SupplyMode, #OutdoorTemperatureSource, #minHeatingTemp, #maxHeatingTemp').change(verifyBoilerControlMode)
 
 	loadBoilerParams();
 	loadBoilerSettings();
@@ -478,8 +509,12 @@ function loadBoilerSettings() {
 		$('#minHeatingTemp').val(settings.boiler.minHeatingTemp);
 		$('#maxHeatingTemp').val(settings.boiler.maxHeatingTemp);
 
-		$('#BoilerControlMode option[value="' + settings.boiler.controlMode + '"]').prop("selected", true);
-		$('#OutdoorTemperatureSource option[value="' + settings.boiler.outdoorSensor + '"]').prop("selected", true);
+		$('#BoilerControlMode').val(settings.boiler.controlMode === 'ems' ? 'ems' : 'onoff');
+		$('#SupplyMode').val(settings.boiler.supplyMode || (settings.boiler.controlMode === 'onoff' ? 'boiler' : 'curve'));
+		$('#FixedSupplyTemperature').val(settings.boiler.fixedSupplyTemperature ?? '');
+		$('#WeatherFallback').prop('checked', settings.boiler.weatherFallback ?? true);
+		$('#OutdoorTemperatureSource').val(settings.boiler.outdoorSensor === 'no' ? 'owm' : settings.boiler.outdoorSensor || 'owm');
+		loadSupplyStatus();
 
 		updateChart(heatingCurvePoints);
 		verifyBoilerControlMode();
@@ -512,7 +547,10 @@ function saveBoilerSettings() {
 			"valvePreheatingDelay": parseInt($('#valvePreheatingDelay').val(), 10),
 			"minHeatingTemp": parseInt($('#minHeatingTemp').val(), 10),
 			"maxHeatingTemp": parseInt($('#maxHeatingTemp').val(), 10),
-			"controlMode": $('#BoilerControlMode').val(),
+			"controlMode": $('#BoilerControlMode').val() === 'ems' ? 'ems' : $('#SupplyMode').val() === 'boiler' ? 'onoff' : 'onoff_outdoor',
+			"supplyMode": $('#SupplyMode').val(),
+			"fixedSupplyTemperature": $('#SupplyMode').val() === 'boiler' ? null : Number($('#FixedSupplyTemperature').val()),
+			"weatherFallback": $('#WeatherFallback').prop('checked'),
 			"outdoorSensor": $('#OutdoorTemperatureSource').val(),
 		}
 

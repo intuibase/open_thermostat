@@ -1,3 +1,4 @@
+#include "BoilerConfigStorage.h"
 #include "config.h"
 #include "AdaptiveStartConfig.h"
 #include <algorithm>
@@ -577,68 +578,7 @@ OpenWeatherConfig getOpenWeatherConfig() {
 	return config;
 }
 
-BoilerConfig getBoilerConfig() {
-	File file = SPIFFS.open("/cfg/cfgboiler.json", FILE_READ);
-	if (!file) {
-		return {};
-	}
-
-	String cfg = file.readString();
-	std::unique_ptr<cJSON, decltype(&cJSON_Delete)> root(cJSON_Parse(cfg.c_str()), &cJSON_Delete);
-	cfg.clear();
-	file.close();
-
-	if (!root.get() || root->type != cJSON_Object) {
-		DBGLOGFI(heating::logger, configLogFeature(), "Error parsing boiler config\n'%s'\n", cfg.c_str());
-		return {};
-	}
-
-	BoilerConfig config;
-
-	config.heatingCurve.minHeatingCurveTemp = json::getInt(root.get(), "minHeatingCurveTemp");
-	config.heatingCurve.maxHeatingCurveTemp = json::getInt(root.get(), "maxHeatingCurveTemp");
-
-	auto heatingCurve = cJSON_GetObjectItem(root.get(), "heatingCurve");
-	if (!cJSON_IsArray(heatingCurve)) {
-		return {};
-	}
-
-	auto noPoints = cJSON_GetArraySize(heatingCurve);
-	for (auto pt = 0; pt < noPoints; ++pt) {
-		auto item = cJSON_GetArrayItem(heatingCurve, pt);
-		if (cJSON_IsNumber(item)) {
-			config.heatingCurve.heatingCurve[pt] = item->valueint;
-		}
-	}
-
-	auto boiler = cJSON_GetObjectItem(root.get(), "boiler");
-	if (!boiler || boiler->type != cJSON_Object) {
-		return {};
-	}
-
-	config.boiler.valvePreheatingDelay = json::getInt(boiler, "valvePreheatingDelay");
-	config.boiler.minHeatingTemp = json::getInt(boiler, "minHeatingTemp");
-	config.boiler.minHeatingTemp = json::getInt(boiler, "maxHeatingTemp");
-	auto controlMode = json::getString(boiler, "controlMode");
-	if (controlMode == "ems") {
-		config.boiler.controlMode = BoilerConfig::controlMode_t::ems;
-	} else if (controlMode == "onoff") {
-		config.boiler.controlMode = BoilerConfig::controlMode_t::onoff;
-	} else if (controlMode == "onoff_outdoor") {
-		config.boiler.controlMode = BoilerConfig::controlMode_t::onoff_outdoor;
-	}
-
-	auto outdoorSensor = json::getString(boiler, "outdoorSensor");
-	if (outdoorSensor == "owm") {
-		config.boiler.outdoorSensor = BoilerConfig::outdoorSensor_t::openweather;
-	} else if (outdoorSensor == "ems") {
-		config.boiler.outdoorSensor = BoilerConfig::outdoorSensor_t::ems;
-	} else {
-		config.boiler.outdoorSensor = BoilerConfig::outdoorSensor_t::no;
-	}
-
-	return config;
-}
+BoilerConfig getBoilerConfig() { return loadBoilerConfiguration(SPIFFS); }
 
 
 std::string parseProgram(std::string const &data) {

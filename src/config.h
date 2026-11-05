@@ -113,18 +113,22 @@ struct BoilerConfig {
 	struct HeatingCurve {
 		uint8_t minHeatingCurveTemp = 20;
 		uint8_t maxHeatingCurveTemp	= 90;
-		std::array<uint8_t, 9> heatingCurve;
+		std::array<uint8_t, 9> heatingCurve{};
 	} heatingCurve;
 
 	enum class controlMode_t : uint8_t { onoff, onoff_outdoor, ems };
-	enum class outdoorSensor_t : uint8_t { openweather, ems, no };
+	enum class outdoorSensor_t : uint8_t { openweather, ems, no, automatic };
+	enum class supplyMode_t : uint8_t { legacy, boiler, fixed, curve };
 
 	struct Boiler {
 		uint16_t valvePreheatingDelay = 0;
 		uint8_t minHeatingTemp = 20;
 		uint8_t maxHeatingTemp = 90;
 		controlMode_t controlMode = controlMode_t::onoff;
-		outdoorSensor_t	outdoorSensor = outdoorSensor_t::no;
+		outdoorSensor_t outdoorSensor = outdoorSensor_t::no;
+		supplyMode_t supplyMode = supplyMode_t::legacy;
+		std::optional<uint8_t> fixedSupplyTemperature; // Never infer a user setting from an EMS echo.
+		bool weatherFallback = true; // Legacy configurations allowed a secondary source.
 	} boiler;
 };
 

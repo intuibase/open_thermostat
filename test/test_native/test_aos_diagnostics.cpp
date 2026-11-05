@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "AosDiagnostics.h"
 #include "Room.h"
+#include "RoomTestPeer.h"
 #include <cJSON.h>
 #include <cstdarg>
 #include <cstdio>
@@ -135,4 +136,36 @@ TEST(AosDiagnostics, ModelReportsAcceptedFallbackAndRejectedSamples) {
 	model.observe(history);
 	EXPECT_FALSE(model.observation.accepted);
 	EXPECT_STREQ(model.observation.reason, "invalid_sample");
+}
+
+TEST(AosDiagnostics, BriefSupplyDisturbanceSurvivesUntilNextSampleRecord) {
+	for (bool unknownBaseline : {false, true}) {
+		auto logger = std::make_shared<CaptureAosLogger>();
+		heating::RoomConfig config{};
+		config.id_ = "aabbccdd"; config.name_ = "Bedroom"; config.enabled_ = true;
+		config.adaptiveStart_.thermalLearningEnabled = true;
+		heating::Room room(logger, config, [] { return std::time_t{1793808000}; });
+		room.storeTemperature(2000);
+		room.updateThermalContext(0, 45, 45, true, true);
+		heating::aos::HeatContext disturbance;
+		disturbance.supplyBoostApplied = !unknownBaseline;
+		disturbance.supplyBaselineUnknown = unknownBaseline;
+		room.updateThermalContext(0, 70, 45, true, true, disturbance);
+		room.updateThermalContext(0, 45, 45, true, true);
+		ASSERT_TRUE(heating::RoomTestPeer::pendingReset(room));
+		// Advance the sample gate without sleeping; all context updates above
+		// happened between samples in the actual Room implementation.
+		heating::RoomTestPeer::forceSample(room);
+		room.updateThermalContext(0, 45, 45, true, true);
+		ASSERT_FALSE(logger->records.empty());
+		auto json = cJSON_Parse(logger->records.back().c_str() + 9);
+		ASSERT_NE(json, nullptr);
+		EXPECT_STREQ(cJSON_GetObjectItem(json, "event")->valuestring, "sample");
+		EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(json, "warmup_reset")));
+		EXPECT_TRUE(cJSON_IsTrue(cJSON_GetObjectItem(json, "warmup_eligible")));
+		EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(json, "supply_boost_applied")));
+		EXPECT_TRUE(cJSON_IsFalse(cJSON_GetObjectItem(json, "supply_baseline_unknown")));
+		cJSON_Delete(json);
+		EXPECT_FALSE(heating::RoomTestPeer::pendingReset(room));
+	}
 }

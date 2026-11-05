@@ -3,7 +3,7 @@
 
 #include "config.h"
 #include "GpioPort.h"
-#include "HeatingCurve.h"
+#include "BoilerSupply.h"
 #include <logger/LoggerInterface.h>
 #include <sstream>
 #include <algorithm>
@@ -19,17 +19,19 @@ namespace heating {
 
 class BoilerController {
 public:
+	using clock_t = std::chrono::steady_clock;
+	using now_t = std::function<clock_t::time_point()>;
 	using boilerHeatingTemperatureOverride_t = std::optional<uint8_t>;
-	using getOutdoorTemp_t = std::function<int16_t()>;
+	using getOutdoorTemp_t = std::function<std::optional<int16_t>()>;
 	using emsChangeBoilerState_t = std::function<void(bool, uint8_t)>;
 	using emsSetHeatingTemperature_t = std::function<void(uint8_t)>;
 
 	BoilerController(std::shared_ptr<ib::logger::LoggerInterface> log, config::BoilerConfig const &config, getOutdoorTemp_t getOutdoorTemp, emsChangeBoilerState_t emsChangeBoilerState, emsSetHeatingTemperature_t emsSetHeatingTemperature,
-		std::unique_ptr<gpio::GpioPort> boilerPort, std::vector<std::unique_ptr<gpio::GpioPort>> valvePorts, std::vector<std::string> valveLabels)
+		std::unique_ptr<gpio::GpioPort> boilerPort, std::vector<std::unique_ptr<gpio::GpioPort>> valvePorts, std::vector<std::string> valveLabels, now_t now = [] { return clock_t::now(); })
 		: log_(std::move(log)), config_(config), getOutdoorTemp_(getOutdoorTemp), emsChangeBoilerState_(emsChangeBoilerState), emsSetHeatingTemperature_(emsSetHeatingTemperature)
 		, boilerPort_(std::move(boilerPort)), valvePorts_(std::move(valvePorts))
 		, valveLabels_(std::move(valveLabels))
-		, valvesStates_(valvePorts_.size(), true) {
+		, valvesStates_(valvePorts_.size(), true), now_(std::move(now)) {
 		if (log_) {
 			logFeature_ = log_->addFeature("Boiler");
 		}
@@ -39,28 +41,70 @@ public:
 		}
 	}
 
+	SupplyDecision previewSupply() const {
+		return resolveSupply(config_, outdoorReading());
+	}
+
+	SupplyDecision appliedSupplyDecision() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		auto decision = supplyDecision_;
+		decision.requested = appliedSupply_.requested;
+		decision.boosted = appliedSupply_.boosted;
+		return decision;
+	}
+
+	bool isSupplyBoostApplied() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return currentBoilerState_ && !manualTestActive_ && appliedSupply_.boosted;
+	}
+
+	bool isSupplyBaselineUnknown() const {
+		std::lock_guard<std::mutex> lock(mutex_);
+		return currentBoilerState_ && config_.boiler.controlMode != config::BoilerConfig::controlMode_t::onoff && !supplyDecision_.base;
+	}
+
+	void setOutdoorProvider(std::function<OutdoorReading()> provider) { outdoorProvider_ = std::move(provider); }
+
 	void startBoilerOrContinue(bool shouldStartBoiler, bool shouldBoilerContinue, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
 		if (isManualTestActive())
 			return; // manual test overrides normal operation
 
 		DBGLOGFD(log_, logFeature_, "Current boiler state: %d, should start: %d, should continue: %d, boiler heating temp override: %d\n", isBoilerStarted(), shouldStartBoiler, shouldBoilerContinue, boilerHeatingTemperatureOverride.value_or(0));
 
-		if (valvePreheating_ && (clock_t::now() - lastPreheatTime_ >= std::chrono::seconds(config_.boiler.valvePreheatingDelay))) {
+		bool heatingDemand, weatherInhibited;
+		{
+			std::lock_guard<std::mutex> lock(mutex_);
+			// Hysteresis demand survives a temporary weather inhibit. Output state
+			// alone cannot remember a request once EMS has been stopped.
+			if (shouldStartBoiler) heatingDemand_ = true;
+			else if (!shouldBoilerContinue) heatingDemand_ = false;
+			heatingDemand = heatingDemand_;
+			supplyDecision_ = resolveSupply(config_, outdoorReading(), boilerHeatingTemperatureOverride);
+			weatherInhibited = config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems && !supplyDecision_.requested;
+		}
+		if (weatherInhibited) {
+			valvePreheating_ = false;
+			changeBoilerState(false, boilerHeatingTemperatureOverride);
+			return;
+		}
+		if (!shouldStartBoiler && !shouldBoilerContinue) valvePreheating_ = false;
+
+		if (valvePreheating_ && (now_() - lastPreheatTime_ >= std::chrono::seconds(config_.boiler.valvePreheatingDelay))) {
 			DBGLOGFD(log_, logFeature_, "Finished valve preheating. Changing boiler state to: %s\n", (shouldStartBoiler || shouldBoilerContinue) ? "enabled" : "disabled");
 			valvePreheating_ = false;
 			changeBoilerState(shouldStartBoiler || shouldBoilerContinue, boilerHeatingTemperatureOverride);
 			return;
 		}
 
-		if (shouldStartBoiler) {
+		if (shouldStartBoiler || (heatingDemand && !isBoilerStarted())) {
 			if (config_.boiler.valvePreheatingDelay > 0 && !isBoilerStarted()) {
 				if (valvePreheating_) {
-					auto remaining = std::chrono::seconds(config_.boiler.valvePreheatingDelay) - (clock_t::now() - lastPreheatTime_);
+					auto remaining = std::chrono::seconds(config_.boiler.valvePreheatingDelay) - (now_() - lastPreheatTime_);
 					DBGLOGFD(log_, logFeature_, "Valve preheating in progress. Delay %lldms\n", std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count());
 					return;
 				}
 				valvePreheating_ = true;
-				lastPreheatTime_ = clock_t::now();
+				lastPreheatTime_ = now_();
 				DBGLOGFD(log_, logFeature_, "Started valve preheating. Boiler start delayed by %ds\n", config_.boiler.valvePreheatingDelay);
 				return;
 			}
@@ -117,6 +161,14 @@ public:
 			}
 		}
 		ss << "]";
+		ss << ", \"supplyReason\": \"" << supplyDecision_.reason << "\", \"outdoorSource\": \"" << supplyDecision_.outdoor.source << "\", \"outdoorQuality\": \"" << supplyDecision_.outdoor.quality << "\"";
+		ss << ", \"baseSupplyTemperature\": ";
+		if (supplyDecision_.base) ss << static_cast<int>(*supplyDecision_.base); else ss << "null";
+		ss << ", \"requestedSupplyTemperature\": ";
+		if (supplyDecision_.requested) ss << static_cast<int>(*supplyDecision_.requested); else ss << "null";
+		ss << ", \"appliedSupplyTemperature\": ";
+		if (currentBoilerState_ && !manualTestActive_ && appliedSupply_.requested) ss << static_cast<int>(*appliedSupply_.requested); else ss << "null";
+		ss << ", \"supplyBoostApplied\": " << (currentBoilerState_ && !manualTestActive_ && appliedSupply_.boosted ? "true" : "false");
 		if (currentOutdoorTemperature_) {
 			ss << ", \"outdoorTemperature\": " << currentOutdoorTemperature_.value();
 		}
@@ -124,7 +176,7 @@ public:
 			ss << ", \"heatingTemperature\": " << currentHeatingTemperature_.value();
 		}
 		if (manualTestActive_) {
-			auto remaining = std::chrono::duration_cast<std::chrono::seconds>(manualTestEnd_ - clock_t::now()).count();
+			auto remaining = std::chrono::duration_cast<std::chrono::seconds>(manualTestEnd_ - now_()).count();
 			if (remaining < 0)
 				remaining = 0;
 			ss << ", \"manualTest\": {\"active\": true, \"remainingSeconds\": " << remaining << "}";
@@ -145,7 +197,9 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(mutex_);
 			manualTestActive_ = true;
-			manualTestEnd_ = clock_t::now() + std::chrono::seconds(durationSeconds);
+			heatingDemand_ = false;
+			valvePreheating_ = false;
+			manualTestEnd_ = now_() + std::chrono::seconds(durationSeconds);
 			currentBoilerState_ = boilerState;
 		}
 
@@ -162,6 +216,8 @@ public:
 		{
 			std::lock_guard<std::mutex> lock(mutex_);
 			manualTestActive_ = false;
+			heatingDemand_ = false;
+			valvePreheating_ = false;
 		}
 		// Turn off boiler and open all valves for safety
 		boilerPort_->write(false);
@@ -195,7 +251,7 @@ public:
 	bool isManualTestActive() {
 		if (!manualTestActive_)
 			return false;
-		if (clock_t::now() >= manualTestEnd_) {
+		if (now_() >= manualTestEnd_) {
 			DBGLOGFD(log_, logFeature_, "Manual test expired, stopping%s\n", "");
 			stopManualTest();
 			return false;
@@ -232,50 +288,41 @@ private:
 	void changeBoilerState(bool enabled, boilerHeatingTemperatureOverride_t boilerHeatingTemperatureOverride) {
 		std::lock_guard<std::mutex> lock(mutex_);
 
+		supplyDecision_ = resolveSupply(config_, outdoorReading(), boilerHeatingTemperatureOverride);
+		currentOutdoorTemperature_ = supplyDecision_.outdoor.temperature;
+		const bool ems = config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems;
+		const bool temperatureControl = config_.boiler.controlMode != config::BoilerConfig::controlMode_t::onoff;
+		// Legacy installations without an explicit fallback keep the relay usable,
+		// but EMS must not manufacture a setpoint when all weather readings disappear.
+		if (ems && !supplyDecision_.requested) enabled = false;
 		currentBoilerState_ = enabled;
-		currentHeatingTemperature_ = {};
-		currentOutdoorTemperature_ = {};
-
-		DBGLOGFD(log_, logFeature_, "changeBoilerState to: %d, control mode: %d\n", enabled, config_.boiler.controlMode);
-
-		if (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::onoff || config_.boiler.controlMode == config::BoilerConfig::controlMode_t::onoff_outdoor) {
-
-			if (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::onoff_outdoor) {
-				currentOutdoorTemperature_ = getOutdoorTemp_();
-				currentHeatingTemperature_ = getHeatingTemperature(currentOutdoorTemperature_.value());
-
-				if (boilerHeatingTemperatureOverride.has_value()) {
-					currentHeatingTemperature_ = std::max(currentHeatingTemperature_.value(), static_cast<int16_t>(boilerHeatingTemperatureOverride.value() * 100));
-				}
-
-				emsSetHeatingTemperature(currentHeatingTemperature_.value() / 100);
+		if (ems) {
+			if (supplyDecision_.requested) emsSetHeatingTemperature(config_.boiler.maxHeatingTemp);
+			emsChangeBoilerState_(enabled, supplyDecision_.requested.value_or(0));
+			if (supplyDecision_.requested) recordAppliedSupply();
+		} else {
+			if (temperatureControl && supplyDecision_.requested) {
+				emsSetHeatingTemperature(*supplyDecision_.requested);
+				recordAppliedSupply();
 			}
-
-			DBGLOGFD(log_, logFeature_, "ON/OFF BOILER enabled: %d\n", enabled);
 			boilerPort_->write(enabled);
-		} else if  (config_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems) {
-			currentOutdoorTemperature_ = getOutdoorTemp_();
-			currentHeatingTemperature_ = getHeatingTemperature(currentOutdoorTemperature_.value());
-
-			if (boilerHeatingTemperatureOverride.has_value()) {
-				currentHeatingTemperature_ = std::max(currentHeatingTemperature_.value(), static_cast<int16_t>(boilerHeatingTemperatureOverride.value() * 100));
-			}
-
-			DBGLOGFD(log_, logFeature_, "emsChangeBoilerState enabled: %d heatingTemp: %d\n", enabled, currentHeatingTemperature_.value() / 100);
-
-			emsSetHeatingTemperature(config_.heatingCurve.maxHeatingCurveTemp);
-
-			emsChangeBoilerState_(enabled, currentHeatingTemperature_.value() / 100);
 		}
 	}
 
-	bool isBoilerStartedUnlocked() const { return currentBoilerState_; }
-
-	int16_t getHeatingTemperature(int16_t outdoorTemperature) {
-		auto temp = calcHeatingTemperature(outdoorTemperature, config_.heatingCurve.heatingCurve);
-		DBGLOGFD(log_, logFeature_, "getHeatingTemperature outdoor: %d, calculated: %d\n", static_cast<int>(outdoorTemperature), static_cast<int>(temp));
-		return temp;
+	// A skipped write leaves the previous EMS setting in place, including across
+	// relay stops, valve delays and missing-weather periods.
+	void recordAppliedSupply() {
+		appliedSupply_ = supplyDecision_;
+		currentHeatingTemperature_ = *appliedSupply_.requested * 100;
 	}
+
+	OutdoorReading outdoorReading() const {
+		if (outdoorProvider_) return outdoorProvider_();
+		const auto temperature = getOutdoorTemp_();
+		return temperature ? OutdoorReading{temperature, "callback", "fresh"} : OutdoorReading{};
+	}
+
+	bool isBoilerStartedUnlocked() const { return currentBoilerState_; }
 
 	void emsSetHeatingTemperature(uint8_t temperature) {
 		DBGLOGFD(log_, logFeature_, "emsSetHeatingTemperature to: %d\n", temperature);
@@ -285,6 +332,9 @@ private:
 
 	config::BoilerConfig const &config_;
 	getOutdoorTemp_t getOutdoorTemp_;
+	std::function<OutdoorReading()> outdoorProvider_;
+	SupplyDecision supplyDecision_;
+	SupplyDecision appliedSupply_;
 	emsChangeBoilerState_t emsChangeBoilerState_;
 	emsSetHeatingTemperature_t emsSetHeatingTemperature_;
 	std::unique_ptr<gpio::GpioPort> boilerPort_;
@@ -292,14 +342,15 @@ private:
 	std::vector<std::string> valveLabels_;
 	std::vector<bool> valvesStates_;
 
-	using clock_t = std::chrono::steady_clock;
+	now_t now_;
 
 	bool valvePreheating_ = false;
 	clock_t::time_point lastPreheatTime_;
 
+	bool heatingDemand_ = false;
 	bool currentBoilerState_ = false; // true - heating
-	std::optional<int16_t> currentHeatingTemperature_ = 0;
-	std::optional<int16_t> currentOutdoorTemperature_ = 0;
+	std::optional<int16_t> currentHeatingTemperature_;
+	std::optional<int16_t> currentOutdoorTemperature_;
 
 	bool manualTestActive_ = false;
 	clock_t::time_point manualTestEnd_;

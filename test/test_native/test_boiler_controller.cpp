@@ -51,6 +51,7 @@ protected:
 	MockGpioPort *boilerGpio = nullptr;
 	ValveMocks valveMocks;
 	int16_t outdoorTemp = 500; // 5°C
+	int temperatureWrites = 0;
 
 	void SetUp() override {
 		cfg.boiler.controlMode = config::BoilerConfig::controlMode_t::onoff;
@@ -61,7 +62,7 @@ protected:
 	heating::BoilerController makeController() {
 		auto bp = std::make_unique<MockGpioPort>(99);
 		boilerGpio = bp.get();
-		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [](uint8_t) {}, std::move(bp), valveMocks.makePorts(8), {});
+		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [this](bool, uint8_t) { ++temperatureWrites; }, [this](uint8_t) { ++temperatureWrites; }, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -87,6 +88,15 @@ TEST_F(BoilerOnOffTest, StartBoiler) {
 	std::stringstream ss;
 	bc.getStatus(ss);
 	EXPECT_NE(ss.str().find("\"boiler\": true"), std::string::npos);
+}
+
+TEST_F(BoilerOnOffTest, BoilerSettingNeverWritesTemperatureOrAppliesBoost) {
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, 80);
+	EXPECT_TRUE(boilerGpio->lastValue);
+	EXPECT_EQ(temperatureWrites, 0);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	EXPECT_FALSE(bc.previewSupply().base);
 }
 
 TEST_F(BoilerOnOffTest, StopBoiler) {
@@ -208,11 +218,13 @@ protected:
 	config::BoilerConfig cfg;
 	MockGpioPort *boilerGpio = nullptr;
 	ValveMocks valveMocks;
-	int16_t outdoorTemp = 500; // 5°C
+	std::optional<int16_t> outdoorTemp = 500; // 5°C
 
 	bool lastEmsEnabled = false;
 	uint8_t lastEmsFlowTemp = 0;
 	uint8_t lastEmsHeatingTemp = 0;
+	int temperatureWrites = 0;
+	heating::BoilerController::clock_t::time_point now{};
 
 	void SetUp() override {
 		cfg.boiler.controlMode = config::BoilerConfig::controlMode_t::ems;
@@ -230,7 +242,7 @@ protected:
 				lastEmsEnabled = enabled;
 				lastEmsFlowTemp = flowTemp;
 			},
-			[this](uint8_t temp) { lastEmsHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
+			[this](uint8_t temp) { lastEmsHeatingTemp = temp; ++temperatureWrites; }, std::move(bp), valveMocks.makePorts(8), {}, [this] { return now; });
 	}
 };
 
@@ -274,6 +286,134 @@ TEST_F(BoilerEmsTest, StopBoiler_SendsEmsDisable) {
 	EXPECT_FALSE(lastEmsEnabled);
 }
 
+TEST_F(BoilerEmsTest, AppliedBoostTracksRealOutputAndPreviousInterval) {
+	auto bc = makeController();
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	bc.startBoilerOrContinue(true, false, 30);
+	EXPECT_TRUE(lastEmsEnabled);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	bc.startBoilerOrContinue(false, true, 35);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	bc.startBoilerOrContinue(false, true, 60);
+	EXPECT_EQ(lastEmsFlowTemp, 60);
+	EXPECT_TRUE(bc.isSupplyBoostApplied());
+	bc.startBoilerOrContinue(false, false, 60);
+	EXPECT_FALSE(lastEmsEnabled);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+}
+
+TEST_F(BoilerEmsTest, DelayAndManualTestDoNotApplyRequestedBoost) {
+	cfg.boiler.valvePreheatingDelay = 30;
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, 60);
+	EXPECT_EQ(temperatureWrites, 0);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	now += std::chrono::seconds(29);
+	bc.startBoilerOrContinue(true, false, 60);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	now += std::chrono::seconds(1);
+	bc.startBoilerOrContinue(true, false, 60);
+	EXPECT_TRUE(lastEmsEnabled);
+	EXPECT_TRUE(bc.isSupplyBoostApplied());
+	bc.startManualTest(true, {}, 10);
+	bc.startBoilerOrContinue(true, false, 70);
+	EXPECT_EQ(lastEmsFlowTemp, 60);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	now += std::chrono::seconds(10);
+	EXPECT_FALSE(bc.isManualTestActive());
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+}
+
+TEST_F(BoilerEmsTest, MissingWeatherUsesFixedFallbackAndRecovers) {
+	cfg.boiler.fixedSupplyTemperature = 48;
+	auto bc = makeController();
+	outdoorTemp.reset();
+	bc.startBoilerOrContinue(true, false, 40);
+	EXPECT_EQ(lastEmsFlowTemp, 48);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	EXPECT_NE(bc.getStatus().find("weather_unavailable_fixed_fallback"), std::string::npos);
+	outdoorTemp = 475;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_EQ(lastEmsFlowTemp, bc.previewSupply().base);
+	EXPECT_EQ(lastEmsFlowTemp, 35);
+}
+
+TEST_F(BoilerEmsTest, MissingLegacyFallbackNeverGuessesAnEmsSetpoint) {
+	auto bc = makeController();
+	outdoorTemp.reset();
+	bc.startBoilerOrContinue(true, false, 60);
+	EXPECT_FALSE(lastEmsEnabled);
+	EXPECT_EQ(temperatureWrites, 0);
+	EXPECT_FALSE(bc.isSupplyBoostApplied());
+	EXPECT_NE(bc.getStatus().find("configuration_required"), std::string::npos);
+}
+
+TEST_F(BoilerEmsTest, WeatherRecoveryResumesLatchedHysteresisDemand) {
+	auto bc = makeController();
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled); // CONTINUE alone must not create a request.
+	bc.startBoilerOrContinue(true, false, {});
+	ASSERT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset();
+	bc.startBoilerOrContinue(false, true, {});
+	ASSERT_FALSE(lastEmsEnabled);
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_TRUE(lastEmsEnabled);
+	EXPECT_EQ(lastEmsFlowTemp, 35);
+}
+
+TEST_F(BoilerEmsTest, WeatherRecoveryRestartsValveDelayAndAllowsDemandCancellation) {
+	cfg.boiler.valvePreheatingDelay = 30;
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	now += std::chrono::seconds(30);
+	bc.startBoilerOrContinue(false, true, {});
+	ASSERT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	ASSERT_FALSE(lastEmsEnabled);
+	now += std::chrono::seconds(300);
+	bc.startBoilerOrContinue(false, true, {});
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+	now += std::chrono::seconds(29); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	outdoorTemp = 500; bc.startBoilerOrContinue(false, true, {});
+	now += std::chrono::seconds(29); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled); // Another outage restarts the full delay.
+	now += std::chrono::seconds(1); bc.startBoilerOrContinue(false, true, {});
+	EXPECT_TRUE(lastEmsEnabled);
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	bc.startBoilerOrContinue(false, false, {}); // Demand ended while weather was absent.
+	outdoorTemp = 500; now += std::chrono::seconds(60);
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+}
+
+TEST_F(BoilerEmsTest, ManualTestClearsSuspendedHeatingDemand) {
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	outdoorTemp.reset(); bc.startBoilerOrContinue(false, true, {});
+	bc.startManualTest(false, {}, 10);
+	bc.stopManualTest();
+	outdoorTemp = 500;
+	bc.startBoilerOrContinue(false, true, {});
+	EXPECT_FALSE(lastEmsEnabled);
+}
+
+TEST_F(BoilerEmsTest, FixedModeDoesNotNeedWeather) {
+	cfg.boiler.supplyMode = config::BoilerConfig::supplyMode_t::fixed;
+	cfg.boiler.fixedSupplyTemperature = 48;
+	outdoorTemp.reset();
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	EXPECT_TRUE(lastEmsEnabled);
+	EXPECT_EQ(lastEmsFlowTemp, 48);
+	EXPECT_EQ(bc.previewSupply().base, 48);
+}
+
 // ============================================================================
 // ON/OFF outdoor mode tests
 // ============================================================================
@@ -283,8 +423,9 @@ protected:
 	config::BoilerConfig cfg;
 	MockGpioPort *boilerGpio = nullptr;
 	ValveMocks valveMocks;
-	int16_t outdoorTemp = 500;
+	std::optional<int16_t> outdoorTemp = 500;
 	uint8_t lastSetHeatingTemp = 0;
+	int temperatureWrites = 0;
 
 	void SetUp() override {
 		cfg.boiler.controlMode = config::BoilerConfig::controlMode_t::onoff_outdoor;
@@ -295,7 +436,7 @@ protected:
 	heating::BoilerController makeController() {
 		auto bp = std::make_unique<MockGpioPort>(99);
 		boilerGpio = bp.get();
-		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [this](uint8_t temp) { lastSetHeatingTemp = temp; }, std::move(bp), valveMocks.makePorts(8), {});
+		return heating::BoilerController({}, cfg, [this]() { return outdoorTemp; }, [](bool, uint8_t) {}, [this](uint8_t temp) { lastSetHeatingTemp = temp; ++temperatureWrites; }, std::move(bp), valveMocks.makePorts(8), {});
 	}
 };
 
@@ -322,6 +463,49 @@ TEST_F(BoilerOnOffOutdoorTest, UpdatesOnContinue) {
 	bc.startBoilerOrContinue(false, true, std::nullopt);
 	// onoff_outdoor updates heating temp even on continue
 	EXPECT_EQ(lastSetHeatingTemp, 55);
+}
+
+TEST_F(BoilerOnOffOutdoorTest, MissingWeatherPreservesAppliedSetpointAndBlocksCalibration) {
+	for (const auto overrideTemperature : {35, 70}) {
+		outdoorTemp = 500;
+		auto bc = makeController();
+		bc.startBoilerOrContinue(true, false, overrideTemperature);
+		const auto writes = temperatureWrites;
+		ASSERT_EQ(lastSetHeatingTemp, overrideTemperature);
+		outdoorTemp.reset();
+		bc.startBoilerOrContinue(false, true, {});
+		EXPECT_TRUE(boilerGpio->lastValue);
+		EXPECT_EQ(temperatureWrites, writes);
+		EXPECT_EQ(lastSetHeatingTemp, overrideTemperature);
+		EXPECT_EQ(bc.appliedSupplyDecision().requested, overrideTemperature);
+		EXPECT_FALSE(bc.appliedSupplyDecision().base);
+		EXPECT_EQ(bc.isSupplyBoostApplied(), overrideTemperature > 35);
+		EXPECT_TRUE(bc.isSupplyBaselineUnknown());
+		EXPECT_NE(bc.getStatus().find("\"appliedSupplyTemperature\": " + std::to_string(overrideTemperature)), std::string::npos);
+		bc.startBoilerOrContinue(false, false, {});
+		EXPECT_FALSE(bc.isSupplyBoostApplied());
+		EXPECT_FALSE(bc.isSupplyBaselineUnknown());
+		bc.startBoilerOrContinue(true, false, {});
+		EXPECT_EQ(lastSetHeatingTemp, overrideTemperature);
+		EXPECT_EQ(temperatureWrites, writes);
+		EXPECT_TRUE(bc.isSupplyBaselineUnknown());
+		EXPECT_EQ(bc.isSupplyBoostApplied(), overrideTemperature > 35);
+		outdoorTemp = 500;
+		bc.startBoilerOrContinue(false, true, {});
+		EXPECT_EQ(lastSetHeatingTemp, 35);
+		EXPECT_FALSE(bc.isSupplyBoostApplied());
+		EXPECT_FALSE(bc.isSupplyBaselineUnknown());
+	}
+}
+
+TEST_F(BoilerOnOffOutdoorTest, UnknownInitialSupplyBlocksCalibrationWithoutInventingSetpoint) {
+	outdoorTemp.reset();
+	auto bc = makeController();
+	bc.startBoilerOrContinue(true, false, {});
+	EXPECT_TRUE(boilerGpio->lastValue);
+	EXPECT_EQ(temperatureWrites, 0);
+	EXPECT_FALSE(bc.appliedSupplyDecision().requested);
+	EXPECT_TRUE(bc.isSupplyBaselineUnknown());
 }
 
 } // anonymous namespace

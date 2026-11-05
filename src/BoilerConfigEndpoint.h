@@ -1,0 +1,81 @@
+#pragma once
+#include "BoilerConfigValidation.h"
+#include <SPIFFS.h>
+#include <WebServer.h>
+#include <memory>
+#include <string_view>
+
+namespace heating {
+// cJSON tolerates raw control bytes as whitespace and in strings. Reject them
+// before parsing so persisted documents remain readable by strict JSON clients.
+inline bool validJsonControlBytes(std::string_view body) {
+	bool inString = false, escaped = false;
+	for (unsigned char byte : body) {
+		if (byte < 0x20 && (inString || (byte != '\t' && byte != '\r' && byte != '\n'))) return false;
+		if (escaped) { escaped = false; continue; }
+		if (inString && byte == '\\') { escaped = true; continue; }
+		if (byte == '"') inString = !inString;
+	}
+	return !inString && !escaped;
+}
+
+// The REST route and native filesystem tests execute this same handler.
+template<class Server, class Filesystem>
+void handleBoilerConfiguration(Server &server, Filesystem &filesystem) {
+
+	switch (server.method()) {
+		default:
+		case HTTP_GET: {
+			File file = filesystem.open("/cfg/cfgboiler.json", FILE_READ);
+			if (!file) {
+				server.send(404, "text/plain", "FileNotFound");
+				return;
+			}
+			server.streamFile(file, "application/json");
+			file.close();
+			break;
+		}
+		case HTTP_POST: {
+			if (!server.hasArg("plain")) {
+				server.send(204);
+				break;
+			}
+			auto body = server.arg("plain");
+			if (body.isEmpty()) {
+				server.send(204);
+				break;
+			}
+
+			if (!validJsonControlBytes({body.c_str(), body.length()})) {
+				server.send(400, "text/plain", "Invalid JSON control bytes.");
+				return;
+			}
+
+			const char *parseEnd = nullptr;
+			const char *documentEnd = body.c_str() + body.length();
+			std::unique_ptr<cJSON, decltype(&cJSON_Delete)> parsed(
+				cJSON_ParseWithLengthOpts(body.c_str(), body.length() + 1, &parseEnd, false), &cJSON_Delete);
+			// Accept only JSON whitespace after the root, including when the body
+			// contains embedded NUL bytes. A valid prefix is not a valid document.
+			if (parsed) {
+				while (parseEnd < documentEnd && (*parseEnd == ' ' || *parseEnd == '\t' || *parseEnd == '\r' || *parseEnd == '\n')) ++parseEnd;
+			}
+			config::BoilerConfig validated;
+			if (!parsed || parseEnd != documentEnd || !config::parseBoilerConfig(parsed.get(), validated)) {
+				server.send(400, "text/plain", "Invalid boiler settings. EMS temperature control requires fixedSupplyTemperature (20-90 C) within the heating limits; boiler setting is supported only with plain ON/OFF.");
+				return;
+			}
+
+			File file = filesystem.open("/cfg/cfgboiler.json", FILE_WRITE);
+			if (!file) {
+				server.send(500, "text/plain", "Internal server error. Can't save boiler settings.");
+				break;
+			}
+			file.write((uint8_t *)body.c_str(), body.length());
+			file.close();
+			server.send(201);
+			break;
+		}
+	}
+}
+}

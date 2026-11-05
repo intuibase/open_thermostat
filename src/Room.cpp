@@ -284,7 +284,7 @@ void Room::updateThermalContext(std::optional<float> outdoor, std::optional<floa
 	const bool contextValid = (trustworthy || ordinaryPause) && (!deliveredHeat || confirmedHeat);
 	warmupEligible_ = roomValid && local.tm_year >= 120 && contextValid &&
 		!heatContext_.manualTest && !(temporaryOverride_ && temporaryOverride_->isValid()) &&
-		!optimalStart_.decision.apply && !(scheduled.second && scheduled.second->getHeatingTemperatureOverride());
+		!optimalStart_.decision.apply && !heatContext_.supplyBoostApplied && !heatContext_.supplyBaselineUnknown;
 	confirmedHeat_ = confirmedHeat;
 	// Disturbances must survive the five-minute sampling gate.
 	if (!warmupEligible_) { thermalModel_.cancelWarmup(); warmupResetPending_ = true; }
@@ -493,6 +493,9 @@ void Room::logAdaptiveDiagnostic(const char *event, const char *reason) const {
 	j.number("actual_supply_c", actualSupply_); j.number("predicted_supply_c", predictedSupply_);
 	j.boolean("boiler_commanded", heatContext_.boilerCommanded); j.boolean("valve_open", heatContext_.valveOpen);
 	j.boolean("uses_ems", heatContext_.usesEms); j.boolean("ems_heating", heatContext_.emsHeating);
+	j.optionalNumber("base_supply_c", heatContext_.baseSupply); j.optionalNumber("applied_supply_c", heatContext_.appliedSupply);
+	j.boolean("supply_baseline_unknown", heatContext_.supplyBaselineUnknown);
+	j.boolean("supply_boost_applied", heatContext_.supplyBoostApplied); j.text("supply_reason", heatContext_.supplyReason);
 	j.boolean("manual_test", heatContext_.manualTest); j.boolean("heat_delivered", deliveredHeat_);
 	j.boolean("warmup_eligible", warmupEligible_); j.boolean("confirmed_heat", confirmedHeat_);
 	j.boolean("warmup_reset", warmupResetPending_);

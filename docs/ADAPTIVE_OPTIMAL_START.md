@@ -80,8 +80,12 @@ prove delivery. ON/OFF operation without telemetry learns a separate effective
 warming rate from commanded heating; actual heat delivery cannot be confirmed
 in that mode.
 
-AOS reads actual supply for training. Predictions use the ordinary heating curve
-at the current outdoor temperature, since idle boiler water can be cold. No
+AOS reads actual supply for training. Predictions share the boiler's base-supply
+resolver: fixed, weather curve or fixed weather fallback, with the same limits
+and whole-degree truncation as EMS commands. Plain relay heating leaves supply
+on the boiler, so it has no forecast supply. Outdoor measurements remain separate
+from the supply forecast: fixed supply works without weather, while physical
+learning needs a valid outdoor measurement. Idle boiler water can be cold. No
 future program boiler override is promoted into preheating. With an untrained
 physical model or missing outdoor/supply prediction, it uses the effective
 ON/OFF rate (initially 1°C/hour) plus response delay (initially 10 minutes).
@@ -91,9 +95,12 @@ the boiler's on/off pauses. A completed warmup must last 30 minutes to 12 hours,
 begin at least 0.2°C below the new target, reach within 0.05°C, and have confirmed
 heat at both ends of intervals covering at least 20% of its duration. Confirmed
 heat requires trustworthy delivery and a measured supply more than 5°C above
-room temperature. Ordinary heat-off pauses remain part of the cycle. A schedule
-with a boiler supply override is excluded from this calibration, so boosted
-heating cannot train a rate referenced to the ordinary curve. Missing room
+room temperature. Ordinary heat-off pauses remain part of the cycle. An actually applied shared supply boost
+cancels this calibration in every room. A program request at or below the base,
+a stopped boiler, valve startup delay or a plain relay does not imply a boost.
+The context describes the preceding control interval, before the next room
+requests are aggregated; room iteration order cannot change the exclusion.
+Basic learning from actual measured supply remains available during a boost. Missing room
 readings, manual tests, overrides and active preheating cancel the observation
 on every controller tick, including between learning samples. Gaps over six minutes,
 temperature jumps, clock/config changes and intervening setpoint changes also
@@ -105,7 +112,7 @@ observed rate (excluding the estimated initial response delay) anchors forecasts
 The running mean caps its weight denominator at 12 cycles. If all calibration
 cycles have outdoor/curve measurements, gain/loss adjust this anchor for the
 difference in radiator emission and room-to-outdoor delta from those observed
-cycles. The references use the ordinary curve, matching forecast inputs, rather
+cycles. The references use ordinary base supply, matching forecast inputs, rather
 than assuming that future boiler overrides will be applied early. With missing
 reference inputs, the measured rate still works as an empirical prediction.
 The ordinary 24-hour forecast and scheduler lead bounds continue to apply.
@@ -114,8 +121,8 @@ Room diagnostics expose `warmupWindows`, `warmupRate` and `calibrated`.
 EMS supply/activity freshness is 3 minutes, outdoor freshness 30 minutes.
 OpenWeather freshness is twice its configured interval, bounded to 30–120
 minutes, and checks the provider observation timestamp when device time is valid.
-The controller's existing outdoor-temperature safety fallback is not used as a
-training measurement. Room measurements use the controller's existing freshness
+Missing weather remains missing. The configured fixed supply fallback is a
+setpoint, never a synthetic outdoor training measurement. Room measurements use the controller's existing freshness
 checks. Manual GPIO tests invalidate training windows.
 
 `confidence` is **training coverage**, not a probability or accuracy claim:
@@ -248,7 +255,7 @@ Every record carries:
   `uptime_s`, random per-boot `boot` ID and a global diagnostic `seq` number.
   An unsynchronized clock is represented by `ts: null` and `time_valid: false`.
 - Raw/averaged room temperature and sensor age; outdoor temperature/source;
-  actual supply and ordinary-curve supply forecast. Missing numbers are JSON
+  actual supply and shared base-supply forecast. Missing numbers are JSON
   `null`, never fabricated zeroes or NaN.
 - Boiler command, valve state, fresh EMS heating state, manual-test flag,
   delivered heat and trust/quality reasons. `ems_activity_missing`,
@@ -320,3 +327,19 @@ extractor tests and the capture test; ESP32 and ESP32-S3 firmware builds passed.
 Current room/program/network settings and the user's four learning/shadow room
 selections were preserved. The temporary capture receiver is stopped after the
 smoke test; keep the normal receiver or the capture helper running overnight.
+
+Supply diagnostics also include `base_supply_c`, `applied_supply_c`,
+`supply_reason`, `supply_boost_applied` and `supply_baseline_unknown`. Applied supply is the previously
+issued control setpoint, not confirmation of burner output or bus delivery;
+existing EMS activity and supply checks still determine trustworthy heat.
+When a relay installation without an explicit fallback loses weather, a skipped
+temperature write preserves the last applied setpoint and its boost state.
+An unknown ordinary baseline also blocks whole-warmup calibration until weather
+returns; basic actual-supply learning remains available. Replay carries this
+interruption across the five-minute sampling gate.
+`warmup_reset` preserves a disturbance until the next five-minute sample.
+Offline replay also carries shared-boost interruptions from intervening records
+into the next sample. Historical logs lacking these fields retain their old
+eligibility rules; they cannot reconstruct cross-room boosts that were never
+recorded. See [boiler configuration](USER_GUIDE.md#boiler-controls-and-curve-generation)
+for source selection, explicit fallback, migration and restart behavior.

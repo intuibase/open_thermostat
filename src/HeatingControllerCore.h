@@ -1,0 +1,499 @@
+#pragma once
+#include "Logging.h"
+
+#include "BeaconBleAddress.h"
+#include "BoilerController.h"
+#include "BuiltinGpioPort.h"
+#include "PcfGpioPort.h"
+#include "PeriodicCounter.h"
+#include "EMS/EmsTelegram.h"
+#include "Room.h"
+
+#include <logger/LoggerInterface.h>
+#include <algorithm>
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <set>
+#include <unordered_map>
+#include <iomanip>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace heating {
+
+// Build label -> PcfDevice map from config so all pins on the same extender share one shadow register.
+using PcfDeviceMap = std::unordered_map<std::string, std::shared_ptr<gpio::PcfDevice>>;
+
+inline PcfDeviceMap buildPcfDeviceMap() {
+	PcfDeviceMap map;
+	for (auto const &ext : config::getGpioExtenders()) {
+		bool wide = (ext.type == "pcf8575" || ext.type == "mcp23017");
+		map[ext.label] = std::make_shared<gpio::PcfDevice>(ext.address, wide);
+	}
+	return map;
+}
+
+inline std::unique_ptr<gpio::GpioPort> createGpioPort(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, config::PinConfig const &pinCfg, PcfDeviceMap const &pcfDevices) {
+	if (pinCfg.source == "builtin") {
+		return std::make_unique<gpio::BuiltinGpioPort>(pinCfg.pin);
+	}
+	// source = "ext:<label>"
+	if (pinCfg.source.rfind("ext:", 0) == 0) {
+		std::string label = pinCfg.source.substr(4);
+		auto it = pcfDevices.find(label);
+		if (it != pcfDevices.end()) {
+			return std::make_unique<gpio::PcfGpioPort>(it->second, pinCfg.pin);
+		}
+		DBGLOGFI(log, feature, "createGpioPort: extender '%s' not found in config\n", label.c_str());
+	}
+	return std::make_unique<gpio::NullGpioPort>();
+}
+
+inline std::unique_ptr<gpio::GpioPort> createBoilerPort(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, PcfDeviceMap const &pcfDevices) {
+	auto pin = config::getBoilerPin();
+	if (!pin)
+		return std::make_unique<gpio::NullGpioPort>();
+	return createGpioPort(log, feature, *pin, pcfDevices);
+}
+
+inline std::vector<std::unique_ptr<gpio::GpioPort>> createValvePorts(std::shared_ptr<ib::logger::LoggerInterface> const &log, ib::logger::LoggerInterface::LogFeatureType feature, PcfDeviceMap const &pcfDevices) {
+	auto pins = config::getValvePins();
+	std::vector<std::unique_ptr<gpio::GpioPort>> ports;
+	ports.reserve(pins.size());
+	for (auto const &p : pins) {
+		ports.push_back(createGpioPort(log, feature, p, pcfDevices));
+	}
+	return ports;
+}
+
+inline std::vector<std::string> createValveLabels() {
+	auto pins = config::getValvePins();
+	std::vector<std::string> labels;
+	labels.reserve(pins.size());
+	for (uint8_t i = 0; i < pins.size(); ++i) {
+		labels.push_back(pins[i].label.empty() ? std::to_string(i) : pins[i].label);
+	}
+	return labels;
+}
+
+inline std::unordered_map<std::string, uint8_t> buildValveLabelMap() {
+	auto pins = config::getValvePins();
+	std::unordered_map<std::string, uint8_t> map;
+	for (uint8_t i = 0; i < pins.size(); ++i) {
+		map[std::to_string(i)] = i; // backward compat: "0" → 0
+		if (!pins[i].label.empty()) {
+			map[pins[i].label] = i;
+		}
+	}
+	return map;
+}
+
+// Platform services are injected so the production control loop also runs with
+// deterministic native peripherals. Boiler/room decisions are shared unchanged.
+template<class Services>
+class HeatingControllerCore {
+	friend Services;
+	using BeaconTemperatureReader = typename Services::BeaconTemperatureReader;
+	using OpenWeather = typename Services::OpenWeather;
+	using EmsController = typename Services::EmsController;
+	using EmsMetrics = typename Services::EmsMetrics;
+	using MQTT = typename Services::MQTT;
+public:
+	using boilerHeatingTemperatureOverride_t = BoilerController::boilerHeatingTemperatureOverride_t;
+
+	explicit HeatingControllerCore(std::shared_ptr<ib::logger::LoggerInterface> log, BoilerController::now_t boilerNow = [] { return BoilerController::clock_t::now(); }) : log_(std::move(log)), logFeature_(log_ ? log_->addFeature("HeatCtrl") : 0), boilerNow_(std::move(boilerNow)), openWeather_(log_, config::getOpenWeatherConfig()), currentProgram_(config::getCurrentProgram()), rooms_(buildRoomsFromConfig()) {
+		DBGLOGFI(log_, logFeature_, "HeatingController constructed\n");
+		boiler_.setOutdoorProvider([this] { return supplyOutdoor_; });
+		bluetoothScan_ = true;
+		lastReadTemperatureCounter_.notifyNow();
+	}
+
+	~HeatingControllerCore() {}
+
+	void operate() {
+		bool shouldStartBoiler = false;
+		bool shouldBoilerContinue = false;
+		boilerHeatingTemperatureOverride_t boilerHeatingTempOverride;
+
+		std::set<uint8_t> valvesWhichShouldBeClosed;
+		std::optional<float> outdoor, supply, predictedSupply;
+		std::optional<bool> emsHeating;
+		const char *aosOutdoorSource = "missing";
+		{
+			auto &state = ems_.getBoilerState();
+			std::lock_guard<std::mutex> lock(state.mutex);
+			const auto now = ib::getTimeMillis();
+			if (state.aosSupplyUpdated && now - state.aosSupplyUpdated <= 180000 && state.currentFlowTemperature) supply = *state.currentFlowTemperature / 10.0f;
+			if (state.aosHeatingUpdated && now - state.aosHeatingUpdated <= 180000) emsHeating = state.heatingActive;
+		}
+		const auto selectedOutdoor = getOutdoorReading();
+		supplyOutdoor_ = selectedOutdoor;
+		outdoor = selectedOutdoor.temperature ? std::optional<float>(*selectedOutdoor.temperature / 100.0f) : std::nullopt;
+		aosOutdoorSource = selectedOutdoor.source;
+		const auto baseSupply = resolveSupply(boilerConfig_, selectedOutdoor);
+		if (baseSupply.base) predictedSupply = *baseSupply.base;
+
+		const bool manual = boiler_.isManualTestActive();
+		const bool commanded = boiler_.isBoilerStarted();
+		const bool boostApplied = boiler_.isSupplyBoostApplied();
+		const bool baselineUnknown = boiler_.isSupplyBaselineUnknown();
+		const auto appliedSupply = boiler_.appliedSupplyDecision();
+
+
+		{ // mutex scope
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		for (auto const &room : rooms_) {
+			bool valveOpen = room->getValves().empty();
+			for (const auto &valve : room->getValves()) {
+				auto found = valveLabelMap_.find(valve);
+				if (found != valveLabelMap_.end() && boiler_.isValveOpen(found->second)) valveOpen = true;
+			}
+			const bool useEms = boilerConfig_.boiler.controlMode == config::BoilerConfig::controlMode_t::ems;
+			const bool available = useEms ? emsHeating.value_or(false) : commanded;
+			const bool trustworthy = !manual && !(useEms && commanded && (!emsHeating || !*emsHeating || !supply));
+			aos::HeatContext context;
+			context.program = currentProgram_;
+			context.boilerCommanded = commanded; context.valveOpen = valveOpen; context.emsHeating = emsHeating;
+			context.supplyBoostApplied = boostApplied;
+			context.supplyBaselineUnknown = baselineUnknown;
+			context.supplyReason = appliedSupply.reason;
+			context.baseSupply = appliedSupply.base;
+			if (commanded && !manual) context.appliedSupply = appliedSupply.requested;
+			context.manualTest = manual; context.usesEms = useEms; context.outdoorSource = aosOutdoorSource;
+			context.invalidReason = manual ? "manual_test" : !emsHeating ? "ems_activity_missing" : !*emsHeating ? "ems_not_heating" : "ems_supply_missing";
+			room->updateThermalContext(outdoor, supply, predictedSupply, valveOpen && available, trustworthy, context);
+			if (room->isEnabled()) {
+				auto [roomStatus, roomBoilerHeatingTempOverride] = room->shouldStartBoilerAndHeat();
+
+				shouldStartBoiler = shouldStartBoiler || roomStatus == Room::TemperatureStatus::START_HEATING;
+				shouldBoilerContinue = shouldBoilerContinue || roomStatus == Room::TemperatureStatus::CONTINUE_HEATING;
+
+				if (roomBoilerHeatingTempOverride.has_value()) {
+					boilerHeatingTempOverride = std::max(boilerHeatingTempOverride.value_or(0), roomBoilerHeatingTempOverride.value()); // use highest boiler supply temperature from overrides
+				}
+
+				// valve should be closed only if temperature is in upper/lower margin - in case of no samples, valve should remain open but should not trigger or continue heating
+				if (roomStatus == Room::TemperatureStatus::TEMPERATURE_OK) {
+					auto valves = room->getValves();
+					if (log_ && log_->doesFeatureMeetsLevelCondition(ib::logger::LoggerInterface::LogLevel::DEBUG, logFeature_)) {
+						std::string valveList;
+						for (auto const &valve : valves) {
+							if (!valveList.empty()) valveList += ' ';
+							valveList += "'" + valve + "'";
+						}
+						DBGLOGFD(log_, logFeature_, "  adding valves to close for room %s valves: %s\n", room->getName().c_str(), valveList.c_str());
+					}
+
+					for (auto const &valve : valves) {
+						auto it = valveLabelMap_.find(valve);
+						if (it != valveLabelMap_.end()) {
+							valvesWhichShouldBeClosed.insert(it->second);
+						}
+					}
+				}
+			} else { // room is diabled - let's heat it because we don't know what happened
+					 //				valvesWhichShouldBeOpened.insert(room.valves_.begin(), room.valves_.end());
+			}
+
+			room->logAdaptiveSnapshot();
+			if (bluetoothScan_) {
+				resetIfNoDataForLongTime();
+			}
+		}
+		}
+
+		boiler_.handleValves(valvesWhichShouldBeClosed);
+		boiler_.startBoilerOrContinue(shouldStartBoiler, shouldBoilerContinue, boilerHeatingTempOverride);
+
+
+		DBGLOGFD(log_, logFeature_, "%s\n", boiler_.getStatus().c_str());
+
+		if (bluetoothScan_) {
+			tempReader_.triggerScan();
+		}
+
+		openWeather_.operate();
+	}
+
+	void loop() {
+		mqtt_.loop();
+		ems_.loop();
+	}
+
+	void getBoilerStatus(std::ostream &ss) const {
+		boiler_.getStatus(ss);
+	}
+
+	std::string getBoilerStatus() const {
+		return boiler_.getStatus();
+	}
+
+	void getEMSStatus(std::ostream &ss) const {
+		ems_.getStatus(ss);
+	}
+
+	std::string getEMSStatus() const {
+		return ems_.getStatus();
+	}
+
+	void getEMSBoilerParams(std::ostream &ss) const {
+		ems_.getBoilerParams(ss);
+	}
+
+	std::string getEMSBoilerParams() const {
+		return ems_.getBoilerParams();
+	}
+
+	void getFullStatus(std::ostream &ss) const {
+		ss << "{";
+		ss << "\"rooms\": ";
+		getRoomsStatus(ss);
+		ss << ",";
+		{
+			std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+			ss << "\"activeProgram\": \"" << currentProgram_ << "\",";
+		}
+		ss << "\"boiler\": "; boiler_.getStatus(ss); ss << ",";
+		ss << "\"ems\": "; ems_.getStatus(ss); ss << ",";
+		ss << "\"openweather\": " << openWeather_.getStatus() << ",";
+
+		struct tm timeinfo;
+		getLocalTime(&timeinfo);
+
+		ss << "\"time\": \"" << std::setfill('0') << std::setw(2) << timeinfo.tm_hour << ":"
+			<< std::setfill('0') << std::setw(2) << timeinfo.tm_min << ":"
+			<< std::setfill('0') << std::setw(2) << timeinfo.tm_sec << "\",";
+		ss << "\"date\": \"" << std::setfill('0') << std::setw(4) << timeinfo.tm_year + 1900 << "-"
+			<< std::setfill('0') << std::setw(2) << timeinfo.tm_mon + 1 << "-"
+			<< std::setfill('0') << std::setw(2) << timeinfo.tm_mday << "\",";
+
+		ss << "\"weekDay\": " << timeinfo.tm_wday << ",";
+		ss << "\"uptime\": " << millis()/1000;
+
+
+		ss << "}";
+	}
+
+
+	std::string getFullStatus() const {
+		std::stringstream ss;
+		getFullStatus(ss);
+		return ss.str();
+	}
+
+	std::string getRoomsStatus() const {
+		std::stringstream ss;
+		getRoomsStatus(ss);
+		return ss.str();
+	}
+
+	size_t getRoomsStatus(std::ostream &ss) const {
+		ss << "[";
+		size_t r = 0;
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		bool boilerStarted = boiler_.isBoilerStarted();
+
+		for (auto const &room : rooms_) {
+			bool isBeingHeated = false;
+			if (boilerStarted && room->isEnabled()) {
+				for (auto const &valve : room->getValves()) {
+					auto valveIt = valveLabelMap_.find(valve);
+					if (valveIt != valveLabelMap_.end() && boiler_.isValveOpen(valveIt->second)) {
+						isBeingHeated = true;
+						break;
+					}
+				}
+			}
+
+			room->getStatus(ss, isBeingHeated);
+			r++;
+			if (r != rooms_.size()) {
+				ss << ",";
+			}
+		}
+		ss << "]";
+
+		return rooms_.size();
+	}
+
+	size_t getRoomsCount() {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		return rooms_.size();
+	}
+
+	std::vector<std::string> getRoomIds() const {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		std::vector<std::string> ids;
+		ids.reserve(rooms_.size());
+		for (auto const &room : rooms_) ids.emplace_back(room->getId());
+		return ids;
+	}
+
+	std::string getActiveProgram() const {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		return currentProgram_;
+	}
+
+	bool setRoomTemporaryTemperature(std::string const &name, int16_t temperature, uint32_t validSeconds) {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+
+		for (auto &room : rooms_) {
+			if (room->getName() == name) {
+				room->createTemporaryOverride(temperature, validSeconds);
+				return true;
+			}
+		}
+		DBGLOGFD(log_, logFeature_, "setRoomTemporaryTemperature. No room '%s' found\n", name.c_str());
+
+		return false;
+	}
+
+	void startManualGpioTest(bool boilerState, std::vector<bool> const &valveStates, uint32_t durationSeconds) { boiler_.startManualTest(boilerState, valveStates, durationSeconds); }
+
+	void stopManualGpioTest() { boiler_.stopManualTest(); }
+
+	void getDevicesFound(std::ostream &ss) {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+
+		DBGLOGFD(log_, logFeature_, "getDevicesFound %zu\n", devicesFound_.size());
+
+		ss << "[";
+		for (auto it = devicesFound_.begin(); it != devicesFound_.end(); ++it) {
+			if (it != devicesFound_.begin()) {
+				ss << ", ";
+			}
+		    #define GETHEX_STR(val) std::hex  << std::setfill('0') << std::setw(2) << (int)val
+			ss << "\"" << GETHEX_STR(it->at(0)) << ':' << GETHEX_STR(it->at(1)) << ':' << GETHEX_STR(it->at(2)) << ':' << GETHEX_STR(it->at(3)) << ':' << GETHEX_STR(it->at(4)) << ':' << GETHEX_STR(it->at(5)) << "\"";
+		}
+		ss << "]";
+	}
+
+	void stopBluetoothScan() {
+		bluetoothScan_ = false;
+	}
+
+	void waitUntilBluetoothScanFinishAndDeinitBLE() {
+		while (tempReader_.isScanPending()) {
+			delay(1);
+		}
+		tempReader_.shutDownBLE();
+	}
+
+	void reloadConfiguration() {
+		DBGLOGFD(log_, logFeature_, "reloadConfiguration%s\n", "");
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		currentProgram_ = config::getCurrentProgram();
+		auto updated = buildRoomsFromConfig();
+		for (auto &room : updated) {
+			for (auto &old : rooms_) if (room->getId() == old->getId()) room->inheritThermalState(*old);
+		}
+		rooms_ = std::move(updated);
+	}
+
+	bool resetThermalModel(const std::string &id) {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+		for (auto &room : rooms_) if (room->getId() == id) return room->resetThermalModel();
+		return false;
+	}
+private:
+	std::shared_ptr<ib::logger::LoggerInterface> log_;
+	ib::logger::LoggerInterface::LogFeatureType logFeature_{};
+
+	void pushTemperatureData(BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) {
+		std::lock_guard<std::mutex> lock(roomsAccessMutex_);
+
+		devicesFound_.emplace(address);
+
+		auto room = std::find_if(std::begin(rooms_), std::end(rooms_), [&adr = address](auto const &room) { return (adr == room->getSensorAddress()); });
+		if (room == std::end(rooms_)) {
+			DBGLOGFD(log_, logFeature_, "No room for address '" PRiBleAddress "'\n", PRaBleAddress(address));
+			return;
+		}
+
+		DBGLOGFD(log_, logFeature_, "push '%s', " PRiBleAddress " temp: %d battery: %d%% BTC MinPeekStack: %d\n", (*room)->getName().c_str(), PRaBleAddress(address), temperature.value_or(std::numeric_limits<decltype(temperature)::value_type>::min()), battery.value_or(std::numeric_limits<decltype(battery)::value_type>::min()), uxTaskGetStackHighWaterMark(nullptr));
+
+		if (temperature.has_value()) {
+			(*room)->storeTemperature(temperature.value());
+			lastReadTemperatureCounter_.notifyNow();
+		}
+
+		if (humidity.has_value()) {
+			(*room)->storeHumidity(humidity.value());
+		}
+
+		if (battery.has_value()) {
+			(*room)->storeBattery(battery.value());
+		}
+
+	}
+
+	void resetIfNoDataForLongTime() {
+		if (lastReadTemperatureCounter_.durationPassed()) {
+			DBGLOGFI(log_, logFeature_, "RESTARTING DUE TO NO DATA FOR OVER 5m\n");
+			ESP.restart();
+		}
+	}
+
+	OutdoorReading getOutdoorReading() {
+		std::optional<int16_t> emsOutdoor;
+		{
+			auto &state = ems_.getBoilerState();
+			std::lock_guard<std::mutex> lock(state.mutex);
+			emsOutdoor = freshOutdoor(state.outdoorTemperature, state.aosOutdoorUpdated, ib::getTimeMillis(), 30 * 60 * 1000);
+		}
+		return selectOutdoor(boilerConfig_, emsOutdoor, openWeather_.getFreshTemperature());
+	}
+
+	std::optional<int16_t> getOutdoorTemperature() { return getOutdoorReading().temperature; }
+
+	std::vector<std::shared_ptr<heating::Room>> buildRoomsFromConfig() {
+		auto configs = config::getRoomsConfig(currentProgram_);
+		std::vector<std::shared_ptr<heating::Room>> rooms;
+		for (const auto config : configs) {
+			rooms.emplace_back(std::make_shared<heating::Room>(log_, std::move(config)));
+		}
+		return rooms;
+	}
+
+	BoilerController::now_t boilerNow_;
+	std::atomic_bool bluetoothScan_;
+	BeaconTemperatureReader tempReader_{log_, [this](BleAddress_t address, std::optional<int16_t> temperature, std::optional<int16_t> humidity, std::optional<int8_t> battery) { pushTemperatureData(std::move(address), temperature, humidity, battery); }};
+	OpenWeather openWeather_;
+	EmsController ems_{log_};
+	config::BoilerConfig boilerConfig_{config::getBoilerConfig()};
+
+	PcfDeviceMap pcfDevices_{buildPcfDeviceMap()};
+	OutdoorReading supplyOutdoor_;
+	BoilerController boiler_{log_, boilerConfig_, [this]() { return getOutdoorTemperature(); }, [&ems = ems_](bool enabled, uint8_t flowTempSet) {
+			ems.changeBoilerState(enabled, flowTempSet); }, [&ems = ems_](uint8_t heatingTemperature) {
+			ems.setHeatingTemperature(heatingTemperature); }, createBoilerPort(log_, logFeature_, pcfDevices_), createValvePorts(log_, logFeature_, pcfDevices_), createValveLabels(), boilerNow_};
+	std::string currentProgram_;
+	std::vector<std::shared_ptr<heating::Room>> rooms_;
+	std::unordered_map<std::string, uint8_t> valveLabelMap_{buildValveLabelMap()};
+	ib::PeriodicCounter lastReadTemperatureCounter_{5 * 60 * 1000}; // 5 mins in ms
+	typename BeaconTemperatureReader::BleDevices_t devicesFound_;
+	mutable std::mutex roomsAccessMutex_;
+
+	EmsMetrics emsMetrics_{[this](uint16_t telegramId, std::function<void(heating::ems::EmsTelegram const &)> processor) { ems_.registerTelegramProcessor(telegramId, processor); }};
+
+	MQTT mqtt_{
+		log_,
+		[this]() { return getRoomIds(); },
+		[this](std::ostream &ss) { getRoomsStatus(ss);},
+		[this]() { return getActiveProgram(); },
+		[this]() { return boiler_.isBoilerStarted(); },
+		[this](std::ostream &ss) { emsMetrics_.getMetrics(ss);},
+		[this](std::ostream &ss) { getEMSStatus(ss);},
+		[this](std::ostream &ss) { ems_.getDiagnostics(ss); },
+		[this](std::string const &name, int16_t temperature, uint32_t seconds) {
+			return setRoomTemporaryTemperature(name, temperature, seconds);
+		}
+		};
+};
+
+
+
+}

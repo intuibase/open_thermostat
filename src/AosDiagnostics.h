@@ -12,10 +12,14 @@ namespace heating::aos {
 // Includes the logger timestamp/feature prefix. The TCP sink must accept whole records.
 inline constexpr size_t diagnosticMaxRecordBytes = 4096;
 
-// Observation only: none of these fields participate in heating decisions.
+// Context of the previously applied control interval, shared by all rooms.
 struct HeatContext {
 	std::optional<bool> boilerCommanded, valveOpen, emsHeating;
 	std::string program;
+	bool supplyBoostApplied = false;
+	bool supplyBaselineUnknown = false;
+	std::optional<int> baseSupply, appliedSupply;
+	const char *supplyReason = "unknown";
 	bool manualTest = false;
 	bool usesEms = false;
 	const char *outdoorSource = "unknown";
