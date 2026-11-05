@@ -79,6 +79,41 @@ TEST_F(BoilerEndpoint, JsonWhitespaceSurvivesPostGetAndReboot) {
 	EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
 }
 
+TEST_F(BoilerEndpoint, ControlBytesAreRejectedAcrossTheWholeDocumentBeforeWriting) {
+	request(); ASSERT_EQ(server.status, 201);
+	for (int byte = 0; byte < 0x20; ++byte) {
+		const bool whitespace = byte == '\t' || byte == '\r' || byte == '\n';
+		for (const auto position : {size_t{0}, std::string(valid).find("\"boiler\"")}) {
+			if (whitespace) continue; // Legal whitespace outside strings is tested below.
+			auto malformed = std::string(valid); malformed.insert(position, 1, static_cast<char>(byte));
+			server.verb = HTTP_POST; server.body = malformed;
+			request(); EXPECT_EQ(server.status, 400) << "byte=" << byte << " position=" << position;
+			EXPECT_EQ(fs.writes, 1u);
+			server.verb = HTTP_GET; request(); EXPECT_EQ(server.response, valid);
+			EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
+		}
+		// Even tab/CR/LF are forbidden as raw bytes inside string values.
+		auto malformed = std::string(valid);
+		malformed.insert(1, std::string("\"note\":\"raw") + static_cast<char>(byte) + "value\",");
+		server.verb = HTTP_POST; server.body = malformed;
+		request(); EXPECT_EQ(server.status, 400) << "string byte=" << byte;
+		EXPECT_EQ(fs.writes, 1u);
+		server.verb = HTTP_GET; request(); EXPECT_EQ(server.response, valid);
+		EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
+	}
+}
+TEST_F(BoilerEndpoint, LegalInteriorWhitespaceEscapesAndUtf8RemainReadableAfterRestart) {
+	auto body = std::string(valid);
+	body.insert(body.find("\"boiler\""), " \t\r\n");
+	body.insert(1, R"("note":"Zażółć \t \n \r \" \\ \u0001",)");
+	server.body = body; request(); ASSERT_EQ(server.status, 201);
+	server.verb = HTTP_GET; request(); ASSERT_EQ(server.status, 200); EXPECT_EQ(server.response, body);
+	const char *end = nullptr;
+	auto parsed = cJSON_ParseWithOpts(server.response.c_str(), &end, true);
+	ASSERT_NE(parsed, nullptr); cJSON_Delete(parsed);
+	EXPECT_EQ(config::loadBoilerConfiguration(fs).boiler.fixedSupplyTemperature, 48);
+}
+
 TEST_F(BoilerEndpoint, NonStringWeatherSourcesAreRejectedBeforePersistence) {
 	request(); ASSERT_EQ(server.status, 201);
 	for (const auto value : {"false", "42", "null", "[]", "{}"}) {

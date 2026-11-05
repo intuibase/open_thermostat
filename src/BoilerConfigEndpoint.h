@@ -3,8 +3,22 @@
 #include <SPIFFS.h>
 #include <WebServer.h>
 #include <memory>
+#include <string_view>
 
 namespace heating {
+// cJSON tolerates raw control bytes as whitespace and in strings. Reject them
+// before parsing so persisted documents remain readable by strict JSON clients.
+inline bool validJsonControlBytes(std::string_view body) {
+	bool inString = false, escaped = false;
+	for (unsigned char byte : body) {
+		if (byte < 0x20 && (inString || (byte != '\t' && byte != '\r' && byte != '\n'))) return false;
+		if (escaped) { escaped = false; continue; }
+		if (inString && byte == '\\') { escaped = true; continue; }
+		if (byte == '"') inString = !inString;
+	}
+	return !inString && !escaped;
+}
+
 // The REST route and native filesystem tests execute this same handler.
 template<class Server, class Filesystem>
 void handleBoilerConfiguration(Server &server, Filesystem &filesystem) {
@@ -30,6 +44,11 @@ void handleBoilerConfiguration(Server &server, Filesystem &filesystem) {
 			if (body.isEmpty()) {
 				server.send(204);
 				break;
+			}
+
+			if (!validJsonControlBytes({body.c_str(), body.length()})) {
+				server.send(400, "text/plain", "Invalid JSON control bytes.");
+				return;
 			}
 
 			const char *parseEnd = nullptr;
